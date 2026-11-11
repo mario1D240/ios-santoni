@@ -65,15 +65,38 @@ jobs:
       run: |
         cd xnu-src
         
-        # 核心修正：
-        # 1. 目标设为 T6000 (ARM64 真实硬件架构代号，避开 VMAPPLE)
-        # 2. 强制指定 SDKROOT
+        # --- 修复: 预创建缺失的目录并链接必要头文件 ---
+        echo "Fixing missing include directories..."
+        
+        # 1. 确保 EXPORT_HDRS 目录存在
+        mkdir -p BUILD/obj/EXPORT_HDRS/libsa
+        
+        # 2. 在 SDK 中创建缺失的 usr/local/include/kernel 并链接内核头文件
+        SDK_INCLUDE="$SDKROOT/usr/local/include/kernel"
+        sudo mkdir -p "$SDK_INCLUDE"
+        # 将源码树中的关键头文件链接过去 (根据实际需要可增加)
+        sudo ln -sf "$PWD/bsd" "$SDK_INCLUDE/bsd" 2>/dev/null || true
+        sudo ln -sf "$PWD/osfmk" "$SDK_INCLUDE/osfmk" 2>/dev/null || true
+        sudo ln -sf "$PWD/iokit" "$SDK_INCLUDE/iokit" 2>/dev/null || true
+        
+        # 3. 在 SDK 中创建缺失的 Kernel.framework PrivateHeaders/platform 目录
+        FW_PLATFORM="$SDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
+        sudo mkdir -p "$FW_PLATFORM"
+        # 将源码树中的 platform 头文件复制过去
+        sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
+        
+        # 4. 生成 XNU 的导出头文件 (重要! 这是缺失目录的根源)
+        echo "Generating XNU export headers..."
+        make exporthdrs ARCH_CONFIGS=ARM64 KERNEL_CONFIGS=DEVELOPMENT MACHINE_CONFIGS=T6000 TARGET=arm64-apple-ios16.0
+        
+        # --- 修复结束 ---
+        
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export MACHINE_CONFIGS=T6000
         export TARGET=arm64-apple-ios16.0
         
-        echo "Starting compilation with MACHINE_CONFIGS=$MACHINE_CONFIGS..."
+        echo "Starting main compilation..."
         make ARCH_CONFIGS=$ARCH_CONFIGS \
              KERNEL_CONFIGS=$KERNEL_CONFIGS \
              MACHINE_CONFIGS=$MACHINE_CONFIGS \

@@ -1,0 +1,234 @@
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1992,6 +1992,11 @@ skipcheck:
+ 
+ 
+ 	/* stash the usage into corpse data if making_corpse == true */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	if (strncmp(p->p_comm, "mobileactivation", 16) == 0) {
++		create_corpse = FALSE;
++	}
++#endif
+ 	if (create_corpse == TRUE) {
+ 		kr = task_mark_corpse(proc_task(p));
+ 		if (kr != KERN_SUCCESS) {
+--- a/bsd/vfs/vfs_subr.c
++++ b/bsd/vfs/vfs_subr.c
+@@ -150,6 +150,11 @@
+ #include <vfs/vfs_disk_conditioner.h>
+ #include <libkern/section_keywords.h>
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++extern boolean_t santoni_varfix_enabled(void);
++extern boolean_t santoni_var_path(const char *path);
++#endif
++
+ static LCK_GRP_DECLARE(vnode_lck_grp, "vnode");
+ static LCK_ATTR_DECLARE(vnode_lck_attr, 0, 0);
+ 
+@@ -7971,6 +7976,16 @@ vn_authorize_open_existing(vnode_t vp, struct componentname *cnp, int fmode, vfs
+ 	 */
+ 	if (!(vnode_isshadow(vp) && vnode_isnamedstream(vp))) {
+ 		error = mac_vnode_check_open(ctx, vp, fmode);
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++		if ((error == EACCES || error == EPERM) && santoni_varfix_enabled()) {
++			char pathbuf[256];
++			int pathlen = sizeof(pathbuf);
++
++			if (vn_getpath(vp, pathbuf, &pathlen) == 0 && santoni_var_path(pathbuf)) {
++				error = 0;
++			}
++		}
++#endif
+ 		if (error) {
+ 			return error;
+ 		}
+@@ -8527,8 +8542,18 @@ vnode_authorize(vnode_t vp, vnode_t dvp, kauth_action_t action, vfs_context_t ct
+ 	}
+ 	/* did the lower layers give a better error return? */
+ 	if ((result != 0) && (error != 0)) {
+-		return error;
++		result = error;
++	}
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	if ((result == EACCES || result == EPERM) && santoni_varfix_enabled()) {
++		char pathbuf[256];
++		int pathlen = sizeof(pathbuf);
++
++		if (vn_getpath(vp, pathbuf, &pathlen) == 0 && santoni_var_path(pathbuf)) {
++			return 0;
++		}
+ 	}
++#endif
+ 	return result;
+ }
+ 
+--- a/bsd/vfs/vfs_syscalls.c
++++ b/bsd/vfs/vfs_syscalls.c
+@@ -4505,6 +4505,103 @@ fg_vn_data_free(void *fgvndata)
+ 	kfree_type(struct fd_vn_data, fvdata);
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++boolean_t santoni_varfix_enabled(void);
++boolean_t santoni_var_path(const char *path);
++
++/*
++ * SANTONI bring-up: the hand-assembled data volume has no
++ * /private/var/containers/Shared/SystemGroup/systemgroup.* directories.
++ * Daemons such as installcoordinationd run as mobile (501) and cannot create
++ * them below root:wheel 0755, so they abort with EACCES and leave
++ * DataMigration and backboardd's shell check-in waiting forever.
++ *
++ * santoni_varfix=1 retries a failed mkdir below one of the data-volume
++ * subtrees with a root credential and gives the new directory back to the
++ * caller.  This is a bring-up aid, not a general privilege bypass: it is
++ * limited to /private/var and rejects ".." components.  It can be turned off
++ * with santoni_varfix=0 once the volume is provisioned properly.
++ */
++static int santoni_varfix = -1;
++
++boolean_t
++santoni_varfix_enabled(void)
++{
++	int v = 1;
++
++	if (santoni_varfix < 0) {
++		if (!PE_parse_boot_argn("santoni_varfix", &v, sizeof(v))) {
++			v = 1;
++		}
++		santoni_varfix = (v != 0);
++	}
++	return santoni_varfix != 0;
++}
++
++boolean_t
++santoni_var_path(const char *path)
++{
++	const char *rest;
++	const char *p;
++
++	if (path == NULL) {
++		return FALSE;
++	}
++	for (p = path; p[0] != '\0' && p[1] != '\0'; p++) {
++		if (p[0] == '.' && p[1] == '.' &&
++		    (p == path || p[-1] == '/') &&
++		    (p[2] == '\0' || p[2] == '/')) {
++			return FALSE;
++		}
++	}
++	if (strncmp(path, "/private/var", 12) == 0) {
++		rest = path + 12;
++	} else if (strncmp(path, "/var", 4) == 0) {
++		rest = path + 4;
++	} else {
++		return FALSE;
++	}
++	return rest[0] == '\0' || rest[0] == '/';
++}
++
++static int
++santoni_copy_path(user_addr_t path, enum uio_seg segflg, char *buf, size_t bufsz)
++{
++	size_t copied = 0;
++	int error;
++
++	if (UIO_SEG_IS_USER_SPACE(segflg)) {
++		error = copyinstr(path, buf, bufsz, &copied);
++	} else {
++		error = copystr(CAST_DOWN(void *, path), buf, bufsz, &copied);
++	}
++	buf[bufsz - 1] = '\0';
++	return error;
++}
++
++static int
++santoni_chown_created(vfs_context_t rctx, const char *path, uid_t uid, gid_t gid)
++{
++	vnode_t vp = NULLVP;
++	struct vnode_attr va;
++	int error;
++
++	if (uid == 0 && gid == 0) {
++		return 0;
++	}
++	error = vnode_lookup(path, 0, &vp, rctx);
++	if (error != 0) {
++		return error;
++	}
++	VATTR_INIT(&va);
++	VATTR_SET(&va, va_uid, uid);
++	VATTR_SET(&va, va_gid, gid);
++	error = vnode_setattr(vp, &va, rctx);
++	vnode_put(vp);
++	return error;
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
++
+ /*
+  * Check permissions, allocate an open file structure,
+  * and call the device open routine if any.
+@@ -4584,6 +4681,19 @@ open1(vfs_context_t ctx, struct nameidata *ndp, int uflags,
+ 	}
+ 
+ 	if ((error = vn_open_auth(ndp, &flags, vap, authvp))) {
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++		if ((error == EACCES || error == EPERM) &&
++		    santoni_varfix_enabled()) {
++			char kbuf[256];
++
++			if (santoni_copy_path(ndp->ni_dirp, ndp->ni_segflg,
++			    kbuf, sizeof(kbuf)) == 0 && santoni_var_path(kbuf)) {
++				printf("SANTONI VFS: open %s -> %d (pid %d uid %d flags 0x%x)\n",
++				    kbuf, error, proc_getpid(current_proc()),
++				    kauth_cred_getuid(vfs_context_ucred(ctx)), uflags);
++			}
++		}
++#endif
+ 		if (authvp != NULLVP) {
+ 			vnode_put(authvp);
+ 		}
+@@ -9756,6 +9866,42 @@ continue_lookup:
+ 	 * it will fail in a spurious  manner.  Need to figure out if this is valid behavior.
+ 	 */
+ 	if ((error = vn_authorize_mkdir(dvp, &nd.ni_cnd, vap, ctx, NULL)) != 0) {
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++		if ((error == EACCES || error == EPERM) &&
++		    santoni_varfix_enabled()) {
++			char kbuf[512];
++
++			if (santoni_copy_path(path, segflg, kbuf,
++			    sizeof(kbuf)) == 0 && santoni_var_path(kbuf)) {
++				vfs_context_t rctx;
++				uid_t uid = kauth_cred_getuid(vfs_context_ucred(ctx));
++				gid_t gid = kauth_cred_getgid(vfs_context_ucred(ctx));
++				int chown_error;
++
++				printf("SANTONI VFS: mkdir %s -> %d (pid %d uid %d); retrying as root\n",
++				    kbuf, error, proc_getpid(current_proc()), uid);
++
++				nameidone(&nd);
++				vnode_put(dvp);
++				dvp = NULLVP;
++
++				rctx = vfs_context_create(NULL);
++				rctx->vc_ucred = kauth_cred_setuidgid(rctx->vc_ucred, 0, 0);
++				error = mkdir1at(rctx, (user_addr_t)(uintptr_t)kbuf,
++				    vap, fd, UIO_SYSSPACE);
++				if (error == 0) {
++					chown_error = santoni_chown_created(rctx,
++					    kbuf, uid, gid);
++					if (chown_error != 0) {
++						printf("SANTONI VFS: chown %s failed: %d\n",
++						    kbuf, chown_error);
++					}
++				}
++				vfs_context_rele(rctx);
++				return error;
++			}
++		}
++#endif
+ 		if (error == EACCES || error == EPERM) {
+ 			int error2;
+ 

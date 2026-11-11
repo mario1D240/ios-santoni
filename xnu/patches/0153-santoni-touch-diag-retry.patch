@@ -1,0 +1,137 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3171,6 +3171,12 @@
+ 	return false;
+ }
+ 
++/* One-line bring-up status for the boot console: rpm votes, PMIC read-back. */
++static struct {
++	int l10, l5;                  /* 0 not voted, 1 ok, -1 failed */
++	uint8_t l5_en, l10_en;        /* PMIC enable reg, 0xff = read failed */
++} santoni_diag;
++
+ static void
+ santoni_pmic_report(void)
+ {
+@@ -3192,9 +3198,15 @@
+ 			    "vset=%#x\n", rails[i].name, en,
+ 			    (en & 0x80) ? "on" : "off", range, vset);
+ 		} else {
++			en = 0xffu;
+ 			printf("SANTONI PMIC: %s read failed (SPMI)\n",
+ 			    rails[i].name);
+ 		}
++		if (i == 0) {
++			santoni_diag.l5_en = en;
++		} else {
++			santoni_diag.l10_en = en;
++		}
+ 	}
+ }
+ 
+@@ -3702,9 +3714,13 @@
+ 
+ 	int rpm_on = 1;
+ 	(void)PE_parse_boot_argn("santonirpm", &rpm_on, sizeof(rpm_on));
++	bool rails_ok = false;
+ 	if (rpm_on) {
+ 		bool l10 = santoni_rpm_ldo(10, 2850000);
+ 		bool l5 = santoni_rpm_ldo(5, 1800000);
++		santoni_diag.l10 = l10 ? 1 : -1;
++		santoni_diag.l5 = l5 ? 1 : -1;
++		rails_ok = l10;
+ 		printf("SANTONI RPM: touch rails L10 %s, L5 %s\n",
+ 		    l10 ? "ok" : "FAILED", l5 ? "ok" : "FAILED");
+ 	} else {
+@@ -3731,6 +3747,7 @@
+ 		printf("SANTONI TOUCH: probe failed (%s)\n",
+ 		    prc == -1 ? "I2C NACK at 0x38" : "no aa aa 1a header");
+ 	}
++	int last_rc = prc;
+ 
+ 	bool active[10] = {false};
+ 	int last_x[10] = {0};
+@@ -3760,6 +3777,44 @@
+ 			sweet_hid_key(3, now ? 1 : 0);
+ 		}
+ 
++		/* One-line status every 2 s: a single photo of the boot
++		 * console shows exactly where the touch bring-up stands. */
++		if ((tick % 200) == 0) {
++			printf("SANTONI DIAG: rpm ch=%d open=%d L10=%d L5=%d "
++			    "rxst=%u pmicL5=%02x pmicL10=%02x probe=%d "
++			    "nack=%u bad=%u rep=%u\n",
++			    santoni_smd.mapped ? 1 : 0,
++			    santoni_smd.open ? 1 : 0,
++			    santoni_diag.l10, santoni_diag.l5,
++			    santoni_smd.mapped ?
++			    smd_read32(santoni_smd.rxinfo, INFO_STATE) : 99u,
++			    santoni_diag.l5_en, santoni_diag.l10_en,
++			    last_rc, nack, bad, reports);
++		}
++
++		/* Retry the rail votes every 10 s until they stick: the RPM
++		 * may not have the channel ready a few seconds into boot.
++		 * Whenever L10 finally lands, re-read the PMIC and pulse
++		 * the touch reset again (power-cycle order). */
++		if (rpm_on && !rails_ok && (tick % 1000) == 0) {
++			printf("SANTONI RPM: retrying touch rails\n");
++			bool l10r = santoni_rpm_ldo(10, 2850000);
++			(void)santoni_rpm_ldo(5, 1800000);
++			santoni_diag.l10 = l10r ? 1 : -1;
++			if (l10r) {
++				rails_ok = true;
++				santoni_pmic_report();
++				printf("SANTONI RPM: rails up on retry, "
++				    "re-pulsing touch reset\n");
++				tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 0,
++				    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
++				delay(20 * 1000);
++				tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 1,
++				    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
++				delay(300 * 1000);
++			}
++		}
++
+ 		/* INT is active low; also poll once a second so a dead INT
+ 		 * line cannot hide a responsive controller. */
+ 		tick++;
+@@ -3767,6 +3822,7 @@
+ 		    (tick % 100) == 0) {
+ 			uint8_t report[FT5435_REPORT_LEN];
+ 			int rc = santoni_ft5435_report(tlmm, report);
++			last_rc = rc;
+ 			if (rc == 0 || rc == 1) {
+ 				reports++;
+ 				if (reports <= 3) {
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -423,13 +423,13 @@
+ 
+ 	/*
+ 	 * Simulate the upward home-indicator swipe that unlocks iPhone X.
+-	 * Only the first three presses do this: once SpringBoard is on the
+-	 * Home Screen, y = 1220 sits on the Safari dock icon and an endless
+-	 * stream of swipes keeps launching Safari.  Start at y = 1270 (the
+-	 * dock background, still inside the 48 px edge-tip zone) so even a
+-	 * late swipe cannot hit an icon.
++	 * Every press does this for the first two minutes (24 presses, one
++	 * every fTestSecs): the Lock Screen can appear long after boot on a
++	 * slow root mount and an early swipe is simply ignored.  Start at
++	 * y = 1270 (the dock background, still inside the 48 px edge-tip
++	 * zone) so a swipe on the Home Screen cannot hit the Safari icon.
+ 	 */
+-	if (press && gSweetTouch && self->fTestCount < 6) {
++	if (press && gSweetTouch && self->fTestCount < 48) {
+ 		int cx = 360;
+ 		gSweetTouch->touch(0, true, cx, 1270);
+ 		for (int cy = 1050; cy >= 450; cy -= 200) {
+@@ -441,7 +441,7 @@
+ 	}
+ 
+ 	self->fTestCount++;
+-	if (self->fTestCount >= 6) {
++	if (self->fTestCount >= 48) {
+ 		IOLog("SWEET HID: unlock sequence complete, synthetic input idle\n");
+ 		return;		/* sweetfb_stayon keeps the panel lit */
+ 	}

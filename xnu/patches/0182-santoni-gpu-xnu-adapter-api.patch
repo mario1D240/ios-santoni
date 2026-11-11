@@ -1,0 +1,28 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -21,9 +21,11 @@
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern void CleanPoC_DcacheRegion_Force(vm_offset_t, size_t);
+ extern ppnum_t pmap_find_phys(pmap_t, addr64_t);
++/* XNU exports this C ABI but omits its declaration from BSD's thread.h view. */
++extern void thread_terminate_self(void);
+ void santoni_gpu_start(void);
+ 
+-_Static_assert(PAGE_SHIFT == 12, "A505 diagnostic requires Santoni 4K pages");
++_Static_assert(SGPU_PAGE == 4096, "A505 diagnostic format uses 4K pages");
+ static struct {
+     vm_offset_t maps[SG_BLOCKS], pool;
+     uint32_t sizes[SG_BLOCKS], attempted, mode;
+@@ -195,6 +197,11 @@
+     uint32_t mode = 0;
+     (void)PE_parse_boot_argn("santonigpu", &mode, sizeof(mode));
+     if (mode == 0 || mode > 3) return; /* default path has zero GPU side effects */
++    /* PAGE_SHIFT/PAGE_SIZE can be runtime variables in XNU's BSD headers. */
++    if (PAGE_SHIFT != 12 || PAGE_SIZE != SGPU_PAGE) {
++        printf("SANTONI GPU: non-4K kernel, diagnostic skipped\n");
++        return;
++    }
+     if (__atomic_exchange_n(&sg.attempted, 1, __ATOMIC_ACQ_REL)) return;
+     sg.mode = mode;
+     thread_t worker;

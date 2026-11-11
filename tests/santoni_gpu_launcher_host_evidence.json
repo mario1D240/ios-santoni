@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "scope": "recorded launcher host contracts; CI intake runs zero tests",
+  "core_cases": {
+    "O0": 22,
+    "O2": 22,
+    "UBSan": 22
+  },
+  "adapter_cases": {
+    "O0": 40,
+    "O2": 40,
+    "UBSan": 40
+  },
+  "compiled_rejected_mutants": 8,
+  "GPU_core_unchanged": true,
+  "kernel_certified": false,
+  "hardware_verified": false,
+  "probe_sha256": "29130488ff8bce6dc4a171f756e4182f08ee98c5f6ed2a59cc5f654647dad087",
+  "sha256": {
+    "xnu/patches/0208-santoni-gpu-boot-el0-launcher.patch": "c86e28c4774bc056507be1fe7da53c8ad173659da9ac03bf48c2286d4a938ee8",
+    "tests/test_santoni_gpu_launch_core.c": "41183b1534e75e17b5633dfbeabce0766a2ab5f07da179517f540732cec18dd6",
+    "tests/test_santoni_gpu_launcher.c": "40708dd7695dfa03a385e7b2b0ab6639828f313ead1af28f0e219a059638cddd",
+    "tests/santoni_gpu_launcher_stubs.h": "4f2aa30d1a12c3eca3ea5cd9e958703b6f48b03a2b0a3f0403fa035cf0f20ba9",
+    "tests/verify_santoni_gpu_launcher.py": "b923c18bb85970c93175591c472ed59742b4a13b5d78e83ec9287f1202c2ba4e"
+  },
+  "evidence_components_sha256": {
+    "out/santoni-gpu-launcher-design-20261101T094441069429Z/adapter-resume-20261101T111526340060Z/adapter-native-aggregate.json": "8a03eeed2e5684911d5ed9a1c9ccb2da0aa16c5f8b6faac9a1036019310b97ba",
+    "out/santoni-gpu-launcher-design-20261101T094441069429Z/native-core-20261101T102348966167Z/result.json": "75e6b7a3712c9a83b181ab29aa5cea8c9109b602e353353ae57b6292bd4238fd"
+  }
+}

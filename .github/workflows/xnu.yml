@@ -15,6 +15,16 @@ on:
       keep_going:
         description: make -k (collect all compile errors in one run)
         default: "true"
+      userspace_only:
+        description: Build only the isolated Santoni graphics userspace probe
+        type: choice
+        options: ["false", "true", "mesa", "gles", "capture"]
+        default: "false"
+      capture_ui:
+        description: Also capture a host-modeled interpolated and blended quad
+        required: false
+        type: boolean
+        default: false
   push:
     branches: [main, santoni]
     paths:
@@ -32,6 +42,8 @@ env:
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
   MACHINE_CONFIG: ${{ inputs.machine_config || 'SANTONI' }}
+  # Keep XNU 8796's IORPC wire ABI with the newer hosted generator.
+  OTHER_IIG_FLAGS: --deployment-target 13.5
   # ccache: xnu is ~2000 compiles; a patch usually changes a few of them
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_BASEDIR: ${{ github.workspace }}
@@ -42,18 +54,43 @@ env:
 
 jobs:
   build:
-    # macos-14 still ships Xcode 15.x: its iig matches the xnu-8796 IORPC ABI
-    # (Xcode 16's iig emits IORPC.kernelContent, which this xnu lacks)
-    runs-on: macos-14
+    if: ${{ inputs.userspace_only != 'true' && inputs.userspace_only != 'mesa' && inputs.userspace_only != 'gles' && inputs.userspace_only != 'capture' }}
+    # Xcode 16.0's explicit older iig target preserves the XNU 8796 IORPC ABI.
+    # macos-14 is unavailable and retiring; pin the tested toolchain.
+    runs-on: macos-15
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare tested host compiler and LLVM audit tools
+        run: |
+          XC=/Applications/Xcode_16.0.app
+          test -d "$XC"
+          sudo xcode-select -s "$XC"
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          test "$(xcodebuild -version | head -1)" = "Xcode 16.0"
+          brew install llvm
+          LLVM_PREFIX=$(brew --prefix llvm)
+          mkdir host-llvm-bin
+          for TOOL in llvm-objdump llvm-nm llvm-mc; do
+            ln -s "$LLVM_PREFIX/bin/$TOOL" "host-llvm-bin/$TOOL"
+          done
+          echo "$GITHUB_WORKSPACE/host-llvm-bin" >> "$GITHUB_PATH"
+          "$LLVM_PREFIX/bin/llvm-objdump" --version
+
+      - name: Fetch the pinned Mesa host-test dependency
+        run: |
+          git init -q out/mesa-a505-25.0.7-reference
+          git -C out/mesa-a505-25.0.7-reference fetch -q --depth 1 https://github.com/chaotic-cx/mesa-mirror.git 742a20f48c59e8649533c84c4d49dd95b403f5da
+          git -C out/mesa-a505-25.0.7-reference checkout -q FETCH_HEAD
+
       - name: Host tests and patch validation
         run: |
-          # Unified-diff structure of every patch (a corrupt hunk made CI drop
-          # 0143/0144) plus the three phase 4 host tests: SDHCI mock, hardened
-          # GPT with the SYSTEM log fence, and the console log ring.
+          # Actual patched input/display driver tests, storage/log host tests,
+          # and unified-diff validation (corrupt hunks previously lost fixes).
+          python3 -m venv out/host-test-venv
+          out/host-test-venv/bin/python -m pip install PyYAML==6.0.2
+          export PATH="$GITHUB_WORKSPACE/out/host-test-venv/bin:$PATH"
           bash tests/run_tests.sh
 
       - name: Fetch build script
@@ -77,15 +114,19 @@ jobs:
       - name: Deps
         run: |
           brew install jq gum bash cmake ninja ccache
-          # build.sh only checks that xcodes exists (Xcode is preinstalled); no bottle on macOS 14
+          # build.sh only checks that xcodes exists; select preinstalled Xcode explicitly.
           printf '#!/bin/sh\nexit 0\n' | sudo tee /usr/local/bin/xcodes >/dev/null
           sudo chmod +x /usr/local/bin/xcodes
           sw_vers
           ls -d /Applications/Xcode*.app
-          XC=$(ls -d /Applications/Xcode_*.app | sort -V | head -1)
+          XC=/Applications/Xcode_16.0.app
+          test -d "$XC"
+          export DEVELOPER_DIR="$XC/Contents/Developer"
           echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
           sudo xcode-select -s "$XC"
           xcodebuild -version
+          test "$(xcodebuild -version | head -1)" = "Xcode 16.0"
+          printf 'OTHER_IIG_FLAGS=%s\n' "$OTHER_IIG_FLAGS"
           xcrun --find iig
           mkdir -p "$CCACHE_WRAP"
           for t in clang clang++; do
@@ -113,7 +154,7 @@ jobs:
           bash build.sh 2>&1 | tee ../build.log
           ccache -s
 
-      - name: Fail if a Santoni storage patch was skipped
+      - name: Fail if any Santoni bring-up patch was skipped
         if: always()
         run: |
           # dxb applies patches with `git apply --check` and only warns on
@@ -122,11 +163,20 @@ jobs:
           if [ ! -f build.log ]; then
             echo "no build.log (build never started)"; exit 0
           fi
-          if grep -E 'Skipping patch .*014[234]-santoni' build.log; then
-            echo "::error::a Santoni storage patch was skipped by the build"
+          if grep -E 'Skipping patch .*[0-9]{4}-santoni' build.log; then
+            echo "::error::a Santoni bring-up patch was skipped by the build"
             exit 1
           fi
-          echo "no Santoni storage patch skipped"
+          echo "no Santoni bring-up patch skipped"
+
+      - name: Verify Santoni does not enable the absent iOS identity resolver
+        if: success()
+        run: |
+          if grep -E -- 'clang[^[:space:]]* .* -DCONFIG_EXT_RESOLVER([[:space:]]|$)' build.log; then
+            echo "::error::Santoni compiler flags still enable CONFIG_EXT_RESOLVER"
+            exit 1
+          fi
+          echo "Santoni compiler flags omit CONFIG_EXT_RESOLVER"
 
       - name: Package build tree for local compiles
         if: always()
@@ -143,11 +193,15 @@ jobs:
             -C .. sdk-kernel-platform
           ls -la buildtree.tgz
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload build tree to GitHub
+        id: github_buildtree
+        uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: xnu-buildtree
           path: buildtree.tgz
+          if-no-files-found: error
           retention-days: 7
 
       - name: Inspect closed KDK support libs
@@ -170,9 +224,187 @@ jobs:
           ls -la out
           (cd out && shasum -a 256 kernel.* > SHA256SUMS) || true
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload full kernel artifacts to GitHub
+        id: github_kernel
+        uses: actions/upload-artifact@v4
         if: always()
+        continue-on-error: true
         with:
           name: xnu-kernel
           path: out/
-          if-no-files-found: warn
+          if-no-files-found: error
+
+      - name: Collect boot kernel only
+        if: success()
+        run: |
+          # Keep phone downloads small: omit build maps, KDK dumps and host tests.
+          mkdir -p boot-kernel
+          find out -maxdepth 1 -type f -name 'kernel.*' -exec cp {} boot-kernel/ \;
+          cd boot-kernel
+          shasum -a 256 kernel.* > SHA256SUMS
+
+      - name: Upload boot kernel to GitHub
+        id: github_boot_kernel
+        uses: actions/upload-artifact@v4
+        if: success()
+        continue-on-error: true
+        with:
+          name: xnu-boot-kernel
+          path: boot-kernel/
+          if-no-files-found: error
+          retention-days: 7
+
+      # outcome retains the original failure despite continue-on-error. Each
+      # fallback is independent, including after another fallback has failed.
+      # Build/test/patch failures are never ignored; failure of both upload
+      # services also fails the run. Links and archive hashes go in the summary.
+      - name: Upload build tree to GoFile after GitHub failure
+        id: gofile_buildtree
+        if: ${{ !cancelled() && steps.github_buildtree.outcome == 'failure' }}
+        run: bash tools/gofile-upload.sh buildtree.tgz
+
+      - name: Upload full kernel artifacts to GoFile after GitHub failure
+        id: gofile_kernel
+        if: ${{ !cancelled() && steps.github_kernel.outcome == 'failure' }}
+        run: |
+          archive="xnu-kernel-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          tar czf "$archive" -C out .
+          bash tools/gofile-upload.sh "$archive"
+
+      - name: Upload boot kernel to GoFile after GitHub failure
+        id: gofile_boot_kernel
+        if: ${{ !cancelled() && steps.github_boot_kernel.outcome == 'failure' }}
+        run: |
+          archive="xnu-boot-kernel-${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.tgz"
+          tar czf "$archive" -C boot-kernel .
+          bash tools/gofile-upload.sh "$archive"
+
+  graphics_userspace:
+    if: ${{ inputs.userspace_only == 'true' || inputs.userspace_only == 'mesa' || inputs.userspace_only == 'gles' || inputs.userspace_only == 'capture' }}
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the tested Xcode toolchain
+        run: |
+          XC=/Applications/Xcode_16.0.app
+          test -d "$XC"
+          sudo xcode-select -s "$XC"
+          echo "DEVELOPER_DIR=$XC/Contents/Developer" >> "$GITHUB_ENV"
+          xcodebuild -version
+          test "$(xcodebuild -version | head -1)" = "Xcode 16.0"
+      - name: Check actual userspace transport contracts
+        run: python3 -m unittest tests.test_santoni_graphics_client
+      - name: Build the isolated iOS BO/IB proof
+        run: python3 tools/build_santoni_graphics_probe.py --output out/graphics-userspace
+      - name: Fetch the pinned Mesa adapter dependency
+        if: ${{ inputs.userspace_only == 'mesa' || inputs.userspace_only == 'gles' || inputs.userspace_only == 'capture' }}
+        run: |
+          git init -q out/mesa-a505
+          git -C out/mesa-a505 fetch -q --depth 1 https://github.com/chaotic-cx/mesa-mirror.git 742a20f48c59e8649533c84c4d49dd95b403f5da
+          git -C out/mesa-a505 checkout -q FETCH_HEAD
+      - name: Check nested command and msm contracts
+        if: ${{ inputs.userspace_only == 'mesa' || inputs.userspace_only == 'gles' || inputs.userspace_only == 'capture' }}
+        env:
+          SANTONI_MESA_SOURCE: ${{ github.workspace }}/out/mesa-a505
+        run: python3 -m unittest tests.test_santoni_graphics_commands tests.test_santoni_graphics_msm tests.test_santoni_graphics_state tests.test_santoni_graphics_textures tests.test_santoni_graphics_ui_surface tests.test_santoni_graphics_ui_gl tests.test_santoni_graphics_ui_context tests.test_santoni_graphics_dispatch tests.test_santoni_graphics_eagl tests.test_santoni_graphics_ui_backend tests.test_santoni_graphics_ui_shader tests.test_santoni_graphics_ui_dispatch tests.test_santoni_graphics_capture tests.test_santoni_graphics_capture_inspect tests.test_santoni_graphics_capture_ui
+      - name: Build the iOS Mesa command adapter
+        if: ${{ inputs.userspace_only == 'mesa' }}
+        run: python3 tools/build_santoni_graphics_mesa_adapter.py --mesa out/mesa-a505 --output out/graphics-mesa-adapter
+      - name: Install pinned Mesa build generators
+        if: ${{ inputs.userspace_only == 'gles' || inputs.userspace_only == 'capture' }}
+        run: |
+          brew install ninja bison flex llvm
+          python3 -m venv out/mesa-build-venv
+          out/mesa-build-venv/bin/python -m pip install meson==1.7.2 Mako==1.3.9 PyYAML==6.0.2 packaging==25.0
+      - name: Check serialized Mesa libdrm and frontend contracts
+        if: ${{ inputs.userspace_only == 'gles' || inputs.userspace_only == 'capture' }}
+        env:
+          SANTONI_MESA_SOURCE: ${{ github.workspace }}/out/mesa-a505
+        run: |
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          out/mesa-build-venv/bin/python -m unittest tests.test_santoni_graphics_drm tests.test_santoni_graphics_mesa_port tests.test_santoni_graphics_gles tests.test_santoni_graphics_mesa_oom tests.test_santoni_graphics_loader_build tests.test_santoni_ui_loader_binding tests.test_santoni_graphics_startup tests.test_santoni_gpu_dyld tests.test_santoni_gpu_dyld_audit tests.test_santoni_gpu_ui_launch tests.test_santoni_gpu_graphics_gates
+      - name: Link isolated iOS Mesa Gallium IR3 GLES
+        if: ${{ inputs.userspace_only == 'gles' }}
+        run: |
+          export PATH="$GITHUB_WORKSPACE/out/mesa-build-venv/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
+          python3 tools/build_santoni_graphics_gles.py --mesa out/mesa-a505 --output out/graphics-gles --eagl --ui-loader
+      - name: Screen complete EAGL and loader code for Cortex-A53
+        if: ${{ inputs.userspace_only == 'gles' }}
+        run: |
+          export PATH="$(brew --prefix llvm)/bin:$PATH"
+          python3 tools/check_santoni_graphics_library.py out/graphics-gles/libsantoni-eagl.dylib --output out/graphics-gles/library-cpu-audit
+          python3 tools/check_santoni_graphics_library.py out/graphics-gles/libsantoni-ui-loader.dylib --output out/graphics-gles/loader-cpu-audit
+          python3 -m tools.check_santoni_ui_loader --eagl out/graphics-gles/libsantoni-eagl.dylib --loader out/graphics-gles/libsantoni-ui-loader.dylib --eagl-cpu out/graphics-gles/library-cpu-audit/report.json --loader-cpu out/graphics-gles/loader-cpu-audit/report.json --build out/graphics-gles/build.json --output out/graphics-gles/loader-binding.json
+      - name: Capture actual Mesa packets on a memory-only host transport
+        if: ${{ inputs.userspace_only == 'capture' }}
+        env:
+          SANTONI_CAPTURE_UI_REQUEST: ${{ inputs.capture_ui }}
+        run: |
+          export PATH="$GITHUB_WORKSPACE/out/mesa-build-venv/bin:$(brew --prefix bison)/bin:$(brew --prefix flex)/bin:$PATH"
+          args=()
+          if [ "$SANTONI_CAPTURE_UI_REQUEST" = "true" ]; then args+=(--ui-profile); fi
+          python3 tools/build_santoni_graphics_capture.py --mesa out/mesa-a505 --output out/graphics-capture --width 720 --height 1280 "${args[@]}"
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.userspace_only == 'capture' }}
+        with:
+          name: santoni-graphics-capture-${{ github.sha }}
+          path: |
+            out/graphics-capture/capture.json
+            out/graphics-capture/mesa-source.json
+            out/graphics-capture/build.log
+            out/graphics-capture/run.log
+            out/graphics-capture/backtrace.log
+            out/graphics-capture/capture-mesa
+            out/graphics-capture/packets/*.bin
+            out/graphics-capture/mesa-build/meson-logs/meson-log.txt
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: santoni-graphics-userspace-${{ github.sha }}
+          path: |
+            out/graphics-userspace/santoni-graphics-probe
+            out/graphics-userspace/build.json
+            out/graphics-userspace/build.log
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() && inputs.userspace_only == 'gles' }}
+        with:
+          name: santoni-graphics-gles-${{ github.sha }}
+          path: |
+            out/graphics-gles/santoni-gles-probe
+            out/graphics-gles/build.json
+            out/graphics-gles/build.log
+            out/graphics-gles/mesa-source.json
+            out/graphics-gles/symbols.txt
+            out/graphics-gles/libraries.txt
+            out/graphics-gles/libsantoni-eagl.dylib
+            out/graphics-gles/eagl-symbols.txt
+            out/graphics-gles/eagl-libraries.txt
+            out/graphics-gles/libsantoni-ui-loader.dylib
+            out/graphics-gles/loader-symbols.txt
+            out/graphics-gles/loader-libraries.txt
+            out/graphics-gles/ui_loader_config.h
+            out/graphics-gles/loader-binding.json
+            out/graphics-gles/library-cpu-audit/report.json
+            out/graphics-gles/library-cpu-audit/decoder-stderr.txt
+            out/graphics-gles/loader-cpu-audit/report.json
+            out/graphics-gles/loader-cpu-audit/decoder-stderr.txt
+            out/graphics-gles/mesa-archive-symbols.txt
+            out/graphics-gles/ui-dispatch.json
+            out/graphics-gles/mesa-build/meson-logs/meson-log.txt
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.userspace_only == 'mesa' }}
+        with:
+          name: santoni-graphics-mesa-adapter-${{ github.sha }}
+          path: |
+            out/graphics-mesa-adapter/*.o
+            out/graphics-mesa-adapter/*.a
+            out/graphics-mesa-adapter/build.json
+            out/graphics-mesa-adapter/build.log
+          if-no-files-found: error
+          retention-days: 7

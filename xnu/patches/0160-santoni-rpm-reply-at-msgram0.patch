@@ -1,0 +1,71 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -4091,6 +4091,43 @@
+ }
+ 
+ /*
++ * The Boot 26 scan found a reply packet ("req\0" then "msg#" records) at
++ * msg-ram offset 0 - the first bank's start, not the toc-implied rx fifo
++ * at 0x68000+0x1000 the RPM never writes. Poll the region directly; the
++ * layout matches santoni_rpm_parse_reply byte for byte.
++ */
++static bool
++santoni_rpm_poll_region(unsigned ldo, uint32_t id)
++{
++	volatile uint32_t *r = (volatile uint32_t *)santoni_smd.msgram;
++	if (r[0] != RPM_MSG_REQ) {
++		return false;
++	}
++	uint32_t len = r[1];
++	if (len == 0 || len > 512u) {
++		len = 96u;
++	}
++	uint32_t take = len;
++	if (take > sizeof(santoni_smd.resp) - 1u) {
++		take = sizeof(santoni_smd.resp) - 1u;
++	}
++	for (uint32_t i = 0; i < take; i++) {
++		santoni_smd.resp[i] = (uint8_t)*(volatile uint8_t *)
++		    (santoni_smd.msgram + i);
++	}
++	santoni_smd.resp_len = take;
++	return santoni_rpm_parse_reply(ldo, id);
++}
++
++static void
++santoni_rpm_dump_region(const char *tag)
++{
++	volatile uint32_t *r = (volatile uint32_t *)santoni_smd.msgram;
++	printf("SANTONI RPM: %s %08x %08x %08x %08x %08x %08x %08x %08x\n",
++	    tag, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
++}
++
++/*
+  * Vote PM8937 LDOn on at uv in the active set, exactly like Linux
+  * qcom_smd_regulator with SWEN + UV keys.  rsc "ldoa", id = n.
+  * On silence: dump where the msg ram holds reply magic, try the fifo
+@@ -4111,16 +4148,24 @@
+ 	};
+ 
+ 	for (int attempt = 0; attempt < 2; attempt++) {
++		if (attempt == 0) {
++			santoni_rpm_dump_region("pre ");
++		}
+ 		santoni_smd.resp_ready = false;
+ 		if (!santoni_smd_send(msg, sizeof(msg))) {
+ 			return false;
+ 		}
+ 		for (int ms = 0; ms < 700 && !santoni_smd.resp_ready; ms++) {
+ 			(void)santoni_smd_rx_drain();
++			/* The reply lands at msg-ram offset 0 (Boot 26 scan). */
++			if (santoni_rpm_poll_region(ldo, id)) {
++				return true;
++			}
+ 			if (!santoni_smd.resp_ready) {
+ 				delay(1000);
+ 			}
+ 		}
++		santoni_rpm_dump_region("post");
+ 		if (santoni_smd.resp_ready) {
+ 			break;
+ 		}

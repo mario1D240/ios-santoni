@@ -1,0 +1,49 @@
+Subject: [PATCH 0179] santoni: retain one ordinary-clutch scheduler root
+
+A second pset activates ordinary clutch's no-op steal callback, which
+retains the pset lock while thread_select expects it dropped and
+reacquires it. The non-edge bucket/accounting code is single-root too.
+Retain the proven flat scheduler layout and compile-time bounds,
+without disabling any of the eight CPUs or losing physical IDs.
+Do not offer a boot-arg path back into unsafe multi-root scheduling.
+The prior santoniflat argument is harmlessly ignored. Clock/cache
+diagnostics still inspect both physical domains; no hardware writes.
+
+diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_config.h
+--- a/pexpert/pexpert/arm64/board_config.h
++++ b/pexpert/pexpert/arm64/board_config.h
+@@ -113,7 +113,7 @@
+ 
+ #define MAX_L2_CLINE                   6
+ #define MAX_CPUS                       8
+-#define MAX_CPU_CLUSTERS               2
++#define MAX_CPU_CLUSTERS               1
+ 
+ #define CORE_NCTRS                     8
+ #endif  /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -953,10 +953,6 @@
+ 	int64_t cluster_max_cpu_phys_id[MAX_CPU_CLUSTER_PHY_ID + 1];
+ 	const boolean_t cpus_boot_arg_present = PE_parse_boot_argn("cpus", &cpu_boot_arg, sizeof(cpu_boot_arg));
+ 	const boolean_t cpumask_boot_arg_present = PE_parse_boot_argn("cpumask", &cpumask_boot_arg, sizeof(cpumask_boot_arg));
+-#if defined(SANTONI)
+-	int santoni_flat = 0; /* diagnostic opt-out: retain the old single pset */
+-	(void)PE_parse_boot_argn("santoniflat", &santoni_flat, sizeof(santoni_flat));
+-#endif
+ 
+ #if defined(SWEET)
+ 	/* Opt in to SMP: cpus=N (N <= SWEET_SMP_MAX_CPUS; cores 6-7 are the A76s). */
+@@ -1052,8 +1048,9 @@
+ 		 * seen this exact cluster before. If so, then reuse that cluster ID for this CPU.
+ 		 */
+ #if defined(SANTONI)
+-		/* Aff1 is the real cache domain on MSM8937; both are SMP A53s. */
+-		uint32_t phys_cluster_id = santoni_flat ? 0u : (cpu->phys_id >> 8) & 0xffu;
++		/* Ordinary clutch has one shared root/accounting lock. Keep all A53s
++		 * in that pset; MPIDR and the physical L2/cache/clock IDs are retained. */
++		uint32_t phys_cluster_id = 0u;
+ #elif HAS_CLUSTER
+ 		uint32_t phys_cluster_id = MPIDR_CLUSTER_ID(cpu->phys_id);
+ #else

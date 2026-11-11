@@ -1,0 +1,2321 @@
+{
+  "source": {
+    "patches": [
+      "0180-santoni-gpu-kernel-proof.patch",
+      "0181-santoni-gpu-smmu-fault-encoding.patch",
+      "0182-santoni-gpu-xnu-adapter-api.patch",
+      "0183-santoni-gpu-darwin-asm-separators.patch",
+      "0184-santoni-gpu-startup-visibility.patch",
+      "0185-santoni-gpu-power-failure-record.patch",
+      "0186-santoni-gpu-target-clock-list.patch",
+      "0187-santoni-gpu-audit-safety-gates.patch",
+      "0188-santoni-gpu-ownership-fault-latches.patch",
+      "0189-santoni-gpu-gfx3d-ownership-guard.patch",
+      "0190-santoni-gpu-clock-completion-checks.patch",
+      "0191-santoni-gpu-translation-audit-boundaries.patch",
+      "0192-santoni-gpu-a505-paired-stop.patch",
+      "0193-santoni-gpu-a50x-resume-boundaries.patch",
+      "0194-santoni-gpu-vendor-sp-clock-release.patch",
+      "0195-santoni-gpu-hold-partial-resume-power.patch",
+      "0196-santoni-gpu-accepted-idle-mask.patch",
+      "0197-santoni-gpu-smmu-4k-level-select.patch",
+      "0198-santoni-gpu-fsr-fault-mask.patch",
+      "0199-santoni-gpu-pas-allocation-preflight.patch",
+      "0200-santoni-gpu-pas-auditable-boundaries.patch",
+      "0201-santoni-gpu-scm-capability-probe.patch",
+      "0202-santoni-gpu-pas-cache-preflight.patch",
+      "0203-santoni-gpu-stock-unsecure-transition.patch",
+      "0204-santoni-gpu-stock-pixel-test.patch",
+      "0205-santoni-gpu-bounded-ib-proof.patch",
+      "0206-santoni-gpu-persistent-session.patch",
+      "0207-santoni-gpu-scalar-user-client.patch",
+      "0208-santoni-gpu-boot-el0-launcher.patch",
+      "0213-santoni-gpu-late-launch-observation.patch",
+      "0214-santoni-gpu-trace-path-diagnostics.patch",
+      "0219-santoni-gpu-el0-readiness-trace.patch",
+      "0220-santoni-gpu-render-contract.patch",
+      "0221-santoni-gpu-live-offscreen-blits.patch",
+      "0222-santoni-gpu-live-cp-readback.patch",
+      "0223-santoni-gpu-ui-presentation.patch",
+      "0224-santoni-gpu-graphics-buffers.patch",
+      "0226-santoni-gpu-wide-raster-policy.patch",
+      "0211-santoni-gpu-el0-outcome-trace.patch"
+    ],
+    "sha256": {
+      "bsd/dev/santoni_gpu.c": "9f68e76e9f76fdae6a733e3f6d041422393ac7fdce0851a27e1be9ab923fe2a5",
+      "bsd/dev/santoni_gpu_core.c": "7943a6b9c49e9bbc8bff5c1e613881fcb251a410ee2f0e2988902a1c1316405a",
+      "bsd/dev/santoni_gpu_core.h": "d872161c1e74ec0e9b4d9aceda42c9dde89e3a40e909ebd19b723c8bad01e118"
+    },
+    "dependencies": {
+      "bsd/dev/santoni_gpu_uapi.h": "0a23be8f2a9b342933cb66da816d8fda4fab2fa06a9ecb789b5de1aa74cfa924",
+      "bsd/dev/santoni_gpu_graphics_hw.h": "9e13ac6759d1c7e0cadf5917fae8aaee14da90097617a98bb6291dce90c9d0b0",
+      "bsd/dev/santoni_gpu_launch.h": "96619b85e928a23f9d29a90600bc994d53a291b793a16aca8c8cb147b5401584",
+      "bsd/dev/santoni_gpu_graphics.h": "d66496ddaf6c2bb13587fdf757866a5a687daaee4f511b8d13a6859ddbb54dfb",
+      "bsd/dev/santoni_gpu_vm.h": "3a86605e43eaa00f1eabc22035756e89050db4a1a7e0fb714c0197d237e23e6c",
+      "bsd/dev/santoni_gpu_launch_core.h": "6c385b56d201b936e0a1445d652a8e3d4e2892598ac5775d295a5763068157f6"
+    },
+    "native_link_dependencies": {
+      "bsd/dev/santoni_gpu_vm.c": "c55687abc67d2a1224e9ba5193c2a953be332afb10807fcc57fb84b6c37332a6"
+    }
+  },
+  "commands": [
+    {
+      "name": "O0-core",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/O0-core",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/O0-core/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/O0-core/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=0 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=1 pass=0 phase=7 error=10 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=2 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=3 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=4 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=5 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=6 pass=0 phase=9 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=7 pass=0 phase=9 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=8 pass=0 phase=10 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=9 pass=0 phase=10 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=10 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=11 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=12 pass=0 phase=9 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=13 pass=0 phase=4 error=8 completed=0 wptr=170 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=14 pass=0 phase=6 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=15 pass=0 phase=9 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=16 pass=0 phase=10 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=17 pass=0 phase=9 error=11 completed=1 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=18 pass=0 phase=10 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=19 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=20 pass=0 phase=4 error=8 completed=0 wptr=170 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=21 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=22 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=23 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=24 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=25 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=26 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=27 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=28 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=29 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=30 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=31 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=32 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=33 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=34 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=35 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 100,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=100 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 101,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=101 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 102,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=102 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 104,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=104 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "O0-adapter",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/O0-adapter",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/O0-adapter/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=0 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=1 allocations=1 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=2 allocations=2 frees=1 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=3 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=4 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=5 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=6 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=1 publish_attempted=0 retained_new=7892992 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=7 allocations=2 frees=0 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=1 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=1 publish_attempted=0 retained_new=7892992 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=8 allocations=2 frees=0 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=9 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=10 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=11 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=12 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=13 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=14 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=15 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=16 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=17 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=18 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=19 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=20 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: worker entered mode=3; delay 40s before hardware access\nSANTONI GPU: worker awake mode=3; checking payload firmware\nSANTONI GPU: start mode=3; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\nSANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=30 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: worker entered mode=1; delay 40s before hardware access\nSANTONI GPU: worker awake mode=1; checking payload firmware\nSANTONI GPU: start mode=1; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\nSANTONI GPU: RESULT pass=1 stage=0 error=0 markers=0 pixels=0 trust=00000000 restored=0 retained=0 trust_read=0 quiescent=0 smmu_restored=0 power_pending=0\nPASS live adapter case=31 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "O2-core",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/O2-core",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/O2-core/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/O2-core/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=0 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=1 pass=0 phase=7 error=10 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=2 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=3 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=4 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=5 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=6 pass=0 phase=9 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=7 pass=0 phase=9 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=8 pass=0 phase=10 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=9 pass=0 phase=10 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=10 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=11 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=12 pass=0 phase=9 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=13 pass=0 phase=4 error=8 completed=0 wptr=170 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=14 pass=0 phase=6 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=15 pass=0 phase=9 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=16 pass=0 phase=10 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=17 pass=0 phase=9 error=11 completed=1 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=18 pass=0 phase=10 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=19 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=20 pass=0 phase=4 error=8 completed=0 wptr=170 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=21 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=22 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=23 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=24 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=25 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=26 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=27 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=28 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=29 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=30 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=31 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=32 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=33 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=34 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=35 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 100,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=100 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 101,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=101 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 102,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=102 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 104,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=104 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "O2-adapter",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/O2-adapter",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/O2-adapter/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=0 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=1 allocations=1 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=2 allocations=2 frees=1 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=3 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=4 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=5 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=6 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=1 publish_attempted=0 retained_new=7892992 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=7 allocations=2 frees=0 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=1 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=1 publish_attempted=0 retained_new=7892992 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=8 allocations=2 frees=0 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=9 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=10 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=11 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=12 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=13 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=14 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=15 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=16 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=17 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=18 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=19 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=20 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: worker entered mode=3; delay 40s before hardware access\nSANTONI GPU: worker awake mode=3; checking payload firmware\nSANTONI GPU: start mode=3; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\nSANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=30 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: worker entered mode=1; delay 40s before hardware access\nSANTONI GPU: worker awake mode=1; checking payload firmware\nSANTONI GPU: start mode=1; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\nSANTONI GPU: RESULT pass=1 stage=0 error=0 markers=0 pixels=0 trust=00000000 restored=0 retained=0 trust_read=0 quiescent=0 smmu_restored=0 power_pending=0\nPASS live adapter case=31 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "ubsan-core",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/ubsan-core",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/ubsan-core/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/ubsan-core/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=0 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=1 pass=0 phase=7 error=10 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=2 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=3 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=4 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=5 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=6 pass=0 phase=9 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=7 pass=0 phase=9 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=8 pass=0 phase=10 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=9 pass=0 phase=10 error=11 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=10 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=11 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=12 pass=0 phase=9 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=13 pass=0 phase=4 error=8 completed=0 wptr=170 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=14 pass=0 phase=6 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=15 pass=0 phase=9 error=8 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=16 pass=0 phase=10 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=17 pass=0 phase=9 error=11 completed=1 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=18 pass=0 phase=10 error=12 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=19 pass=0 phase=11 error=13 completed=0 wptr=243 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=20 pass=0 phase=4 error=8 completed=0 wptr=170 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=21 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=22 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=23 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=24 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=25 pass=1 phase=12 error=0 completed=2 wptr=316 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=26 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=27 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=28 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=29 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=30 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=31 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=32 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=33 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=34 pass=0 phase=8 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=35 pass=0 phase=5 error=9 completed=0 wptr=170 exposed=1; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 100,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=100 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 101,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=101 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 102,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=102 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 104,
+          "exit_code": 0,
+          "stdout": "PASS live0221 case=104 pass=0 phase=0 error=0 completed=0 wptr=0 exposed=0; host model only\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "ubsan-adapter",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/ubsan-adapter",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/ubsan-adapter/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=0 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=1 allocations=1 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=2 allocations=2 frees=1 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=3 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=4 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=5 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=6 allocations=2 frees=2 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=1 publish_attempted=0 retained_new=7892992 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=7 allocations=2 frees=0 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=1 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=1 publish_attempted=0 retained_new=7892992 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=8 allocations=2 frees=0 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=9 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=10 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=11 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=12 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=13 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=14 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=15 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=16 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=17 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS live adapter case=18 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=19 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\nPASS live adapter case=20 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: worker entered mode=3; delay 40s before hardware access\nSANTONI GPU: worker awake mode=3; checking payload firmware\nSANTONI GPU: start mode=3; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\nSANTONI GPU: RENDER RESULT pass=0 phase=12 error=0 submitted=2 completed=2 seq=2 wptr=316 pixels=1843200 width=720 height=1280 stride=3072\nSANTONI GPU: RENDER STATE started=1 exposed=0 publish_attempted=0 retained_new=0 retained_legacy=98304; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\nPASS live adapter case=30 allocations=2 frees=2 core_calls=1; route/ownership model only\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "SANTONI GPU: worker entered mode=1; delay 40s before hardware access\nSANTONI GPU: worker awake mode=1; checking payload firmware\nSANTONI GPU: start mode=1; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\nSANTONI GPU: RESULT pass=1 stage=0 error=0 markers=0 pixels=0 trust=00000000 restored=0 retained=0 trust_read=0 quiescent=0 smmu_restored=0 power_pending=0\nPASS live adapter case=31 allocations=0 frees=0 core_calls=0; route/ownership model only\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "baseline-captured",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/baseline-captured",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/baseline-captured/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/baseline-captured/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:241: int main(int, char **): assertion \"pass && result.passed && result.phase==SG_LIVE_DONE && !result.error && result.exposed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-foreign-client",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-foreign-client",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-foreign-client/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 12,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c:168: int main(int, char **): assertion \"role==valid && sgpu_render_enabled==(valid && testcase!=10)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-mode2",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-mode2",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-mode2/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 18,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c:168: int main(int, char **): assertion \"role==valid && sgpu_render_enabled==(valid && testcase!=10)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-late-pmap",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-late-pmap",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-late-pmap/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 3,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c:110: _Bool sgpu_render_live_start(const struct sgpu_ops *, uint32_t, uint32_t, const uint8_t *, size_t, const struct sgpu_render_memory *, struct sgpu_report *, struct sgpu_render_live_result *): assertion \"memory->pages==1920 && memory->tables==(uint8_t *)allocation[0].va && memory->pixels==(uint8_t *)allocation[1].va && sgpu_render_validate(memory)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-free-exposed",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-free-exposed",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-free-exposed/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 7,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c:179: int main(int, char **): assertion \"!frees && sgpu_render_pixels_kva\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-wrong-dispatch",
+      "kind": "adapter",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-wrong-dispatch",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-wrong-dispatch/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 30,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live_adapter.c:164: int main(int, char **): assertion \"core_calls==1 && !probes && !sessions && !loops\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-halt",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-halt",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-halt/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-halt/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:170: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"(value==SG_S2CR_FAULT || value==0) && (cp==3 || cp==7 || cp==11 || cp==15)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-cp-unknown-bits",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-unknown-bits",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-unknown-bits/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-unknown-bits/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 27,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:170: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"(value==SG_S2CR_FAULT || value==0) && (cp==3 || cp==7 || cp==11 || cp==15)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-cp-state-bypass",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-state-bypass",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-state-bypass/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-state-bypass/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 32,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:175: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"value==1 && (cp==3 || cp==7 || cp==11 || cp==15) && *reg(b,SG_SMMU,SG_CB)==0x1126\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-cp-one-request",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-one-request",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-one-request/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-one-request/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 30,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:170: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"(value==SG_S2CR_FAULT || value==0) && (cp==3 || cp==7 || cp==11 || cp==15)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-cp-other-request",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-other-request",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-other-request/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-other-request/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 29,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:170: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"(value==SG_S2CR_FAULT || value==0) && (cp==3 || cp==7 || cp==11 || cp==15)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-cp-resume-unknown-bits",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-resume-unknown-bits",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-resume-unknown-bits/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-cp-resume-unknown-bits/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 28,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:265: int main(int, char **): assertion \"result.failure.kind==SG_FAIL_READBACK && !result.failure.elapsed_us && !result.failure.budget_us\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-disable-cb",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-disable-cb",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-disable-cb/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-disable-cb/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:241: int main(int, char **): assertion \"pass && result.passed && result.phase==SG_LIVE_DONE && !result.error && result.exposed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-fault-route",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-fault-route",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-fault-route/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-fault-route/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:166: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"*reg(b,SG_SMMU,SG_S2CR0)==SG_S2CR_FAULT\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-restore-route",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-restore-route",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-restore-route/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-restore-route/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:241: int main(int, char **): assertion \"pass && result.passed && result.phase==SG_LIVE_DONE && !result.error && result.exposed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-skip-asid",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-asid",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-asid/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-asid/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:181: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"value==0 && m->tlbi\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-skip-sync",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-sync",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-sync/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-sync/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:165: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"m->tlbi && m->sync && m->status_reads\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-skip-tlb-wait",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-tlb-wait",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-tlb-wait/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-skip-tlb-wait/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 1,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:165: void live_write(void *, enum sgpu_block, uint32_t, uint32_t): assertion \"m->tlbi && m->sync && m->status_reads\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-actual-root",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-actual-root",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-actual-root/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-actual-root/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 12,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:253: int main(int, char **): assertion \"!pass && result.error && result.requested && result.started && !result.passed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-legacy-mapping",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-legacy-mapping",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-legacy-mapping/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-legacy-mapping/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 15,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:253: int main(int, char **): assertion \"!pass && result.error && result.requested && result.started && !result.passed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-retention",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-retention",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-retention/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-retention/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 4,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:254: int main(int, char **): assertion \"result.exposed==(test!=13 && test!=20)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-padding",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-padding",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-padding/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-padding/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 11,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:253: int main(int, char **): assertion \"!pass && result.error && result.requested && result.started && !result.passed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-compare",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-compare",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-compare/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-compare/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 10,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:253: int main(int, char **): assertion \"!pass && result.error && result.requested && result.started && !result.passed\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-private-fence",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-private-fence",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-private-fence/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-private-fence/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 9,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:257: int main(int, char **): assertion \"result.phase==SG_LIVE_FENCE && result.error==SG_COMMAND_TIMEOUT\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mutant-offset",
+      "kind": "core",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-offset",
+        "-I",
+        "${HOST_TMP}/live0221-vvu4d3ok",
+        "-I",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-offset/santoni_gpu_core.c",
+        "${HOST_TMP}/live0221-vvu4d3ok/current/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/live0221-vvu4d3ok/mutant-offset/test"
+      ],
+      "compile_exit": 0,
+      "compile_stdout": "",
+      "compile_stderr": "",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_live.c:84: void live_execute(struct live_model *, uint32_t): assertion \"src==SGPU_RENDER_VA+SGPU_PAGE && dst==SGPU_RENDER_VA+962*SGPU_PAGE\" failed\n"
+        }
+      ]
+    }
+  ],
+  "native_link_inputs_sha256": {
+    "tests/native_santoni_gpu_core.py": "7474bd3d36b049ce481f059b95f38d5df01709c883ea1362e653e68d4d5c696e"
+  },
+  "success": true,
+  "hardware_verified": false,
+  "inputs_sha256": {
+    "xnu/patches/0221-santoni-gpu-live-offscreen-blits.patch": "43df7c8d9ca7a95dcf50ea4bc76d3cc681a12c07c26c726e5423b44b2c65e0a8",
+    "xnu/patches/0222-santoni-gpu-live-cp-readback.patch": "fe812af1776a4ce974459c739fc9c2007f3a1c77b90dde2877d376477299f756",
+    "tests/test_santoni_gpu_live.c": "50feec452b172bc4820af2f21c80fdd75811c61ba9dbc7d5fc3c6a20a38cbaea",
+    "tests/test_santoni_gpu_live_adapter.c": "a0b691d56e1b74b031ee87ef64ffd938f5fe672eb2e5688a057694f2c7a931d0",
+    "tests/test_santoni_gpu_live.py": "eb51dcfda663a45b59148196204a65b9627929190d9c2177a570c13d5dff6331",
+    "tests/test_santoni_gpu_session.c": "106c28ae22c82f8f3b76dd841ff358f667b7860c661ab750742e81e02b31f168",
+    "tests/test_santoni_gpu_mock.c": "8a7de12d8eafa69d2f95df2414cfcf5fb721d8dc017b4614a0d4b8964a961aec",
+    "tests/reconstruct_santoni_touch.py": "c249ccf32a2114774ca7ce9e0ef5ba19bc1196d2c6ce795f59ddcc6f5b29ae48"
+  },
+  "public_metadata_redaction": {
+    "scope": "absolute host paths only",
+    "original_receipt_sha256": "82cb00bbefbde5f314905b0246ab6c173f99f7e5b86da4cf9ae22c17683d602e",
+    "results_and_source_input_hashes_preserved": true,
+    "path_placeholders": [
+      "${PROJECT_ROOT}",
+      "${HOST_TMP}",
+      "${HOST_HOME}"
+    ]
+  }
+}

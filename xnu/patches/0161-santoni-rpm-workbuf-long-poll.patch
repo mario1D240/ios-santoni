@@ -1,0 +1,131 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -4091,10 +4091,11 @@
+ }
+ 
+ /*
+- * The Boot 26 scan found a reply packet ("req\0" then "msg#" records) at
+- * msg-ram offset 0 - the first bank's start, not the toc-implied rx fifo
+- * at 0x68000+0x1000 the RPM never writes. Poll the region directly; the
+- * layout matches santoni_rpm_parse_reply byte for byte.
++ * The RPM's work buffer is msg-ram offset 0: it stages a copy of our
++ * request there (Boot 27 pre/post dumps) and then writes the reply
++ * records ("msg#" with our id, "err" text) over it (Boot 26 scan).
++ * Poll up to 3 s - 700 ms was too short - and let the parser require
++ * the id match so the request copy alone never false-acks.
+  */
+ static bool
+ santoni_rpm_poll_region(unsigned ldo, uint32_t id)
+@@ -4103,14 +4104,7 @@
+ 	if (r[0] != RPM_MSG_REQ) {
+ 		return false;
+ 	}
+-	uint32_t len = r[1];
+-	if (len == 0 || len > 512u) {
+-		len = 96u;
+-	}
+-	uint32_t take = len;
+-	if (take > sizeof(santoni_smd.resp) - 1u) {
+-		take = sizeof(santoni_smd.resp) - 1u;
+-	}
++	uint32_t take = 128u;
+ 	for (uint32_t i = 0; i < take; i++) {
+ 		santoni_smd.resp[i] = (uint8_t)*(volatile uint8_t *)
+ 		    (santoni_smd.msgram + i);
+@@ -4147,70 +4141,37 @@
+ 		RPM_KEY_UV, 4u, uv,
+ 	};
+ 
+-	for (int attempt = 0; attempt < 2; attempt++) {
+-		if (attempt == 0) {
+-			santoni_rpm_dump_region("pre ");
+-		}
+-		santoni_smd.resp_ready = false;
+-		if (!santoni_smd_send(msg, sizeof(msg))) {
+-			return false;
+-		}
+-		for (int ms = 0; ms < 700 && !santoni_smd.resp_ready; ms++) {
+-			(void)santoni_smd_rx_drain();
+-			/* The reply lands at msg-ram offset 0 (Boot 26 scan). */
+-			if (santoni_rpm_poll_region(ldo, id)) {
+-				return true;
+-			}
+-			if (!santoni_smd.resp_ready) {
+-				delay(1000);
+-			}
++	/*
++	 * Single attempt, long poll: the RPM stages a copy of our request
++	 * at msg-ram offset 0 and then writes the reply records ("msg#"
++	 * with our id) over it (Boot 26/27 videos).  700 ms was too short,
++	 * and the old fifo rebase wrote our retries straight into that
++	 * work buffer - gone.  The parser requires the id match, so the
++	 * request copy alone never false-acks.
++	 */
++	santoni_rpm_dump_region("pre ");
++	santoni_smd.resp_ready = false;
++	if (!santoni_smd_send(msg, sizeof(msg))) {
++		return false;
++	}
++	for (int ms = 0; ms < 3000; ms += 10) {
++		(void)santoni_smd_rx_drain();
++		if (santoni_rpm_poll_region(ldo, id)) {
++			santoni_rpm_dump_region("ack ");
++			return true;
+ 		}
+-		santoni_rpm_dump_region("post");
+ 		if (santoni_smd.resp_ready) {
+ 			break;
+ 		}
+-		printf("SANTONI RPM: L%u: no answer (attempt %d)\n", ldo,
+-		    attempt);
+-		if (attempt == 0) {
+-			/* Where does reply magic actually live? */
+-			unsigned hits = 0;
+-			for (uint32_t off = 0;
+-			    off + 4u <= RPM_MSGRAM_SIZE && hits < 6u;
+-			    off += 4u) {
+-				uint32_t w = *(volatile uint32_t *)
+-				    (santoni_smd.msgram + off);
+-				if (w == RPM_MSG_REQ || w == RPM_MSG_MSG_ID) {
+-					printf("SANTONI RPM: scan %#x: "
+-					    "magic %08x\n", off, w);
+-					hits++;
+-				}
+-			}
+-			uint32_t gm = *(volatile uint32_t *)(santoni_smd.msgram +
+-			    RPM_MSGRAM_SIZE - 0x100u);
+-			printf("SANTONI RPM: msgram end=%#x\n", gm);
+-			if (!santoni_smd.alt_tried &&
+-			    santoni_smd.fifo_aux > (uint32_t)RPM_MSGRAM_PHYS &&
+-			    santoni_smd.fifo_off < RPM_MSGRAM_SIZE) {
+-				santoni_smd.alt_tried = true;
+-				santoni_smd.txfifo = santoni_smd.msgram +
+-				    santoni_smd.fifo_off;
+-				santoni_smd.rxfifo = santoni_smd.txfifo +
+-				    santoni_smd.fifo_size;
+-				smd_write32(santoni_smd.txinfo, INFO_HEAD, 0);
+-				smd_write32(santoni_smd.rxinfo, INFO_TAIL, 0);
+-				santoni_smd_kick();
+-				printf("SANTONI RPM: fifo rebased to "
+-				    "msgram+%#x, retrying\n",
+-				    santoni_smd.fifo_off);
+-			}
+-		}
++		delay(10000);
+ 	}
+-	if (!santoni_smd.resp_ready) {
+-		/* SMD data stayed silent: if this RPM is a glink speaker
+-		 * (grt0 TOC in the second bank), vote over glink. */
+-		return santoni_glink_vote(ldo, uv);
+-	}
+-	return santoni_rpm_parse_reply(ldo, id);
++	santoni_rpm_dump_region("post");
++	if (santoni_smd.resp_ready) {
++		return santoni_rpm_parse_reply(ldo, id);
++	}
++	printf("SANTONI RPM: L%u: no answer in 3 s\n", ldo);
++	/* glink is dead on this RPM (no grt0) but costs one register read. */
++	return santoni_glink_vote(ldo, uv);
+ }
+ 
+ /*

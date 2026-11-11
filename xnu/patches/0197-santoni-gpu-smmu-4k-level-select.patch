@@ -1,0 +1,11 @@
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -497,7 +497,7 @@
+         !checked_write32(p, SG_SMMU, SG_GR1_CBAR0, ~0u, BIT(16) | 0xf300u) ||
+         !checked_write32(p, SG_SMMU, SG_CB_TTBCR2, ~0u, (7u << 15) | BIT(4)) ||
+         !checked_write32(p, SG_SMMU, SG_CB_TTBCR, ~0u,
+-            BIT(23) | (2u << 12) | BIT(10) | BIT(8) | 32u)) return false;
++            BIT(23) | (2u << 12) | BIT(10) | BIT(8) | BIT(6) | 32u)) return false;
+     p->dma_exposed = true; /* page-table walk references are DMA too */
+     if (!checked_write64(p, SG_SMMU, SG_CB_TTBR0, p->memory.pa[0] | (1ull << 48)) ||
+         !checked_write64(p, SG_SMMU, SG_CB_TTBR1, 1ull << 48) ||

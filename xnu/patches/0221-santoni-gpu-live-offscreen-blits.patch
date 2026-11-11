@@ -1,0 +1,460 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index f3d8969..ab1ce41 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -1211,6 +1211,89 @@ static void __attribute__((noinline)) sgpu_session_loop(void)
+         state.state,state.reason,state.last_sequence,state.wptr,state.error,state.first_failed_id,idle,SGPU_POOL_BYTES);
+ }
+
++/* Once-only full-buffer diagnostic, separate from the scalar client/producer. */
++static uint32_t sgpu_render_enabled, sgpu_render_allocation_attempted;
++static vm_offset_t sgpu_render_tables_kva, sgpu_render_pixels_kva;
++static bool sgpu_render_allocation_retained;
++static uint64_t sgpu_render_page_pas[SGPU_RENDER_LIVE_PAGES];
++static struct sgpu_render_memory sgpu_render_owned;
++
++static bool __attribute__((noinline)) sgpu_render_options(uint32_t mode)
++{
++    uint32_t enabled = 0, user_exec = 0, zap = 0, scm = 0, cache = 0;
++    sgpu_render_enabled = 0;
++    (void)PE_parse_boot_argn("santonigpu_render", &enabled, sizeof(enabled));
++    if (enabled == 0) return true;
++    (void)PE_parse_boot_argn("santonigpu_user_exec", &user_exec, sizeof(user_exec));
++    (void)PE_parse_boot_argn("santonigpu_zap", &zap, sizeof(zap));
++    (void)PE_parse_boot_argn("santonigpu_scm", &scm, sizeof(scm));
++    (void)PE_parse_boot_argn("santonigpu_cache", &cache, sizeof(cache));
++    if (enabled != 1 || mode != 3 || sg.stock_unsecure != 1 || sg.stock_pixels != 1 ||
++        sg.g3 != 1 || sg.session != 1 || sg.user || sg.user_test || user_exec || zap || scm || cache) return false;
++    sgpu_render_enabled = 1;
++    return true;
++}
++
++static void __attribute__((noinline)) sgpu_render_release(void)
++{
++    if (sgpu_render_allocation_retained) return;
++    if (sgpu_render_pixels_kva) kmem_free(kernel_map,sgpu_render_pixels_kva,
++        SGPU_RENDER_LIVE_PAGES * SGPU_PAGE);
++    if (sgpu_render_tables_kva) kmem_free(kernel_map,sgpu_render_tables_kva,
++        SGPU_RENDER_TABLE_PAGES * SGPU_PAGE);
++    sgpu_render_pixels_kva = sgpu_render_tables_kva = 0;
++    sgpu_render_owned = (struct sgpu_render_memory){0};
++}
++
++static bool __attribute__((noinline)) sgpu_render_allocate(void)
++{
++    if (sgpu_render_enabled != 1 || sgpu_render_allocation_attempted ||
++        page_shift != 12 || page_size != SGPU_PAGE) return false;
++    sgpu_render_allocation_attempted = 1;
++    if (kmem_alloc(kernel_map,&sgpu_render_tables_kva,SGPU_RENDER_TABLE_PAGES * SGPU_PAGE,
++        KMA_DATA | KMA_ZERO,VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) return false;
++    if (kmem_alloc(kernel_map,&sgpu_render_pixels_kva,SGPU_RENDER_LIVE_PAGES * SGPU_PAGE,
++        KMA_DATA | KMA_ZERO,VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) {
++        sgpu_render_release(); return false;
++    }
++    sgpu_render_owned = (struct sgpu_render_memory){.tables=(uint8_t *)sgpu_render_tables_kva,
++        .pixels=(uint8_t *)sgpu_render_pixels_kva,.pa=sgpu_render_page_pas,.pages=SGPU_RENDER_LIVE_PAGES};
++    for (unsigned i = 0; i < SGPU_RENDER_TABLE_PAGES; i++)
++        sgpu_render_owned.table_pa[i] = (uint64_t)pmap_find_phys(kernel_pmap,
++            sgpu_render_tables_kva + i * SGPU_PAGE) << 12;
++    for (unsigned i = 0; i < SGPU_RENDER_LIVE_PAGES; i++)
++        sgpu_render_page_pas[i] = (uint64_t)pmap_find_phys(kernel_pmap,
++            sgpu_render_pixels_kva + i * SGPU_PAGE) << 12;
++    if (!sgpu_render_validate(&sgpu_render_owned)) { sgpu_render_release(); return false; }
++    return true; /* individually verified pages; no physical-contiguity assumption */
++}
++
++static void __attribute__((noinline)) sgpu_render_worker(const struct sgpu_ops *ops,
++    const uint8_t *firmware, size_t bytes, struct sgpu_report *boot)
++{
++    if (sgpu_render_enabled != 1 || !ops || !boot) return;
++    if (!sgpu_render_allocate()) {
++        printf("SANTONI GPU: RENDER allocation rejected; no bootstrap/new GPU access\n");
++        return;
++    }
++    struct sgpu_render_live_result result = {0};
++    sgpu_render_allocation_retained = true; /* never release while the call may expose pages */
++    bool passed = sgpu_render_live_start(ops,sg.mode,sgpu_render_enabled,firmware,bytes,
++        &sgpu_render_owned,boot,&result);
++    if (!result.exposed) {
++        sgpu_render_allocation_retained = false;
++        sgpu_render_release(); /* only newly owned spans; legacy retention is unchanged */
++    }
++    sgpu_failure_summary("RENDER FIRST_FAIL",&result.failure);
++    printf("SANTONI GPU: RENDER RESULT pass=%u phase=%u error=%u submitted=%u completed=%u seq=%u wptr=%u pixels=%u width=%u height=%u stride=%u\n",
++        passed?1u:0u,result.phase,result.error,result.submitted,result.completed,result.sequence,
++        result.wptr,result.pixels,SGPU_RENDER_WIDTH,SGPU_RENDER_HEIGHT,SGPU_RENDER_STRIDE);
++    printf("SANTONI GPU: RENDER STATE started=%u exposed=%u publish_attempted=%u retained_new=%u retained_legacy=%u; OFFSCREEN BGRA ONLY; NO PAS; CPU DISPLAY/INPUT RETAINED\n",
++        result.started?1u:0u,result.exposed?1u:0u,result.publish_attempted?1u:0u,
++        sgpu_render_allocation_retained ? (SGPU_RENDER_TABLE_PAGES + SGPU_RENDER_LIVE_PAGES)*SGPU_PAGE : 0u,
++        boot->memory_retained ? SGPU_POOL_BYTES : 0u);
++}
++
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
+     if (!santoni_gpu_user_launch_options_ok(sg.mode)) {
+@@ -1256,6 +1339,11 @@ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused
+         thread_terminate_self();
+         return;
+     }
++    if (!sgpu_render_options(sg.mode)) {
++        printf("SANTONI GPU: invalid full-buffer render role; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
+     if (sgpu_pas_cache_preflight(sg.mode)) {
+         thread_terminate_self();
+         return;
+@@ -1279,6 +1367,11 @@ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused
+     };
+     struct sgpu_report report={0};
+     printf("SANTONI GPU: start mode=%u; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\n", sg.mode);
++    if (sgpu_render_enabled == 1) {
++        sgpu_render_worker(&ops,firmware,firmware_size,&report);
++        thread_terminate_self();
++        return;
++    }
+     bool session_started=false, passed=false;
+     if (sg.session==1) session_started=sgpu_session_start(&ops,sg.mode,firmware,firmware_size,&report);
+     else passed = sgpu_probe(&ops, sg.mode, firmware, firmware_size, &report);
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+index 27c4857..a457480 100644
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -1969,7 +1969,7 @@ uint32_t sgpu_client_call(struct sgpu_client *client, struct sgpu_session_queue
+ /* First render bridge wave: an OFFLINE, caller-owned page-table arena and
+  * kernel-built copy contract. No boot role, allocator, IOUserClient, live CB
+  * replacement, ring publication or display integration is added here.
+- * SGPU_PAGE / SGPU_VA_BASE / PTE_RW come from Santoni's programmed SMMUv2
++ * SGPU_PAGE / SGPU_RENDER_VA / PTE_RW come from Santoni's programmed SMMUv2
+  * CB0 in this file, not Sailfish's A530 VA/PTE/compute constants.
+  * Four adjacent L3 tables cover 8MiB at the same 2MiB-aligned base; this is
+  * prepared table content, not evidence that a live GPU accepted the window.
+@@ -2028,8 +2028,8 @@ static SG_RENDER_FN bool sgpu_render_tables_valid(const struct sgpu_render_arena
+     for (unsigned i = 0; i < SGPU_PAGE / 8; i++) {
+         uint64_t want = i == 0 ? m->table_pa[1] | 3 : 0;
+         if (l1[i] != want) return false;
+-        want = i >= (SGPU_VA_BASE >> 21) && i < (SGPU_VA_BASE >> 21) + 4 ?
+-            m->table_pa[2 + i - (SGPU_VA_BASE >> 21)] | 3 : 0;
++        want = i >= (SGPU_RENDER_VA >> 21) && i < (SGPU_RENDER_VA >> 21) + 4 ?
++            m->table_pa[2 + i - (SGPU_RENDER_VA >> 21)] | 3 : 0;
+         if (l2[i] != want) return false;
+     }
+     if (l3[0] != (m->table_pa[6] | PTE_RW) || !a->va_used[0]) return false;
+@@ -2090,7 +2090,7 @@ SG_RENDER_FN bool sgpu_render_init(struct sgpu_render_arena *a,
+     uint64_t *l2 = l1 + SGPU_PAGE / 8;
+     uint64_t *l3 = l2 + SGPU_PAGE / 8;
+     l1[0] = m->table_pa[1] | 3;
+-    for (unsigned i = 0; i < 4; i++) l2[(SGPU_VA_BASE >> 21) + i] = m->table_pa[2 + i] | 3;
++    for (unsigned i = 0; i < 4; i++) l2[(SGPU_RENDER_VA >> 21) + i] = m->table_pa[2 + i] | 3;
+     l3[0] = m->table_pa[6] | PTE_RW;
+     a->va_used[0] = 1;
+     a->initialized = true;
+@@ -2211,13 +2211,13 @@ SG_RENDER_FN uint32_t sgpu_render_begin(struct sgpu_render_arena *a, uint64_t ow
+             if (reg == 0x2107 || reg == 0x2110) {
+                 const struct sgpu_render_plane *p = reg == 0x2107 ? &sp : &dp;
+                 const struct sgpu_render_bo *b = reg == 0x2107 ? s : d;
+-                commands[i + 1] = SGPU_VA_BASE + b->first * SGPU_PAGE + p->offset;
++                commands[i + 1] = SGPU_RENDER_VA + b->first * SGPU_PAGE + p->offset;
+                 commands[i + 3] = (p->stride / 64) | ((uint32_t)((uint64_t)p->stride * p->height / 64) << 16);
+             }
+         } else if (((h >> 16) & 0x7f) == 0x2c) {
+             commands[i + 2] = commands[i + 4] = (sp.width - 1) | ((sp.height - 1) << 16);
+         } else if (((h >> 16) & 0x7f) == 0x46) {
+-            commands[i + 1] = SGPU_VA_BASE;
++            commands[i + 1] = SGPU_RENDER_VA;
+             if (commands[i] == 4) commands[i + 3] = a->submitted + 1;
+         }
+         i += count;
+@@ -2271,4 +2271,251 @@ SG_RENDER_FN bool sgpu_render_wait(struct sgpu_render_arena *a)
+ }
+ #undef SG_RENDER_FN
+
++bool __attribute__((noinline)) sgpu_render_validate(const struct sgpu_render_memory *m)
++{ return sgpu_render_memory_valid(m); }
++
++/* Live full-size copy diagnostic. The legacy TTBR, firmware, ring, marker
++ * and G3 mappings remain owned and unchanged. Four unused L2 entries point
++ * to the prepared 8MiB pixel window, starting after the legacy 2MiB window.
++ * One worker only; no queue/client is published, no live backing is freed.
++ */
++static struct {
++    bool attempted, linked;
++    struct sgpu_render_arena arena;
++    struct sgpu_render_live_result result;
++    struct sgpu_render_plane source, destination;
++    uint32_t commands[SGPU_RENDER_WORDS];
++    uint64_t legacy_l3[SGPU_PAGE / 8];
++} sgpu_render_live;
++
++static bool __attribute__((noinline)) sgpu_render_live_fail(uint32_t error)
++{
++    struct sgpu_render_live_result *r = &sgpu_render_live.result;
++    struct probe *p = &session_core.p;
++    if (!r->error) {
++        r->error = error;
++        r->failure = p->report ? p->report->failure : (struct sgpu_failure){0};
++    }
++    r->exposed = sgpu_render_live.arena.exposed;
++    sgpu_render_abort(&sgpu_render_live.arena, SG_RENDER_FAULT);
++    sgpu_session_stop();
++    return false;
++}
++
++static bool __attribute__((noinline)) sgpu_render_live_tables(bool linked)
++{
++    struct sgpu_render_arena *a = &sgpu_render_live.arena;
++    struct sgpu_memory *old = &session_core.p.memory;
++    if (!sgpu_memory_validate(old) || !sgpu_render_tables_valid(a) ||
++        sgpu_render_overlap(old->va, SGPU_POOL_BYTES, a->memory.tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE) ||
++        sgpu_render_overlap(old->va, SGPU_POOL_BYTES, a->memory.pixels, a->memory.pages * SGPU_PAGE)) return false;
++    /* New PAs must not alias ANY retained bootstrap page, including tables. */
++    for (unsigned i = 0; i < SGPU_POOL_PAGES; i++) {
++        for (unsigned j = 0; j < SGPU_RENDER_TABLE_PAGES; j++)
++            if (old->pa[i] == a->memory.table_pa[j]) return false;
++        for (unsigned j = 0; j < a->memory.pages; j++)
++            if (old->pa[i] == a->memory.pa[j]) return false;
++    }
++    const uint64_t *l1 = (const uint64_t *)(const void *)old->va;
++    const uint64_t *l2 = (const uint64_t *)(const void *)(old->va + SGPU_PAGE);
++    const uint64_t *l3 = (const uint64_t *)(const void *)(old->va + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < SGPU_PAGE / 8; i++) {
++        if (l3[i] != sgpu_render_live.legacy_l3[i]) return false;
++        if (l1[i] != (i == 0 ? old->pa[1] | 3 : 0)) return false;
++        uint64_t want = i == (SGPU_VA_BASE >> 21) ? old->pa[2] | 3 : 0;
++        if (linked && i >= (SGPU_RENDER_VA >> 21) && i < (SGPU_RENDER_VA >> 21) + 4)
++            want = a->memory.table_pa[2 + i - (SGPU_RENDER_VA >> 21)] | 3;
++        if (l2[i] != want) return false;
++    }
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_render_live_state(uint32_t wptr, uint32_t me, uint32_t cb, uint32_t route)
++{
++    struct probe *p = &session_core.p;
++    if (!p->gpu_live || !p->gpu_owned || !p->gpu_resumed || !p->smmu_live ||
++        !p->dma_exposed || !p->commands_started || p->restoring) return false;
++    const uint32_t values[][3] = {
++        {SG_GPU,SG_TRUST,0},{SG_GPU,SG_RB_RPTR,wptr},{SG_GPU,SG_RB_WPTR,wptr},
++        {SG_GPU,SG_ME_CNTL,me},{SG_GPU,SG_INT_MASK,0},
++        {SG_GPU,SG_RB_BASE,SGPU_RING_VA},{SG_GPU,SG_RB_BASE_HI,0},
++        {SG_GPU,SG_RB_CNTL,BIT(27)|(2u<<8)|9u},
++        {SG_GPU,SG_PM4_BASE,SGPU_PM4_VA},{SG_GPU,SG_PM4_BASE+4,0},
++        {SG_GPU,SG_PFP_BASE,SGPU_PFP_VA},{SG_GPU,SG_PFP_BASE+4,0},
++        {SG_SMMU,SG_CB,cb},{SG_SMMU,SG_S2CR0,route},{SG_SMMU,SG_GR1_CBA2R0,1},
++        {SG_SMMU,SG_GR1_CBAR0,0x1f300u},{SG_SMMU,SG_CB_TTBCR,0x00802560u},
++        {SG_SMMU,SG_CB_TTBCR2,0x38010u},{SG_SMMU,SG_CB_MAIR0,0xff44u},
++        {SG_SMMU,SG_CB_MAIR0+4,0},{SG_SMMU,SG_CB_TTBR0,(uint32_t)p->memory.pa[0]},
++        {SG_SMMU,SG_CB_TTBR0+4,0x10000u}};
++    for (unsigned i = 0; i < COUNT(values); i++)
++        if (!sgpu_stock_check32(p, (enum sgpu_block)values[i][0], values[i][1], values[i][2])) return false;
++    if ((read32(p,SG_SMMU,0x20)&BIT(27)) && !sgpu_stock_check32(p,SG_SMMU,SG_SMR0,BIT(31))) return false;
++    faults(p);
++    return !has_fault(p->report) && poll(p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000);
++}
++
++static bool __attribute__((noinline)) sgpu_render_live_link(void)
++{
++    struct probe *p = &session_core.p;
++    struct sgpu_render_arena *a = &sgpu_render_live.arena;
++    struct sgpu_render_live_result *r = &sgpu_render_live.result;
++    r->phase = SG_LIVE_TABLES;
++    if (!sgpu_render_live_tables(false) || !sgpu_render_live_state(170,0,0x1127,0))
++        return sgpu_render_live_fail(SG_BAD_MEMORY);
++    trace(p, "RENDER owned link; legacy TTBR/control mappings retained", SGPU_RENDER_VA, a->memory.pages, 0);
++    /* Recheck after every diagnostic callback, before taking the CP/CB offline. */
++    if (!sgpu_render_live_tables(false) || !sgpu_render_live_state(170,0,0x1127,0))
++        return sgpu_render_live_fail(SG_BAD_MEMORY);
++    r->phase = SG_LIVE_HALT;
++    a->exposed = r->exposed = true; /* conservative retention before any handoff write */
++    if (!checked_write32(p, SG_GPU, SG_ME_CNTL, ~0u, SG_CP_STOP_MASK) ||
++        !poll(p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000) ||
++        !checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, SG_S2CR_FAULT) ||
++        !checked_write32(p, SG_SMMU, SG_CB, ~0u, 0x1126u) ||
++        !sgpu_render_live_state(170,3,0x1126,SG_S2CR_FAULT)) return sgpu_render_live_fail(SG_BAD_SMMU);
++    r->phase = SG_LIVE_LINK;
++    if (!sgpu_render_live_tables(false)) return sgpu_render_live_fail(SG_BAD_MEMORY);
++    p->ops->clean(p->ops->ctx, a->memory.tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE);
++    uint64_t *l2 = (uint64_t *)(void *)(p->memory.va + SGPU_PAGE);
++    for (unsigned i = 0; i < 4; i++)
++        l2[(SGPU_RENDER_VA >> 21) + i] = a->memory.table_pa[2 + i] | 3;
++    sgpu_render_live.linked = true;
++    p->ops->clean(p->ops->ctx, l2, SGPU_PAGE);
++    if (!sgpu_render_live_tables(true)) return sgpu_render_live_fail(SG_BAD_MEMORY);
++    r->phase = SG_LIVE_TLB;
++    /* vendor arm-smmu.c arm_smmu_tlb_inv_context/arm_smmu_tlb_sync:
++     * ASID maintenance commands are checked by TLBSYNC -> TLBSTATUS, not an
++     * echoed command value. These TWO command registers alone use readable
++     * mask zero; all CP/CB configuration and RPTR/WPTR checks use full masks.
++     * ASID1 is read back from the unchanged owned TTBR high word above.
++     */
++    if (!checked_write32(p, SG_SMMU, SG_CB_TLBIASID, 0, 1) ||
++        !checked_write32(p, SG_SMMU, SG_CB_TLBSYNC, 0, 0) ||
++        !poll(p, SG_SMMU, SG_CB_TLBSTATUS, 1, 0, 10000)) return sgpu_render_live_fail(SG_TLB_TIMEOUT);
++    r->phase = SG_LIVE_ENABLE;
++    if (!sgpu_render_live_tables(true) || !sgpu_render_live_state(170,3,0x1126,SG_S2CR_FAULT) ||
++        !checked_write32(p, SG_SMMU, SG_CB, ~0u, 0x1127u) ||
++        !sgpu_render_live_state(170,3,0x1127,SG_S2CR_FAULT) ||
++        !checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, 0) ||
++        !sgpu_render_live_state(170,3,0x1127,0) ||
++        !checked_write32(p, SG_GPU, SG_ME_CNTL, ~0u, 0) ||
++        !sgpu_render_live_state(170,0,0x1127,0)) return sgpu_render_live_fail(SG_BAD_SMMU);
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_render_live_pattern(uint8_t *source, uint8_t *destination,
++    uint32_t pass, uint32_t width, uint32_t height, uint32_t stride)
++{
++    if (!source || !destination || !width || !height || width > 4096 || height > 4096 ||
++        stride < width * 4 || (stride & 63) || (uint64_t)stride * height > SGPU_RENDER_BO_BYTES) return false;
++    for (unsigned y = 0; y < height; y++) {
++        for (unsigned x = 0; x < width; x++) {
++            unsigned i = y * stride + x * 4;
++            source[i] = (uint8_t)(x * 13 + pass * 17);
++            source[i+1] = (uint8_t)(y * 11 + pass * 23);
++            source[i+2] = (uint8_t)((x + y) * 7 + pass * 31);
++            source[i+3] = 0xff;
++        }
++        for (unsigned i = width * 4; i < stride; i++)
++            source[y * stride + i] = 0x3c;
++    }
++    for (unsigned i = 0; i < height * stride; i++) destination[i] = 0xa5;
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_render_live_compare(const uint8_t *source,
++    const uint8_t *destination, uint32_t width, uint32_t height, uint32_t stride)
++{
++    if (!source || !destination || !width || !height || width > 4096 || height > 4096 ||
++        stride < width * 4 || (stride & 63) || (uint64_t)stride * height > SGPU_RENDER_BO_BYTES) return false;
++    for (unsigned y = 0; y < height; y++)
++        for (unsigned i = 0; i < stride; i++) {
++            uint8_t want = i < width * 4 ? source[y * stride + i] : 0xa5;
++            if (((const volatile uint8_t *)destination)[y * stride + i] != want) return false;
++        }
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_render_live_job(uint32_t pass)
++{
++    struct sgpu_render_arena *a = &sgpu_render_live.arena;
++    struct sgpu_render_live_result *r = &sgpu_render_live.result;
++    struct probe *p = &session_core.p;
++    uint8_t *source = NULL, *destination = NULL;
++    r->phase = SG_LIVE_SUBMIT;
++    r->publish_attempted = false;
++    if (!sgpu_render_live_tables(true) || !sgpu_render_live_state(r->wptr,0,0x1127,0) ||
++        !sgpu_render_cpu(a,1,sgpu_render_live.source.handle,0,SGPU_RENDER_BYTES,&source) ||
++        !sgpu_render_cpu(a,1,sgpu_render_live.destination.handle,0,SGPU_RENDER_BYTES,&destination))
++        return sgpu_render_live_fail(SG_BAD_MEMORY);
++    if (!sgpu_render_live_pattern(source,destination,pass,SGPU_RENDER_WIDTH,SGPU_RENDER_HEIGHT,SGPU_RENDER_STRIDE))
++        return sgpu_render_live_fail(SG_BAD_MEMORY);
++    uint32_t words = sgpu_render_begin(a,1,&sgpu_render_live.source,&sgpu_render_live.destination,
++        sgpu_render_live.commands,SGPU_RENDER_WORDS);
++    if (words != 73 || r->wptr > SGPU_PAGE/4 - 1 - words || !sgpu_render_live_tables(true) ||
++        !sgpu_render_live_state(r->wptr,0,0x1127,0)) return sgpu_render_live_fail(SG_BAD_MEMORY);
++    uint32_t *ring = (uint32_t *)(void *)(p->memory.va + 3 * SGPU_PAGE);
++    for (unsigned i = 0; i < words; i++) ring[r->wptr+i] = sgpu_render_live.commands[i];
++    r->sequence = a->busy;
++    r->wptr += words;
++    r->publish_attempted = true;
++    r->submitted++;
++    if (!consume(p,r->wptr)) return sgpu_render_live_fail(p->report->error ? p->report->error : SG_COMMAND_TIMEOUT);
++    r->phase = SG_LIVE_FENCE;
++    if (!sgpu_render_wait(a)) return sgpu_render_live_fail(
++        a->error == SG_RENDER_TIMEOUT ? SG_COMMAND_TIMEOUT : SG_FAULT);
++    if (!sgpu_render_live_tables(true) || !sgpu_render_live_state(r->wptr,0,0x1127,0))
++        return sgpu_render_live_fail(SG_BAD_MEMORY);
++    r->phase = SG_LIVE_COMPARE;
++    if (!sgpu_render_live_compare(source,destination,SGPU_RENDER_WIDTH,SGPU_RENDER_HEIGHT,SGPU_RENDER_STRIDE))
++        return sgpu_render_live_fail(SG_MARKER_MISMATCH);
++    r->completed++;
++    r->pixels += SGPU_RENDER_WIDTH * SGPU_RENDER_HEIGHT;
++    trace(p, "RENDER full BGRA copy/readback completed", pass, r->sequence, r->pixels);
++    return true;
++}
++
++bool __attribute__((noinline)) sgpu_render_live_start(const struct sgpu_ops *ops, uint32_t mode,
++    uint32_t enabled, const uint8_t *blob, size_t length, const struct sgpu_render_memory *memory,
++    struct sgpu_report *boot, struct sgpu_render_live_result *out)
++{
++    if (!ops || !memory || !boot || !out || enabled != 1 || mode != 3 ||
++        ops->stock_unsecure != 1 || ops->stock_pixels != 1 || ops->g3 != 1 || ops->session != 1 ||
++        sgpu_render_live.attempted || memory->pages != SGPU_RENDER_LIVE_PAGES ||
++        !sgpu_render_memory_valid(memory)) return false;
++    sgpu_render_live.attempted = true;
++    sgpu_render_live.result = (struct sgpu_render_live_result){.requested=true,.phase=SG_LIVE_BOOT};
++    bool passed = false;
++    if (!sgpu_session_start(ops,mode,blob,length,boot)) {
++        sgpu_render_live.result.error = boot->error && boot->error != SG_STOCK_HELD ? boot->error : SG_BAD_MODE;
++        goto done;
++    }
++    struct probe *p = &session_core.p;
++    sgpu_render_live.result.started = true;
++    sgpu_render_live.result.phase = SG_LIVE_READY;
++    if (!sgpu_session_prepare()) { (void)sgpu_render_live_fail(SG_BAD_MODE); goto done; }
++    const uint64_t *legacy = (const uint64_t *)(const void *)(p->memory.va + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < SGPU_PAGE / 8; i++) sgpu_render_live.legacy_l3[i] = legacy[i];
++    sgpu_session_stop(); /* no queue/client is ever published; legacy BOs remain mapped */
++    p->report->stage = SGPU_RENDER_LIVE_STAGE;
++    if (!sgpu_render_init(&sgpu_render_live.arena,memory,&session_core.ops)) {
++        (void)sgpu_render_live_fail(SG_BAD_MEMORY); goto done;
++    }
++    uint32_t source = sgpu_render_new(&sgpu_render_live.arena,1,SGPU_RENDER_BYTES);
++    uint32_t destination = sgpu_render_new(&sgpu_render_live.arena,1,SGPU_RENDER_BYTES);
++    if (!source || !destination) { (void)sgpu_render_live_fail(SG_BAD_MEMORY); goto done; }
++    sgpu_render_live.source = (struct sgpu_render_plane){source,0,SGPU_RENDER_WIDTH,
++        SGPU_RENDER_HEIGHT,SGPU_RENDER_STRIDE,SG_RENDER_BGRA8};
++    sgpu_render_live.destination = sgpu_render_live.source;
++    sgpu_render_live.destination.handle = destination;
++    sgpu_render_live.result.wptr = 170;
++    if (!sgpu_render_live_link() || !sgpu_render_live_job(1) || !sgpu_render_live_job(2)) goto done;
++    sgpu_render_live.result.phase = SG_LIVE_DONE;
++    sgpu_render_live.result.passed = passed = true;
++done:
++    sgpu_render_live.result.exposed = sgpu_render_live.arena.exposed;
++    *out = sgpu_render_live.result;
++    return passed;
++}
++
+ #endif
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+index 93994f3..23dfe9f 100644
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -184,6 +184,7 @@ struct sgpu_render_arena {
+     uint32_t next_handle, submitted, completed, busy, error, destination;
+     bool initialized, exposed;
+ };
++bool sgpu_render_validate(const struct sgpu_render_memory *);
+ bool sgpu_render_init(struct sgpu_render_arena *, const struct sgpu_render_memory *,
+     const struct sgpu_ops *);
+ uint32_t sgpu_render_new(struct sgpu_render_arena *, uint64_t, uint32_t);
+@@ -204,6 +205,28 @@ uint32_t sgpu_render_begin(struct sgpu_render_arena *, uint64_t,
+ bool sgpu_render_wait(struct sgpu_render_arena *);
+ void sgpu_render_abort(struct sgpu_render_arena *, uint32_t);
+
++#define SGPU_RENDER_VA (SGPU_VA_BASE + 0x200000u)
++#define SGPU_RENDER_WIDTH 720u
++#define SGPU_RENDER_HEIGHT 1280u
++#define SGPU_RENDER_STRIDE 3072u
++#define SGPU_RENDER_BYTES (SGPU_RENDER_HEIGHT * SGPU_RENDER_STRIDE)
++#define SGPU_RENDER_LIVE_PAGES (2u * SGPU_RENDER_BYTES / SGPU_PAGE)
++#define SGPU_RENDER_LIVE_STAGE 12u
++enum sgpu_render_live_phase { SG_LIVE_OFF, SG_LIVE_MEMORY, SG_LIVE_BOOT,
++    SG_LIVE_READY, SG_LIVE_TABLES, SG_LIVE_HALT, SG_LIVE_LINK, SG_LIVE_TLB,
++    SG_LIVE_ENABLE, SG_LIVE_SUBMIT, SG_LIVE_FENCE, SG_LIVE_COMPARE, SG_LIVE_DONE };
++struct sgpu_render_live_result {
++    uint32_t phase, error, submitted, completed, sequence, wptr, pixels;
++    bool requested, started, exposed, publish_attempted, passed;
++    struct sgpu_failure failure;
++};
++/* Once-only kernel diagnostic. The adapter owns the new backing; the core
++ * retains the existing bootstrap allocation and all exposed render backing.
++ * No producer, userspace mapping or display call may share this worker. */
++bool sgpu_render_live_start(const struct sgpu_ops *, uint32_t, uint32_t,
++    const uint8_t *, size_t, const struct sgpu_render_memory *,
++    struct sgpu_report *, struct sgpu_render_live_result *);
++
+ /* Register offsets are BYTES, from MSM4.9 a5xx_reg.h (which uses WORDS). */
+ #define SG_RB_BASE 0x2000u
+ #define SG_RB_BASE_HI 0x2004u

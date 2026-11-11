@@ -1,0 +1,84 @@
+Subject: [PATCH] santoni: pack 24-bit panel stores and present native frames at 30 Hz
+
+diff --git a/iokit/Kernel/arm/SweetFramebuffer.cpp b/iokit/Kernel/arm/SweetFramebuffer.cpp
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -452,7 +452,12 @@
+ 		}
+ 	}
+ #endif /* !SANTONI */
++	/* Santoni's native 720p frame is smaller than the old 1080p bring-up. */
++#if defined(SANTONI)
++	uint32_t hz = 30;
++#else
+ 	uint32_t hz = 10;
++#endif
+ 	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
+ 	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
+ 	fVsync->setTimeoutUS(SWEET_FB_VSYNC_US);
+@@ -609,7 +614,7 @@
+  * A swap only records the frame: copying 10 MB into the panel on every
+  * swap (backboardd presents at 60 Hz) took the whole CPU. The vsync timer
+  * shows the latest frame every fFlushTicks ticks (boot-arg sweetfb_hz,
+- * default 10 Hz).
++ * default 30 Hz on Santoni, 10 Hz on the older boards).
+  */
+ void
+ AppleCLCD::swap(const uint8_t *rec)
+@@ -657,17 +662,28 @@
+  * to the lowest address, and a solid red splash reads back red on this
+  * panel. Four-byte pixels are therefore stored as B,G,R in that order.
+  */
+-void
+-AppleCLCD::blitPanel()
+-{
+-	if (fBpp != 3 || fPanelVA == 0 || fPixels == 0) {
+-		return;
+-	}
+-	const uint8_t *src = (const uint8_t *)fPixels;
+-	for (uint32_t y = 0; y < fHeight; y++) {
+-		const uint32_t *in = (const uint32_t *)(src + (uint64_t)y * fRowBytes);
+-		uint8_t *out = (uint8_t *)(fPanelVA + (uint64_t)y * fPanelStride);
+-		for (uint32_t x = 0; x < fWidth; x++) {
++static void
++sweet_bgra_to_bgr24(uintptr_t panel, uint32_t panelStride, const uint8_t *src,
++    uint32_t srcStride, uint32_t width, uint32_t height)
++{
++	for (uint32_t y = 0; y < height; y++) {
++		const uint32_t *in = (const uint32_t *)(src + (uint64_t)y * srcStride);
++		volatile uint8_t *out = (volatile uint8_t *)(panel + (uint64_t)y * panelStride);
++		uint32_t x = 0;
++		/* The 720p panel has aligned rows. Pack four BGRA pixels into three
++		 * BGR words: 691,200 MMIO stores per frame instead of 2,764,800 byte
++		 * stores. Use scalar registers; kernel code must not use NEON/FP. */
++		if (((uintptr_t)out & 3u) == 0) {
++			for (; x + 4 <= width; x += 4, out += 12) {
++				uint32_t a = in[x], b = in[x + 1], c = in[x + 2], d = in[x + 3];
++				volatile uint32_t *words = (volatile uint32_t *)out;
++				words[0] = (a & 0x00ffffffu) | (b << 24);
++				words[1] = ((b >> 8) & 0x0000ffffu) | (c << 16);
++				words[2] = ((c >> 16) & 0x000000ffu) | (d << 8);
++			}
++		}
++		/* Preserve odd-width and unaligned destination rows without overrun. */
++		for (; x < width; x++) {
+ 			uint32_t p = in[x];
+ 			out[0] = (uint8_t)p;            /* blue  */
+ 			out[1] = (uint8_t)(p >> 8);     /* green */
+@@ -675,6 +691,16 @@
+ 			out += 3;
+ 		}
+ 	}
++}
++
++void
++AppleCLCD::blitPanel()
++{
++	if (fBpp != 3 || fPanelVA == 0 || fPixels == 0) {
++		return;
++	}
++	sweet_bgra_to_bgr24(fPanelVA, fPanelStride, (const uint8_t *)fPixels,
++	    fRowBytes, fWidth, fHeight);
+ 	/* Write-combining memory: complete the stores before the panel fetches. */
+ 	__asm__ volatile("dsb sy" ::: "memory");
+ }

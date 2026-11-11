@@ -1,0 +1,230 @@
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -52,11 +52,18 @@
+     void (*invalidate)(void *, const void *, uint32_t);
+     void (*trace)(void *, const char *, uint32_t, uint32_t, uint32_t);
+ };
++enum sgpu_failure_kind { SG_FAIL_NONE, SG_FAIL_OWNER, SG_FAIL_READBACK,
++    SG_FAIL_POLL, SG_FAIL_GUARD };
++struct sgpu_failure {
++    uint32_t kind, stage, block, offset, mask, want, old, written, got;
++    uint32_t elapsed_us, budget_us, saved_count;
++};
+ struct sgpu_report {
+     uint32_t stage, error, markers, trust, vbif, aon_delta, pixels;
+     uint32_t status, interrupt_status, smmu_fsr, smmu_global_fsr;
+     uint32_t pm4_version, pfp_version;
+-    bool memory_retained, restored;
++    bool memory_retained, restored, trust_read;
++    struct sgpu_failure failure, rollback_failure;
+ };
+ 
+ uint32_t sgpu_crc32(const uint8_t *, size_t);
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -43,7 +43,7 @@
+     struct sgpu_memory memory;
+     struct saved_reg saved[32];
+     uint32_t saved_count;
+-    bool gpu_live, smmu_live, dma_exposed;
++    bool gpu_live, smmu_live, dma_exposed, restoring;
+ };
+ 
+ static uint32_t little32(const uint8_t *p)
+@@ -166,17 +166,48 @@
+ static void trace(struct probe *p, const char *s, uint32_t a, uint32_t b, uint32_t c)
+ { p->ops->trace(p->ops->ctx, s, a, b, c); }
+ 
++/* Keep the first forward failure immutable across cleanup. A second record is
++ * reserved for rollback: restored=1 alone did not locate the original failure.
++ * These are failure-only traces, not new hardware accesses or extra sleeps. */
++static void __attribute__((noinline)) sgpu_failure(struct probe *p,
++    enum sgpu_failure_kind kind, enum sgpu_block block, uint32_t off,
++    uint32_t mask, uint32_t want, uint32_t old, uint32_t written, uint32_t got,
++    uint32_t elapsed_us, uint32_t budget_us)
++{
++    struct sgpu_failure *f = p->restoring ? &p->report->rollback_failure : &p->report->failure;
++    if (f->kind != SG_FAIL_NONE) return;
++    *f = (struct sgpu_failure){.kind=kind, .stage=p->report->stage,
++        .block=block, .offset=off, .mask=mask, .want=want, .old=old,
++        .written=written, .got=got, .elapsed_us=elapsed_us,
++        .budget_us=budget_us, .saved_count=p->saved_count};
++    trace(p, p->restoring ? "ROLLBACK_FAIL stage/kind/block" : "FAIL stage/kind/block",
++        f->stage, f->kind, f->block);
++    trace(p, p->restoring ? "ROLLBACK_FAIL offset/mask/want" : "FAIL offset/mask/want",
++        f->offset, f->mask, f->want);
++    trace(p, p->restoring ? "ROLLBACK_FAIL old/written/got" : "FAIL old/written/got",
++        f->old, f->written, f->got);
++    trace(p, p->restoring ? "ROLLBACK_FAIL elapsed/budget/saved" : "FAIL elapsed/budget/saved",
++        f->elapsed_us, f->budget_us, f->saved_count);
++}
++
+ static bool poll(struct probe *p, enum sgpu_block b, uint32_t off,
+     uint32_t mask, uint32_t want, uint32_t us)
+ {
+-    if (us > POLL_US) return false;
++    if (us > POLL_US) {
++        sgpu_failure(p, SG_FAIL_GUARD, b, off, mask, want, 0, 0, 0, 0, us);
++        return false;
++    }
+     uint64_t start = p->ops->now_us(p->ops->ctx);
+     for (unsigned i = 0; i <= us / 100; i++) {
+         if ((read32(p, b, off) & mask) == want) return true;
+         if (p->ops->now_us(p->ops->ctx) - start >= us) break;
+         if (i != us / 100) wait_us(p, 100);
+     }
+-    trace(p, "poll timeout", (uint32_t)b, off, read32(p, b, off));
++    uint32_t got = read32(p, b, off);
++    uint64_t elapsed = p->ops->now_us(p->ops->ctx) - start;
++    sgpu_failure(p, SG_FAIL_POLL, b, off, mask, want, 0, 0, got,
++        elapsed > (uint64_t)~0u ? ~0u : (uint32_t)elapsed, us);
++    trace(p, "poll timeout", (uint32_t)b, off, got);
+     return false;
+ }
+ 
+@@ -184,16 +215,21 @@
+     uint32_t mask, uint32_t value)
+ {
+     uint32_t old = read32(p, b, off);
+-    unsigned i;
+-    for (i = 0; i < p->saved_count; i++)
+-        if (p->saved[i].block == b && p->saved[i].off == off) break;
+-    if (i == p->saved_count) {
+-        if (i == COUNT(p->saved)) return false;
+-        p->saved[i] = (struct saved_reg){b, off, mask, old};
+-        p->saved_count++;
+-    } else p->saved[i].mask |= mask;
+-    write32(p, b, off, (old & ~mask) | (value & mask));
+-    return (read32(p, b, off) & mask) == (value & mask);
++    uint32_t written = (old & ~mask) | (value & mask);
++    if (p->saved_count >= COUNT(p->saved)) {
++        sgpu_failure(p, SG_FAIL_GUARD, b, off, mask, value & mask, old, written, old, 0, 0);
++        return false;
++    }
++    /* Journal OPERATIONS, not distinct registers. GFX3D retention is changed
++     * before GX enable, and its branch is enabled later. Merging those masks
++     * caused reverse cleanup to collapse GX before restoring that branch.
++     * There are 14 power changes, bounded by the existing 32-entry journal. */
++    p->saved[p->saved_count++] = (struct saved_reg){b, off, mask, old};
++    write32(p, b, off, written);
++    uint32_t got = read32(p, b, off);
++    if ((got & mask) == (value & mask)) return true;
++    sgpu_failure(p, SG_FAIL_READBACK, b, off, mask, value & mask, old, written, got, 0, 0);
++    return false;
+ }
+ 
+ static bool update_rcg(struct probe *p)
+@@ -207,8 +243,19 @@
+     static const uint32_t branches[] = {0x20, 0x28, 0x30, 0x34, 0x40, 0x4c};
+     uint32_t cx = read32(p, SG_CC, CC_CX), gx = read32(p, SG_CC, CC_GX);
+     trace(p, "GCC inherited CX/GX/CFG", cx, gx, read32(p, SG_CC, CC_CFG));
+-    if ((cx | gx) & (BIT(1) | BIT(2)) || (read32(p, SG_CC, CC_CMD) & 1u))
++    if ((cx | gx) & (BIT(1) | BIT(2))) {
++        bool cx_owned = (cx & (BIT(1) | BIT(2))) != 0;
++        uint32_t got = cx_owned ? cx : gx;
++        sgpu_failure(p, SG_FAIL_OWNER, SG_CC, cx_owned ? CC_CX : CC_GX,
++            BIT(1) | BIT(2), 0, got, 0, got, 0, 0);
+         return false; /* do not seize a hardware-controlled/overridden domain */
++    }
++    uint32_t command = read32(p, SG_CC, CC_CMD);
++    trace(p, "GCC inherited CMD/ROOT_EN/ROOT_OFF", command, command & 2u, command & BIT(31));
++    if (command & 1u) {
++        sgpu_failure(p, SG_FAIL_OWNER, SG_CC, CC_CMD, 1, 0, command, 0, command, 0, 0);
++        return false;
++    }
+     /* Keep the root enabled through GDSC transitions. XO / 1, no PLL/voltage writes. */
+     if (!change(p, SG_CC, CC_CMD, 2, 2) ||
+         !poll(p, SG_CC, CC_CMD, BIT(31), 0, 10000) ||
+@@ -244,8 +291,14 @@
+     while (p->saved_count) {
+         struct saved_reg r = p->saved[--p->saved_count];
+         uint32_t now = read32(p, r.block, r.off);
+-        write32(p, r.block, r.off, (now & ~r.mask) | (r.value & r.mask));
+-        if ((read32(p, r.block, r.off) & r.mask) != (r.value & r.mask)) ok = false;
++        uint32_t written = (now & ~r.mask) | (r.value & r.mask);
++        write32(p, r.block, r.off, written);
++        uint32_t got = read32(p, r.block, r.off);
++        if ((got & r.mask) != (r.value & r.mask)) {
++            sgpu_failure(p, SG_FAIL_READBACK, r.block, r.off, r.mask,
++                r.value & r.mask, now, written, got, 0, 0);
++            ok = false;
++        }
+         if (r.block == SG_CC && r.off == CC_CFG && !update_rcg(p)) ok = false;
+         if (r.block == SG_CC && (r.off == CC_CX || r.off == CC_GX)) {
+             wait_us(p, 2);
+@@ -617,6 +670,7 @@
+         report->stage = SG_RENDER;
+         trace(&p, "before TRUST read ONLY; no secure writes", SG_TRUST, 0, 0);
+         report->trust = read32(&p, SG_GPU, SG_TRUST);
++        report->trust_read = true;
+         if (report->trust != 0) {
+             report->error = SG_NEEDS_UNSECURE;
+             trace(&p, "CP passed; render gated by TRUST", report->trust, report->markers, 0);
+@@ -629,6 +683,7 @@
+     report->stage = SG_COMPLETE;
+     passed = true;
+ done:
++    p.restoring = true;
+     if (p.gpu_live && p.smmu_live) {
+         faults(&p);
+         write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT);
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -32,14 +32,15 @@
+     int wait_channel;
+ } sg;
+ 
++static const uint32_t sgpu_block_pa[SG_BLOCKS] = {
++    0x01859000,0x0185b000,0x01845000,0x01812000,0x01c00000,0x01c40000
++};
++
+ static bool io_map(void *ctx, enum sgpu_block block, uint32_t pa, uint32_t bytes)
+ {
+     (void)ctx;
+-    static const uint32_t addresses[SG_BLOCKS] = {
+-        0x01859000,0x0185b000,0x01845000,0x01812000,0x01c00000,0x01c40000
+-    };
+     static const uint32_t lengths[SG_BLOCKS] = {0x1000,0x1000,0x1000,0x1000,0x40000,0x10000};
+-    if ((unsigned)block >= SG_BLOCKS || pa != addresses[block] || bytes != lengths[block])
++    if ((unsigned)block >= SG_BLOCKS || pa != sgpu_block_pa[block] || bytes != lengths[block])
+         return false;
+     if (!sg.maps[block]) sg.maps[block] = ml_io_map(pa, bytes);
+     sg.sizes[block] = bytes;
+@@ -167,6 +168,19 @@
+     /* The existing log ring flushes asynchronously. Bracket new risky stages
+      * so its last completed stage survives a fabric hang/firmware reset. */
+     if (strncmp(message, "before ", 7) == 0) sgpu_kernel_wait_us(NULL, 11000000u);
++}
++
++static void __attribute__((noinline)) sgpu_failure_summary(const char *label,
++    const struct sgpu_failure *f)
++{
++    if (f->kind == SG_FAIL_NONE) return;
++    static const char *const kinds[] = {"none", "owner", "readback", "poll", "guard"};
++    const char *kind = f->kind < sizeof(kinds) / sizeof(kinds[0]) ? kinds[f->kind] : "unknown";
++    uint32_t pa = f->block < SG_BLOCKS ? sgpu_block_pa[f->block] + f->offset : 0;
++    printf("SANTONI GPU: %s stage=%u kind=%s block=%u addr=%08x off=%08x mask=%08x want=%08x\n",
++        label, f->stage, kind, f->block, pa, f->offset, f->mask, f->want);
++    printf("SANTONI GPU: %s old=%08x wrote=%08x got=%08x elapsed=%u budget=%u saved=%u\n",
++        label, f->old, f->written, f->got, f->elapsed_us, f->budget_us, f->saved_count);
+ }
+ 
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+@@ -188,9 +202,12 @@
+     struct sgpu_report report;
+     printf("SANTONI GPU: start mode=%u; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\n", sg.mode);
+     bool passed = sgpu_probe(&ops, sg.mode, firmware, firmware_size, &report);
+-    printf("SANTONI GPU: RESULT pass=%u stage=%u error=%u markers=%u pixels=%u trust=%08x restored=%u retained=%u\n",
++    sgpu_failure_summary("FIRST_FAIL", &report.failure);
++    sgpu_failure_summary("ROLLBACK_FAIL", &report.rollback_failure);
++    printf("SANTONI GPU: RESULT pass=%u stage=%u error=%u markers=%u pixels=%u trust=%08x restored=%u retained=%u trust_read=%u\n",
+         passed ? 1u : 0u, report.stage, report.error, report.markers, report.pixels,
+-        report.trust, report.restored ? 1u : 0u, report.memory_retained ? SGPU_POOL_BYTES : 0u);
++        report.trust, report.restored ? 1u : 0u, report.memory_retained ? SGPU_POOL_BYTES : 0u,
++        report.trust_read ? 1u : 0u);
+     thread_terminate_self();
+ }
+ 

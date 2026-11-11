@@ -1,0 +1,16 @@
+--- a/bsd/kern/kern_exit.c
++++ b/bsd/kern/kern_exit.c
+@@ -1666,6 +1666,13 @@
+ static bool
+ proc_should_trigger_panic(proc_t p, int rv)
+ {
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	if (p != initproc) {
++		printf("SANTONI: suppressing critical exit panic for %s[%d] (rv=0x%x)\n",
++		    p->p_comm, proc_getpid(p), rv);
++		return false;
++	}
++#endif
+ 	if (p == initproc || (p->p_crash_behavior & POSIX_SPAWN_PANIC_ON_EXIT) != 0) {
+ 		/* Always panic for launchd or equivalents */
+ 		return true;

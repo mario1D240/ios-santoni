@@ -1,0 +1,3870 @@
+{
+  "success": true,
+  "hardware_verified": false,
+  "rows": [
+    {
+      "name": "iokit-O0",
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_iokit.cpp",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_graphics-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_pm4-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_ir3-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_descriptors-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster_batch-O0.o",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/iokit-O0"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=0 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=14 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=15 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=16 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "17"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "19"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "20"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "21"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "22"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "23"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "24"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "25"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "26"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=26 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "27"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=27 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "28"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "29"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "iokit-wide-O0",
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_iokit_wide.cpp",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_graphics-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_pm4-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_ir3-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_descriptors-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster-O0.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster_batch-O0.o",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/iokit-wide-O0"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=0 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=14 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=15 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=16 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "17"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "18"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "19"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "20"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "21"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "22"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "23"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "24"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "25"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "26"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=26 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "27"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=27 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "28"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "29"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "30"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "31"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "32"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "33"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "34"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "35"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "36"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "37"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "38"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "39"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "40"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "41"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "42"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "43"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "44"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "45"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "46"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "47"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "48"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "49"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "50"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "51"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "52"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "53"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "54"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "55"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "56"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "57"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "58"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "59"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "60"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "61"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "62"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "63"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "64"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "65"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "66"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "67"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "68"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "69"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "70"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "71"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "72"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "73"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "74"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "75"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "76"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "77"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "78"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "79"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "80"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "81"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "82"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "83"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "84"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "85"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "iokit-O2",
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_iokit.cpp",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_graphics-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_pm4-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_ir3-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_descriptors-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster_batch-O2.o",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/iokit-O2"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=0 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=14 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=15 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=16 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "17"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "19"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "20"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "21"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "22"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "23"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "24"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "25"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "26"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=26 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "27"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=27 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "28"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "29"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "iokit-wide-O2",
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_iokit_wide.cpp",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_graphics-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_pm4-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_ir3-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_descriptors-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster-O2.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster_batch-O2.o",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/iokit-wide-O2"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=0 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=14 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=15 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=16 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "17"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "18"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "19"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "20"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "21"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "22"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "23"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "24"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "25"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "26"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=26 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "27"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=27 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "28"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "29"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "30"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "31"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "32"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "33"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "34"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "35"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "36"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "37"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "38"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "39"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "40"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "41"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "42"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "43"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "44"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "45"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "46"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "47"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "48"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "49"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "50"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "51"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "52"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "53"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "54"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "55"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "56"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "57"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "58"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "59"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "60"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "61"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "62"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "63"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "64"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "65"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "66"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "67"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "68"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "69"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "70"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "71"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "72"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "73"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "74"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "75"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "76"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "77"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "78"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "79"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "80"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "81"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "82"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "83"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "84"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "85"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "iokit-ubsan",
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_iokit.cpp",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_graphics-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_pm4-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_ir3-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_descriptors-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster_batch-ubsan.o",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/iokit-ubsan"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=0 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=14 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=15 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=16 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "17"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "19"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "20"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "21"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "22"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "23"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "24"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "25"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "26"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=26 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "27"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=27 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "28"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "29"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "iokit-wide-ubsan",
+      "command": [
+        "clang++",
+        "-std=c++17",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_iokit_wide.cpp",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_graphics-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_pm4-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_ir3-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_descriptors-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster-ubsan.o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/santoni_gpu_raster_batch-ubsan.o",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/iokit-wide-ubsan"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=0 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=14 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=15 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=16 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "17"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "18"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "19"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "20"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "21"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "22"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "23"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "24"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "25"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "26"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=26 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "27"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS actual IOKit client case=27 maps=2 pubs=1; hardware/VM modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "28"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "29"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "30"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "31"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "32"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "33"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "34"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "35"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "36"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "37"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "38"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "39"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "40"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "41"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "42"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "43"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "44"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "45"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "46"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "47"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "48"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "49"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "50"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "51"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "52"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "53"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "54"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "55"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "56"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "57"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "58"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "59"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "60"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "61"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "62"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "63"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "64"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "65"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "66"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "67"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "68"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "69"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "70"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "71"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "72"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "73"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "74"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "75"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "76"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "77"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "78"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "79"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "80"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "81"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "82"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "83"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "84"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "85"
+          ],
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "hardware-O0",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_hw.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_core.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/hardware-O0"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=0; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=1; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=2; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=3; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=4; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=5; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=6; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=7; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=8; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=9; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=10; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=11; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=12; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=13; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=14; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=15; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=16; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "hardware-O2",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_hw.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_core.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/hardware-O2"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=0; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=1; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=2; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=3; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=4; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=5; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=6; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=7; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=8; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=9; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=10; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=11; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=12; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=13; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=14; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=15; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=16; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "hardware-ubsan",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "-I",
+        "${PROJECT_ROOT}/tests",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_hw.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_core.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/hardware-ubsan"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=0; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=1; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=2; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=3; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=4; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=5; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=6; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=7; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "8"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=8; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "9"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=9; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "10"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=10; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "11"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=11; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "12"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=12; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "13"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=13; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "14"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=14; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "15"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=15; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "16"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics HW case=16; actual controller, MMIO/bootstrap modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "pipeline-O0",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_pipeline.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_graphics.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_pm4.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_core.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/pipeline-O0"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [],
+          "exit_code": 0,
+          "stdout": "PASS actual graphics+PM4 pipeline: relocated private nested IB survives user rewrite; GPU modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "pipeline-O2",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_pipeline.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_graphics.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_pm4.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_core.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/pipeline-O2"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [],
+          "exit_code": 0,
+          "stdout": "PASS actual graphics+PM4 pipeline: relocated private nested IB survives user rewrite; GPU modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "pipeline-ubsan",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_pipeline.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_graphics.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_pm4.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_core.c",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev/santoni_gpu_vm.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/pipeline-ubsan"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [],
+          "exit_code": 0,
+          "stdout": "PASS actual graphics+PM4 pipeline: relocated private nested IB survives user rewrite; GPU modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "worker-O0",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_worker.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/worker-O0"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=0; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=1; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=2; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=3; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=4; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=5; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=6; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=7; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "worker-O2",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_worker.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/worker-O2"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=0; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=1; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=2; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=3; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=4; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=5; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=6; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=7; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "worker-ubsan",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/source/bsd/dev",
+        "-I",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e",
+        "${PROJECT_ROOT}/tests/test_santoni_gpu_graphics_worker.c",
+        "-o",
+        "${HOST_TMP}/graphics-bridge-wkh_vw9e/worker-ubsan"
+      ],
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "runs": [
+        {
+          "args": [
+            "0"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=0; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "1"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=1; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "2"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=2; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "3"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=3; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "4"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=4; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "5"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=5; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "6"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=6; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        },
+        {
+          "args": [
+            "7"
+          ],
+          "exit_code": 0,
+          "stdout": "PASS graphics worker case=7; actual release handoff, hardware/log sinks modeled\n",
+          "stderr": ""
+        }
+      ]
+    }
+  ],
+  "inputs_sha256": {
+    "tests/test_santoni_gpu_graphics_bridge.py": "82cb9dbd2dd74258a3b7a4a36bba92f9eb8f7a0ee8b3a0aa307f93080b308c95",
+    "tests/test_santoni_gpu_graphics_hw.c": "7d762d5d934656c1974d7d0f4a344bb423e7d9762ea06bb8edb31430eeccf43b",
+    "tests/test_santoni_gpu_graphics_iokit.cpp": "203de40def0c5da14cd5f514241469824c5dd8fe7822f54f9918f4cd57e15686",
+    "tests/santoni_gpu_graphics_iokit_stubs.h": "d132c136f7886cb5c73b88c58faf4a58cca906d7d42c84ae0b92984dd37cf38f",
+    "tests/test_santoni_gpu_graphics_iokit_wide.cpp": "a1f321a03d39d660a75edc0f71774b35a12ab7fc184126c306b29de08250a888",
+    "tests/test_santoni_gpu_graphics_pipeline.c": "66b7159288740d59726cd4c1eaeb5623da79213c4284db3ef0ec5267281dcb89",
+    "tests/test_santoni_gpu_graphics.c": "1b437cef5944ec0894126cb84e2aa87cf17083f156985b48ce7be881c84aac9b",
+    "tests/test_santoni_gpu_graphics_worker.c": "f34757fbb1d9b5ae75c03eb3c605e6e0864d1d3b45fc632456eae298ce14e7dc",
+    "tests/test_santoni_gpu_prepare.py": "20faae32d0db4a2fce54660d48241d87b90e8b47be8627c62c2093ffedf59115",
+    "tests/test_santoni_gpu_ui.py": "954890e621cfb2d8d25e61a35e6086309fb8b10561789724030b5a2e84233076",
+    "tests/test_santoni_gpu_live.c": "50feec452b172bc4820af2f21c80fdd75811c61ba9dbc7d5fc3c6a20a38cbaea",
+    "tests/test_santoni_gpu_session.c": "106c28ae22c82f8f3b76dd841ff358f667b7860c661ab750742e81e02b31f168",
+    "tests/reconstruct_santoni_touch.py": "c249ccf32a2114774ca7ce9e0ef5ba19bc1196d2c6ce795f59ddcc6f5b29ae48"
+  },
+  "source_sha256": {
+    "bsd/dev/santoni_gpu.c": "9f68e76e9f76fdae6a733e3f6d041422393ac7fdce0851a27e1be9ab923fe2a5",
+    "bsd/dev/santoni_gpu_core.c": "7943a6b9c49e9bbc8bff5c1e613881fcb251a410ee2f0e2988902a1c1316405a",
+    "bsd/dev/santoni_gpu_core.h": "d872161c1e74ec0e9b4d9aceda42c9dde89e3a40e909ebd19b723c8bad01e118",
+    "bsd/dev/santoni_gpu_graphics.c": "33b46498d29d5d1a7a9ac57b10c4637d4dc031fec51ef7a9d11641f382c8e88e",
+    "bsd/dev/santoni_gpu_graphics.h": "d66496ddaf6c2bb13587fdf757866a5a687daaee4f511b8d13a6859ddbb54dfb",
+    "bsd/dev/santoni_gpu_pm4.c": "c3842464fab0d6ec9806af6744ffd52f7ec976eb8dc52ab701ae47f868d48393",
+    "bsd/dev/santoni_gpu_pm4.h": "d90f4b9d6b2231e99faa4d1760a7ded3b3fbc343cb8ef039598b5bdf4ac801f4",
+    "bsd/dev/santoni_gpu_graphics_hw.h": "9e13ac6759d1c7e0cadf5917fae8aaee14da90097617a98bb6291dce90c9d0b0",
+    "bsd/dev/santoni_gpu_graphics_uapi.h": "67a7315bc465c765267ab08ad9b81d846f52756ef38a70ce01ee80662690562a",
+    "bsd/dev/santoni_gpu_vm.c": "c55687abc67d2a1224e9ba5193c2a953be332afb10807fcc57fb84b6c37332a6",
+    "bsd/dev/santoni_gpu_vm.h": "3a86605e43eaa00f1eabc22035756e89050db4a1a7e0fb714c0197d237e23e6c",
+    "bsd/dev/santoni_gpu_ir3.c": "d40c7f21c312db19e64b34a8a7630197a3b96c1cb404bea5b511859cd65dab1d",
+    "bsd/dev/santoni_gpu_ir3.h": "cf21e9d0c1f95f7d1210a3353bfadef1d8272d8a91a21baad5f407e504a368b9",
+    "bsd/dev/santoni_gpu_ir3_rules.h": "e80c199a518a6b020193afff88d1224fed6b1980bac782bd5ba95c21ea0b3528",
+    "bsd/dev/santoni_gpu_descriptors.c": "b302657609eb9cdfa27a0097148d55e37ed8ca0e684205653316e233b252d868",
+    "bsd/dev/santoni_gpu_descriptors.h": "14f5e1780ef62e039cabbb948cd9fe2bd84b6f66b4e402446f6861ad6d33f4de",
+    "bsd/dev/santoni_gpu_descriptor_fields.h": "92397c87dd94c0ae21d632a19299fe09905d9473025e6c2d4180447f8e2db548",
+    "bsd/dev/santoni_gpu_raster.c": "4bd83e9e86c8d38cd93cd0278e7f6d3d33bf2cf297820a49a021d9d4092344c8",
+    "bsd/dev/santoni_gpu_raster.h": "0202067fb7f5c9b8661143374408f86746148ed1aacf6626889e9a68ac2fb321",
+    "bsd/dev/santoni_gpu_raster_rules.h": "09f40d40993ad8f0ef48fe7153700f6f1870a504f553844f4aef1a6a8c9e9ba9",
+    "bsd/dev/santoni_gpu_raster_fields.h": "2d23baf7f29bd9ea975186be6c6388b8848fbf0edf11258897037d95afe81231",
+    "bsd/dev/santoni_gpu_raster_batch.c": "4f192174439f74a05ca87b0d19945cd56f621b6b3fc90db27e24a3f73e88a753",
+    "bsd/dev/santoni_gpu_raster_batch.h": "b662c28262577d1c1be080c6f22481607d731e67252014d805d4e1774b53440c",
+    "iokit/Kernel/arm/SantoniGraphics.cpp": "42a0538416c28f5356ba2933effce24f871fe74bf9e9d103dc4a9f01ad77c38d"
+  },
+  "allocator_VM_begin_modeled": true,
+  "scope": "actual controller/IOKit/PM4-buffer code; hardware and platform primitives modeled",
+  "public_metadata_redaction": {
+    "scope": "absolute host paths only",
+    "original_receipt_sha256": "d41ab3094bc8f203b3b455f97a1cf56da9a454ad498cbb0711e07f915bf95bdd",
+    "results_and_source_input_hashes_preserved": true,
+    "path_placeholders": [
+      "${PROJECT_ROOT}",
+      "${HOST_TMP}",
+      "${HOST_HOME}"
+    ]
+  }
+}

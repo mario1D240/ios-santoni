@@ -1,0 +1,190 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index 73dcfcc..9b56709 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -961,6 +961,18 @@ static bool __attribute__((noinline)) sgpu_user_publish(void)
+         bool mounted=santoni_gpu_user_launch_mount_published();
+         printf("SANTONI GPU: USER LAUNCH LATE mode=%u worker_ready=%u mounted=%u; CPU snapshot; EL0 RESULT still required\n",
+             sg.mode,ready?1u:0u,mounted?1u:0u);
++        /* Bounded read-only CPU snapshot of the private-vnode trace path. The
++         * scalars are saturating counts/first-wins stage flags kept by the
++         * mockfs receiver; they separate "probe never opened/ioctled" from
++         * "reached but refused at stage N" without timestamps, addresses,
++         * caller pointers or any change to admission/ABI/quota. This is one
++         * observation at publication; it cannot classify later child traffic. */
++        struct sgpu_launch_trace_diag t;
++        santoni_gpu_user_launch_trace_snapshot(&t);
++        printf("SANTONI GPU: USER TRACE DIAG open=%u/%u/%u ioctl=%u/%u/%u refuse=%u,%u seen=%u,%u; EL0 RESULT still required\n",
++            t.open_attempts,t.open_accepted,t.open_refused,
++            t.ioctl_attempts,t.ioctl_accepted,t.ioctl_refused,
++            t.open_refuse_stage,t.ioctl_refuse_stage,t.seen_open,t.seen_ioctl);
+     }
+     return true;
+ }
+diff --git a/bsd/dev/santoni_gpu_launch.h b/bsd/dev/santoni_gpu_launch.h
+index 5b339ee..7c8733d 100644
+--- a/bsd/dev/santoni_gpu_launch.h
++++ b/bsd/dev/santoni_gpu_launch.h
+@@ -15,4 +15,24 @@ void santoni_gpu_user_launch_exec_result(int);
+ bool santoni_gpu_user_launch_mount_args(const void *, struct sgpu_launch_mount *);
+ bool santoni_gpu_user_launch_mount_published(void);
+ bool santoni_gpu_user_launch_trace_ready(uint64_t, uint32_t, uint32_t);
++
++/* Read-only CPU observation of the private-vnode trace path. Every scalar is a
++ * saturating per-boot count or an explicit seen flag; none is a timestamp,
++ * address or caller pointer. A dedicated mutex protects the coherent copy and
++ * first serialized refusal. Zero values describe copy time only, not later
++ * execution. Refusal stages are recorded at their first point
++ * of denial so an absent observation stays distinct from a status0 outcome. */
++struct sgpu_launch_trace_diag {
++    uint32_t open_attempts, open_accepted, open_refused;
++    uint32_t ioctl_attempts, ioctl_accepted, ioctl_refused;
++    /* First refusal stage: 0 none/attempted; 1 trace command on a vnode that is
++     * not the private trace mount (ioctl only); 2 open flag or record
++     * precondition; 3 caller-context/access; 4 fixed ABI validation;
++     * 5 event quota exhausted. open/ioctl attempts count only callers that
++     * already reached the private mount; a stage-1 ioctl still sets seen_ioctl
++     * because the trace command itself was observed. */
++    uint32_t open_refuse_stage, ioctl_refuse_stage;
++    uint32_t seen_open, seen_ioctl;
++};
++void santoni_gpu_user_launch_trace_snapshot(struct sgpu_launch_trace_diag *);
+ #endif
+diff --git a/bsd/miscfs/mockfs/mockfs_vnops.c b/bsd/miscfs/mockfs/mockfs_vnops.c
+index 07706cc..5567685 100644
+--- a/bsd/miscfs/mockfs/mockfs_vnops.c
++++ b/bsd/miscfs/mockfs/mockfs_vnops.c
+@@ -37,6 +37,7 @@
+ #include <kern/debug.h>
+
+ #if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <kern/locks.h>
+ #include <sys/proc.h>
+ #include <sys/fcntl.h>
+ #include <dev/santoni_gpu_launch.h>
+@@ -46,6 +47,62 @@
+  * protects this saturating per-boot count; no BO, pager or GPU state changes. */
+ static uint32_t mockfs_santoni_trace_events;
+
++/* CPU-only trace traffic, including callers refused before admission. A
++ * dedicated mutex serializes saturating counts and immutable first refusal
++ * stages; caller identity/ABI/quota never depend on these observations.
++ * Lock order is mount -> diagnostic only. No diagnostic critical section
++ * enters VFS, acquires the mount/session mutex, or prints. The snapshot is
++ * coherent at copy time; a zero snapshot says nothing about later traffic.
++ * Mutex/API return on hardware and scheduler progress remain unproven. */
++static LCK_GRP_DECLARE(mockfs_santoni_diag_group, "santoni-trace-diag");
++static LCK_MTX_DECLARE(mockfs_santoni_diag_lock, &mockfs_santoni_diag_group);
++static struct sgpu_launch_trace_diag mockfs_santoni_trace_diag;
++
++/* Diagnostic mutex held by the caller. */
++static void __attribute__((noinline))
++mockfs_santoni_diag_inc(uint32_t *field)
++{
++    if (*field!=UINT32_MAX) ++*field;
++}
++
++/* outcome: 0 private-mount attempt, 1 accepted, 2 refused. A wrong-mount
++ * trace ioctl records seen/refused without inventing a private-mount attempt. */
++static void __attribute__((noinline))
++mockfs_santoni_diag_note(bool is_open, uint32_t outcome, uint32_t stage)
++{
++    struct sgpu_launch_trace_diag *d=&mockfs_santoni_trace_diag;
++    lck_mtx_lock(&mockfs_santoni_diag_lock);
++    uint32_t *seen=is_open?&d->seen_open:&d->seen_ioctl;
++    *seen=1;
++    if (outcome==0) {
++        mockfs_santoni_diag_inc(is_open?&d->open_attempts:&d->ioctl_attempts);
++    } else if (outcome==1) {
++        mockfs_santoni_diag_inc(is_open?&d->open_accepted:&d->ioctl_accepted);
++    } else {
++        uint32_t *first=is_open?&d->open_refuse_stage:&d->ioctl_refuse_stage;
++        if (!*first) *first=stage;
++        mockfs_santoni_diag_inc(is_open?&d->open_refused:&d->ioctl_refused);
++    }
++    lck_mtx_unlock(&mockfs_santoni_diag_lock);
++}
++
++/* Preserve the existing refusal errno; the first serialized denial wins. */
++static int __attribute__((noinline))
++mockfs_santoni_diag_refuse(bool is_open, uint32_t stage, int error)
++{
++    mockfs_santoni_diag_note(is_open,2,stage);
++    return error;
++}
++
++void
++santoni_gpu_user_launch_trace_snapshot(struct sgpu_launch_trace_diag *out)
++{
++    if (!out) return;
++    lck_mtx_lock(&mockfs_santoni_diag_lock);
++    *out=mockfs_santoni_trace_diag;
++    lck_mtx_unlock(&mockfs_santoni_diag_lock);
++}
++
+ static mockfs_mount_t
+ mockfs_santoni_trace_mount(vnode_t vp)
+ {
+@@ -79,8 +136,13 @@ int
+ mockfs_santoni_open(struct vnop_open_args *ap)
+ {
+     if (!ap || !mockfs_santoni_trace_mount(ap->a_vp)) return err_open(ap);
+-    if (!(ap->a_mode&FREAD) || (ap->a_mode&FWRITE)) return EACCES;
+-    return mockfs_santoni_trace_access(ap->a_vp,ap->a_context);
++    mockfs_santoni_diag_note(true,0,0);
++    if (!(ap->a_mode&FREAD) || (ap->a_mode&FWRITE))
++        return mockfs_santoni_diag_refuse(true,2,EACCES);
++    int error=mockfs_santoni_trace_access(ap->a_vp,ap->a_context);
++    if (error) return mockfs_santoni_diag_refuse(true,3,error);
++    mockfs_santoni_diag_note(true,1,0);
++    return 0;
+ }
+
+ int
+@@ -98,30 +160,38 @@ mockfs_santoni_ioctl(struct vnop_ioctl_args *ap)
+ {
+     if (!ap || ap->a_command!=SGPU_LAUNCH_TRACE_IOCTL) return err_ioctl(ap);
+     mockfs_mount_t mnt=mockfs_santoni_trace_mount(ap->a_vp);
+-    if (!mnt) return err_ioctl(ap);
++    /* The trace command already selected intent; reaching here without the
++     * private mount is the only stage-1 refusal that carries signal. Mark the
++     * attempt seen so it stays distinct from a caller that never traced. */
++    if (!mnt) return mockfs_santoni_diag_refuse(false,1,err_ioctl(ap));
++    mockfs_santoni_diag_note(false,0,0);
+     int error=mockfs_santoni_trace_access(ap->a_vp,ap->a_context);
+-    if (error) return error;
+-    if (!ap->a_data || !(ap->a_fflag&FREAD) || (ap->a_fflag&FWRITE)) return EINVAL;
++    if (error) return mockfs_santoni_diag_refuse(false,3,error);
++    if (!ap->a_data || !(ap->a_fflag&FREAD) || (ap->a_fflag&FWRITE))
++        return mockfs_santoni_diag_refuse(false,2,EINVAL);
+     /* VNOP_IOCTL receives the kernel's fixed IOC_IN copy, never a user pointer.
+      * No copyout or modification of this record is permitted. */
+     const struct sgpu_launch_trace_record *r=(const void *)ap->a_data;
+     if (r->version!=SGPU_LAUNCH_TRACE_VERSION || r->bytes!=sizeof(*r) ||
+         r->event<SG_LTRACE_ENTRY || r->event>SG_LTRACE_INIT_RETURN || r->status>2 ||
+         (r->status==2 && r->event!=SG_LTRACE_WRITE) || r->pass>1 ||
+-        r->sent>32 || r->verified>r->sent || r->negative>7 || r->error>6) return EINVAL;
+-    for (unsigned i=0;i<5;i++) if (r->reserved[i]) return EINVAL;
++        r->sent>32 || r->verified>r->sent || r->negative>7 || r->error>6)
++        return mockfs_santoni_diag_refuse(false,4,EINVAL);
++    for (unsigned i=0;i<5;i++) if (r->reserved[i])
++        return mockfs_santoni_diag_refuse(false,4,EINVAL);
+     if (r->event==SG_LTRACE_RESULT) {
+         if (r->status || r->value || (r->pass &&
+             (r->sent!=32 || r->verified!=32 || r->negative!=7 || r->error || r->transport_errno)))
+-            return EINVAL;
++            return mockfs_santoni_diag_refuse(false,4,EINVAL);
+     } else if (r->pass || r->sent || r->verified || r->negative || r->error || r->transport_errno)
+-        return EINVAL;
++        return mockfs_santoni_diag_refuse(false,4,EINVAL);
+     lck_mtx_lock(&mnt->mockfs_mnt_mtx);
+     if (mockfs_santoni_trace_events>=SGPU_LAUNCH_TRACE_LIMIT) {
+         lck_mtx_unlock(&mnt->mockfs_mnt_mtx);
+-        return EBUSY;
++        return mockfs_santoni_diag_refuse(false,5,EBUSY);
+     }
+     uint32_t sequence=++mockfs_santoni_trace_events;
++    mockfs_santoni_diag_note(false,1,0);
+     lck_mtx_unlock(&mnt->mockfs_mnt_mtx);
+     int pid=proc_pid(current_proc());
+     if (r->event==SG_LTRACE_RESULT)

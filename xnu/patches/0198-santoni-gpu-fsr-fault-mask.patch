@@ -1,0 +1,29 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -426,12 +426,13 @@
+     trace(p, "SMMU global/FAR low/high", p->report->smmu_global_fsr,
+         read32(p, SG_SMMU, SG_CB_FAR), read32(p, SG_SMMU, SG_CB_FAR + 4));
+     if (!p->report->error && ((p->report->interrupt_status & SG_ERROR_IRQ_MASK) ||
+-        p->report->smmu_fsr || p->report->smmu_global_fsr)) p->report->error = SG_FAULT;
++        (p->report->smmu_fsr & SG_SMMU_FSR_FAULT) || p->report->smmu_global_fsr)) p->report->error = SG_FAULT;
+ }
+
+ static bool has_fault(const struct sgpu_report *r)
+ {
+-    return (r->interrupt_status & SG_ERROR_IRQ_MASK) || r->smmu_fsr || r->smmu_global_fsr;
++    return (r->interrupt_status & SG_ERROR_IRQ_MASK) ||
++        (r->smmu_fsr & SG_SMMU_FSR_FAULT) || r->smmu_global_fsr;
+ }
+
+ struct smmu_saved {
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -129,4 +129,6 @@
+ #define SG_CB_TLBIASID (SG_CB + 0x610u)
+ #define SG_CB_TLBSYNC (SG_CB + 0x7f0u)
+ #define SG_CB_TLBSTATUS (SG_CB + 0x7f4u)
++/* ARM SMMUv2 CB_FSR fault bits; Qualcomm bit 10 (0x400) is not a fault. */
++#define SG_SMMU_FSR_FAULT 0xc00001feu
+ #endif

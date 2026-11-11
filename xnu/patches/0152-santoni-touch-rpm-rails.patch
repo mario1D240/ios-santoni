@@ -1,0 +1,582 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -2914,9 +2914,11 @@
+  * The touch controller is an EDT M06-class FocalTech part ("edt,edt-ft5406"
+  * in the santoni device tree) on blsp1_i2c3: GPIO 10 SDA, GPIO 11 SCL,
+  * GPIO 64 reset (active low), GPIO 65 INT (active low), address 0x38.
+- * VCC is PM8937 L10 (2.8 V) and IOVCC is L5 (1.8 V); L5 is already on as
+- * the eMMC I/O rail, L10 is RPM-managed and only read back here for
+- * diagnosis -- this driver never writes to the PMIC.
++ * VCC is PM8937 L10 (2.85 V) and IOVCC is L5 (1.8 V).  Nothing in the
++ * boot chain votes L10, so after a fastboot boot the controller sits
++ * unpowered and never ACKs; santoni_rpm_ldo() asks the RPM to enable it
++ * over the rpm_requests SMD channel (mainline qcom_smd-regulator does the
++ * same).  This driver still never writes a PMIC register directly.
+  *
+  * M06 command 0xf9 returns the whole report in one read:
+  *   aa aa 1a | 2 bytes | 5 * {event/xhi, xlo, id/yhi, ylo} | xor crc
+@@ -2998,11 +3000,28 @@
+ 	return (int)(tlmm_io_read(tlmm, pin) & 1U);
+ }
+ 
++/*
++ * Release SCL and wait until it really reads high: the TLMM pull-up is
++ * weak (~30 uA) so edges are slow, and the controller may stretch the
++ * clock.  Proceed anyway after ~40 us so a stuck line cannot hang boot.
++ */
++static void
++santoni_i2c_scl_high(vm_offset_t tlmm)
++{
++	tlmm_gpio_in_cfg(tlmm, PIN_SCL, TLMM_PULL_UP);
++	for (int i = 0; i < 40; i++) {
++		if (tlmm_gpio_get(tlmm, PIN_SCL)) {
++			return;
++		}
++		delay(1);
++	}
++}
++
+ static void
+ santoni_i2c_start(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	tlmm_gpio_in(tlmm, PIN_SCL);
++	santoni_i2c_scl_high(tlmm);
+ 	delay(5);
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 	delay(5);
+@@ -3015,7 +3034,7 @@
+ {
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 	delay(5);
+-	tlmm_gpio_in(tlmm, PIN_SCL);
++	santoni_i2c_scl_high(tlmm);
+ 	delay(5);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	delay(5);
+@@ -3031,14 +3050,14 @@
+ 			tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 		}
+ 		delay(3);
+-		tlmm_gpio_in(tlmm, PIN_SCL);
++		santoni_i2c_scl_high(tlmm);
+ 		delay(3);
+ 		tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 		delay(3);
+ 	}
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	delay(3);
+-	tlmm_gpio_in(tlmm, PIN_SCL);
++	santoni_i2c_scl_high(tlmm);
+ 	delay(3);
+ 	bool ack = (tlmm_gpio_get(tlmm, PIN_SDA) == 0);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+@@ -3053,7 +3072,7 @@
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	for (int i = 7; i >= 0; i--) {
+ 		delay(3);
+-		tlmm_gpio_in(tlmm, PIN_SCL);
++		santoni_i2c_scl_high(tlmm);
+ 		delay(3);
+ 		if (tlmm_gpio_get(tlmm, PIN_SDA)) {
+ 			byte |= (1U << i);
+@@ -3066,7 +3085,7 @@
+ 		tlmm_gpio_in(tlmm, PIN_SDA);
+ 	}
+ 	delay(3);
+-	tlmm_gpio_in(tlmm, PIN_SCL);
++	santoni_i2c_scl_high(tlmm);
+ 	delay(3);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 	delay(3);
+@@ -3180,6 +3199,450 @@
+ }
+ 
+ /*
++ * RPM regulator votes over the "rpm_requests" SMD channel, ported from
++ * mainline Linux drivers/rpmsg/qcom_smd.c (channel discovery, packet
++ * fifo, open handshake) and drivers/soc/qcom/smd-rpm.c +
++ * drivers/regulator/qcom_smd-regulator.c (request format); ios-sailfish
++ * proved the same request format on msm8996 with a glink transport.
++ *   smem      0x86300000, global items via toc[] at +0xd0
++ *   channel   alloc table item 13 (byte, entries 32 B) or 266 (word):
++ *             "rpm_requests", flags packet bit 9, edge 15
++ *   info      item 14+cid / 138+cid: tx half then rx half (20 or 44 B)
++ *   fifo      item 338+cid / 202+cid: tx fifo first, then rx, size/2
++ *   doorbell  APCS1 IPC at 0xb011008, bit 8 (DT qcom,ipc = <&apcs1 8 0>)
++ * One voter thread; santonirpm=0 skips every vote.
++ */
++#define SMEM_PHYS               0x86300000UL
++#define SMEM_MAP_SIZE           0x00100000UL
++#define SMEM_TOC_OFFSET         0xd0u
++#define SMEM_ITEM_COUNT         512u
++
++#define SMD_ALLOC_TBL_COUNT     2
++#define SMD_ALLOC_TBL_SIZE      64
++#define SMD_ALLOC_ENTRY_SIZE    32u
++#define SMD_PACKET_HDR_LEN      20u
++#define SMD_FLAG_PACKET         (1u << 9)
++#define SMD_EDGE_RPM            15u
++
++#define APCS1_PHYS              0x0b011000UL
++#define RPM_IPC_BIT             8u
++
++/* struct smd_channel_info(_word) field offsets; flag i in
++ * fDSR fCTS fCD fRI fHEAD fTAIL fSTATE fBLOCKREADINTR order. */
++#define INFO_STATE              0u
++#define INFO_TAIL               (santoni_smd.word ? 36u : 12u)
++#define INFO_HEAD               (santoni_smd.word ? 40u : 16u)
++#define INFO_HALF               (santoni_smd.word ? 44u : 20u)
++#define FLAG_FHEAD              4u
++#define FLAG_FTAIL              5u
++#define FLAG_FSTATE             6u
++#define FLAG_FBLOCKREADINTR     7u
++#define FLAG_OFF(i)             (santoni_smd.word ? 4u + 4u * (i) : 4u + (i))
++
++#define SMD_CLOSED              0u
++#define SMD_OPENING             1u
++#define SMD_OPENED              2u
++
++#define RPM_MSG_REQ             0x00716572u     /* "req\0" */
++#define RPM_MSG_MSG_ID          0x2367736du     /* "msg#" */
++#define RPM_MSG_ERR             0x00727265u     /* "err\0" */
++#define RPM_RSC_LDOA            0x616f646cu     /* "ldoa" */
++#define RPM_KEY_SWEN            0x6e657773u     /* "swen" */
++#define RPM_KEY_UV              0x00007675u     /* "uv\0\0" */
++
++struct santoni_smd {
++	vm_offset_t smem, ipc;
++	bool mapped, word, open;
++	vm_offset_t txinfo, rxinfo;
++	vm_offset_t txfifo, rxfifo;
++	uint32_t fifo_size;
++	uint32_t msg_id;
++	uint8_t resp[128];
++	uint32_t resp_len;
++	bool resp_ready;
++};
++
++static struct santoni_smd santoni_smd;
++
++static inline uint32_t
++smd_read32(vm_offset_t base, uint32_t off)
++{
++	uint32_t v = *(volatile uint32_t *)(base + off);
++	__asm__ volatile("dmb ish" ::: "memory");
++	return v;
++}
++
++static inline void
++smd_write32(vm_offset_t base, uint32_t off, uint32_t v)
++{
++	*(volatile uint32_t *)(base + off) = v;
++	__asm__ volatile("dmb ish" ::: "memory");
++}
++
++static inline uint8_t
++smd_read_flag(vm_offset_t base, uint32_t i)
++{
++	if (santoni_smd.word) {
++		return (uint8_t)smd_read32(base, FLAG_OFF(i));
++	}
++	return *(volatile uint8_t *)(base + FLAG_OFF(i));
++}
++
++static inline void
++smd_write_flag(vm_offset_t base, uint32_t i, uint8_t v)
++{
++	if (santoni_smd.word) {
++		smd_write32(base, FLAG_OFF(i), v);
++	} else {
++		*(volatile uint8_t *)(base + FLAG_OFF(i)) = v;
++		__asm__ volatile("dmb ish" ::: "memory");
++	}
++}
++
++/* Global-heap SMEM item: toc[item] = {allocated, offset, size, aux}. */
++static vm_offset_t
++santoni_smem_item(uint32_t item, size_t *size)
++{
++	if (item >= SMEM_ITEM_COUNT) {
++		return 0;
++	}
++	volatile uint32_t *toc = (volatile uint32_t *)(santoni_smd.smem +
++	    SMEM_TOC_OFFSET + 16u * item);
++	uint32_t allocated = toc[0], off = toc[1], sz = toc[2], aux = toc[3];
++	if (!allocated || !sz) {
++		return 0;
++	}
++	uint32_t base = aux & ~3u;
++	if (base != 0 && base != (uint32_t)SMEM_PHYS) {
++		printf("SANTONI RPM: smem item %u in unmapped region %#x\n",
++		    item, base);
++		return 0;
++	}
++	if ((uint64_t)off + sz > SMEM_MAP_SIZE) {
++		return 0;
++	}
++	*size = sz;
++	return santoni_smd.smem + off;
++}
++
++static bool
++santoni_smd_map_channel(void)
++{
++	static const struct {
++		uint32_t alloc, info, fifo;
++	} tbl[SMD_ALLOC_TBL_COUNT] = {
++		{ 13, 14, 338 },     /* byte-aligned channels */
++		{ 266, 138, 202 },   /* word-aligned channels */
++	};
++
++	for (uint32_t t = 0; t < SMD_ALLOC_TBL_COUNT; t++) {
++		size_t asz = 0;
++		vm_offset_t a = santoni_smem_item(tbl[t].alloc, &asz);
++		if (!a) {
++			continue;
++		}
++		for (uint32_t i = 0; i < SMD_ALLOC_TBL_SIZE; i++) {
++			vm_offset_t e = a + SMD_ALLOC_ENTRY_SIZE * i;
++			static const char want[13] = "rpm_requests";
++			char name[21];
++			bool same = true;
++			for (int j = 0; j < 20; j++) {
++				name[j] = (char)*(volatile uint8_t *)(e + (uint32_t)j);
++				if (j < 12 && name[j] != want[j]) {
++					same = false;
++				}
++			}
++			name[20] = 0;
++			uint32_t flags = *(volatile uint32_t *)(e + 24);
++			uint32_t ref = *(volatile uint32_t *)(e + 28);
++			if (!same || name[12] != 0 || !ref ||
++			    !(flags & SMD_FLAG_PACKET) ||
++			    (flags & 0xffu) != SMD_EDGE_RPM) {
++				continue;
++			}
++			uint32_t cid = *(volatile uint32_t *)(e + 20);
++			size_t isz = 0, fsz = 0;
++			vm_offset_t info = santoni_smem_item(tbl[t].info + cid, &isz);
++			vm_offset_t fifo = santoni_smem_item(tbl[t].fifo + cid, &fsz);
++			bool word = isz == 2u * 44u;
++			if (!info || !fifo || (!word && isz != 2u * 20u)) {
++				printf("SANTONI RPM: bad info/fifo items for "
++				    "cid %u (info %u fifo %u)\n", cid,
++				    (unsigned)isz, (unsigned)fsz);
++				return false;
++			}
++			santoni_smd.word = word;
++			santoni_smd.txinfo = info;
++			santoni_smd.rxinfo = info + INFO_HALF;
++			santoni_smd.fifo_size = (uint32_t)fsz / 2u;
++			santoni_smd.txfifo = fifo;
++			santoni_smd.rxfifo = fifo + santoni_smd.fifo_size;
++			if (santoni_smd.fifo_size == 0 ||
++			    (santoni_smd.fifo_size & (santoni_smd.fifo_size - 1u))) {
++				printf("SANTONI RPM: fifo size %u not a power "
++				    "of two\n", santoni_smd.fifo_size);
++				return false;
++			}
++			printf("SANTONI RPM: channel found (tbl %u cid %u, "
++			    "%s, fifo %u)\n", t, cid,
++			    word ? "word" : "byte", santoni_smd.fifo_size);
++			return true;
++		}
++	}
++	printf("SANTONI RPM: no rpm_requests channel in smem\n");
++	return false;
++}
++
++static void
++santoni_smd_kick(void)
++{
++	__asm__ volatile("dsb sy" ::: "memory");
++	*(volatile uint32_t *)(santoni_smd.ipc + 0x08) = 1u << RPM_IPC_BIT;
++}
++
++static void
++santoni_smd_set_state(uint32_t state)
++{
++	uint32_t is_open = (state == SMD_OPENED) ? 1u : 0u;
++	smd_write_flag(santoni_smd.txinfo, 0, (uint8_t)is_open);   /* fDSR */
++	smd_write_flag(santoni_smd.txinfo, 1, (uint8_t)is_open);   /* fCTS */
++	smd_write_flag(santoni_smd.txinfo, 2, (uint8_t)is_open);   /* fCD */
++	smd_write32(santoni_smd.txinfo, INFO_STATE, state);
++	smd_write_flag(santoni_smd.txinfo, FLAG_FSTATE, 1);
++	santoni_smd_kick();
++}
++
++/* n must be a multiple of 4 in word mode. */
++static void
++santoni_smd_fifo_write(uint32_t off, const void *src, uint32_t n)
++{
++	uint32_t mask = santoni_smd.fifo_size - 1u;
++	if (santoni_smd.word) {
++		for (uint32_t i = 0; i < n; i += 4u) {
++			uint32_t v;
++			memcpy(&v, (const uint8_t *)src + i, sizeof(v));
++			*(volatile uint32_t *)(santoni_smd.txfifo +
++			    ((off + i) & mask)) = v;
++		}
++	} else {
++		for (uint32_t i = 0; i < n; i++) {
++			*(volatile uint8_t *)(santoni_smd.txfifo +
++			    ((off + i) & mask)) =
++			    ((const uint8_t *)src)[i];
++		}
++	}
++	__asm__ volatile("dsb sy" ::: "memory");
++}
++
++static void
++santoni_smd_fifo_read(uint32_t off, void *dst, uint32_t n)
++{
++	uint32_t mask = santoni_smd.fifo_size - 1u;
++	if (santoni_smd.word) {
++		for (uint32_t i = 0; i < n; i += 4u) {
++			uint32_t v = *(volatile uint32_t *)(santoni_smd.rxfifo +
++			    ((off + i) & mask));
++			memcpy((uint8_t *)dst + i, &v, sizeof(v));
++		}
++	} else {
++		for (uint32_t i = 0; i < n; i++) {
++			((uint8_t *)dst)[i] = *(volatile uint8_t *)
++			    (santoni_smd.rxfifo + ((off + i) & mask));
++		}
++	}
++}
++
++/* Consume one complete rx packet, if any (Linux qcom_smd_channel_intr). */
++static bool
++santoni_smd_rx_drain(void)
++{
++	uint32_t mask = santoni_smd.fifo_size - 1u;
++	uint32_t head = smd_read32(santoni_smd.rxinfo, INFO_HEAD);
++	uint32_t tail = smd_read32(santoni_smd.rxinfo, INFO_TAIL);
++	uint32_t avail = (head - tail) & mask;
++
++	if (smd_read_flag(santoni_smd.rxinfo, FLAG_FSTATE)) {
++		smd_write_flag(santoni_smd.rxinfo, FLAG_FSTATE, 0);
++	}
++	if (avail < SMD_PACKET_HDR_LEN) {
++		return false;
++	}
++	uint32_t pktlen = 0;
++	santoni_smd_fifo_read(tail, &pktlen, 4);
++	if (pktlen > 512u || avail < SMD_PACKET_HDR_LEN + pktlen) {
++		return false;
++	}
++	tail = (tail + SMD_PACKET_HDR_LEN) & mask;
++	smd_write_flag(santoni_smd.rxinfo, FLAG_FHEAD, 0);
++	uint32_t take = pktlen;
++	if (take > sizeof(santoni_smd.resp)) {
++		take = sizeof(santoni_smd.resp);
++	}
++	santoni_smd_fifo_read(tail, santoni_smd.resp, take);
++	santoni_smd.resp_len = take;
++	santoni_smd.resp_ready = true;
++	tail = (tail + pktlen) & mask;
++	smd_write32(santoni_smd.rxinfo, INFO_TAIL, tail);
++	smd_write_flag(santoni_smd.rxinfo, FLAG_FTAIL, 1);
++	if (!smd_read_flag(santoni_smd.rxinfo, FLAG_FBLOCKREADINTR)) {
++		santoni_smd_kick();
++	}
++	return true;
++}
++
++static bool
++santoni_smd_send(const void *data, uint32_t len)
++{
++	uint32_t mask = santoni_smd.fifo_size - 1u;
++	uint32_t tlen = SMD_PACKET_HDR_LEN + len;
++	uint32_t head = smd_read32(santoni_smd.txinfo, INFO_HEAD);
++	uint32_t tail = smd_read32(santoni_smd.txinfo, INFO_TAIL);
++	uint32_t avail = mask - ((head - tail) & mask);
++	if (tlen >= santoni_smd.fifo_size || avail < tlen) {
++		printf("SANTONI RPM: tx fifo full (head %u tail %u)\n", head, tail);
++		return false;
++	}
++	uint32_t hdr[5] = {len, 0, 0, 0, 0};
++	smd_write_flag(santoni_smd.txinfo, FLAG_FTAIL, 0);
++	santoni_smd_fifo_write(head, hdr, sizeof(hdr));
++	santoni_smd_fifo_write(head + SMD_PACKET_HDR_LEN, data, len);
++	smd_write32(santoni_smd.txinfo, INFO_HEAD,
++	    (head + tlen) & mask);
++	smd_write_flag(santoni_smd.txinfo, FLAG_FHEAD, 1);
++	santoni_smd_kick();
++	return true;
++}
++
++static bool
++santoni_smd_open_channel(void)
++{
++	uint32_t rs;
++
++	if (santoni_smd.open) {
++		return true;
++	}
++	if (!santoni_smd.mapped) {
++		santoni_smd.smem = ml_io_map(SMEM_PHYS, SMEM_MAP_SIZE);
++		santoni_smd.ipc = ml_io_map(APCS1_PHYS, 0x1000);
++		if (!santoni_smd.smem || !santoni_smd.ipc) {
++			printf("SANTONI RPM: MMIO mapping failed\n");
++			return false;
++		}
++		if (!santoni_smd_map_channel()) {
++			return false;
++		}
++		santoni_smd.mapped = true;
++	}
++
++	/* Linux qcom_smd_channel_reset + qcom_smd_channel_open, polled. */
++	smd_write32(santoni_smd.txinfo, INFO_STATE, SMD_CLOSED);
++	for (uint32_t f = 0; f < 8u; f++) {
++		smd_write_flag(santoni_smd.txinfo, f, 0);
++	}
++	smd_write_flag(santoni_smd.txinfo, FLAG_FSTATE, 1);
++	smd_write_flag(santoni_smd.txinfo, FLAG_FBLOCKREADINTR, 1);
++	smd_write32(santoni_smd.txinfo, INFO_HEAD, 0);
++	smd_write32(santoni_smd.rxinfo, INFO_TAIL, 0);
++	santoni_smd_kick();
++
++	santoni_smd_set_state(SMD_OPENING);
++	rs = SMD_CLOSED;
++	for (int ms = 0; ms < 1500; ms++) {
++		(void)santoni_smd_rx_drain();
++		rs = smd_read32(santoni_smd.rxinfo, INFO_STATE);
++		if (rs == SMD_OPENING || rs == SMD_OPENED) {
++			break;
++		}
++		delay(1000);
++	}
++	if (rs != SMD_OPENING && rs != SMD_OPENED) {
++		printf("SANTONI RPM: remote never opened (state %u)\n", rs);
++		return false;
++	}
++	santoni_smd_set_state(SMD_OPENED);
++	rs = SMD_OPENING;
++	for (int ms = 0; ms < 3000; ms++) {
++		(void)santoni_smd_rx_drain();
++		rs = smd_read32(santoni_smd.rxinfo, INFO_STATE);
++		if (rs == SMD_OPENED) {
++			break;
++		}
++		delay(1000);
++	}
++	if (rs != SMD_OPENED) {
++		printf("SANTONI RPM: remote never finished open (state %u)\n", rs);
++		return false;
++	}
++	santoni_smd.open = true;
++	printf("SANTONI RPM: channel open\n");
++	return true;
++}
++
++/*
++ * Vote PM8937 LDOn on at uv in the active set, exactly like Linux
++ * qcom_smd_regulator with SWEN + UV keys.  rsc "ldoa", id = n.
++ */
++static bool
++santoni_rpm_ldo(unsigned ldo, uint32_t uv)
++{
++	if (!santoni_smd_open_channel()) {
++		return false;
++	}
++	uint32_t id = ++santoni_smd.msg_id;
++	uint32_t msg[] = {
++		RPM_MSG_REQ, 20u + 24u,
++		id, 0u, RPM_RSC_LDOA, ldo, 24u,
++		RPM_KEY_SWEN, 4u, 1u,
++		RPM_KEY_UV, 4u, uv,
++	};
++	santoni_smd.resp_ready = false;
++	if (!santoni_smd_send(msg, sizeof(msg))) {
++		return false;
++	}
++	for (int ms = 0; ms < 1000 && !santoni_smd.resp_ready; ms++) {
++		(void)santoni_smd_rx_drain();
++		if (!santoni_smd.resp_ready) {
++			delay(1000);
++		}
++	}
++	if (!santoni_smd.resp_ready) {
++		printf("SANTONI RPM: L%u: no answer\n", ldo);
++		return false;
++	}
++	bool acked = false, err = false;
++	uint32_t words = santoni_smd.resp_len / 4u;
++	if (words >= 2u) {
++		uint32_t end = 2u + santoni_smd.resp[4] / 4u +
++		    ((santoni_smd.resp[4] % 4u) ? 1u : 0u);
++		if (end > words) {
++			end = words;
++		}
++		for (uint32_t i = 2u; i + 2u <= end;) {
++			uint32_t type, len = 0;
++			memcpy(&type, santoni_smd.resp + 4u * i, sizeof(type));
++			memcpy(&len, santoni_smd.resp + 4u * (i + 1u), sizeof(len));
++			if (type == RPM_MSG_MSG_ID && i + 2u < end) {
++				uint32_t rid = 0;
++				memcpy(&rid, santoni_smd.resp + 4u * (i + 2u), sizeof(rid));
++				if (rid == id) {
++					acked = true;
++				}
++			} else if (type == RPM_MSG_ERR && i + 2u < end && len <= 31u) {
++				char text[32];
++				memcpy(text, santoni_smd.resp + 4u * (i + 2u), len);
++				text[len] = 0;
++				printf("SANTONI RPM: L%u: error '%s'\n", ldo, text);
++				err = true;
++			}
++			i += 2u + len / 4u + ((len % 4u) ? 1u : 0u);
++		}
++	}
++	printf("SANTONI RPM: L%u %u uV: %s\n", ldo, uv,
++	    acked && !err ? "ok" : "FAILED");
++	return acked && !err;
++}
++
++/*
+  * 0: header and CRC good, 1: header good but CRC bad (still parsed),
+  * -1: no I2C ACK, -2: no M06 response header.
+  */
+@@ -3228,12 +3691,27 @@
+ 	tlmm_gpio_in_cfg(tlmm, PIN_VOL_UP, TLMM_PULL_UP);
+ 	tlmm_gpio_in_cfg(tlmm, PIN_TOUCH_INT, TLMM_PULL_UP | TLMM_DRV_8MA);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	tlmm_gpio_in(tlmm, PIN_SCL);
++	santoni_i2c_scl_high(tlmm);
+ 
+-	/* Reset is active low: assert 20 ms, release, then give the M06
+-	 * firmware 300 ms to boot before the first I2C access. */
++	/* Power first, then release reset: hold the controller in reset
++	 * while the rails come up, ask the RPM for L10 (VCC 2.85 V) and
++	 * L5 (IOVCC 1.8 V), then release and give the M06 firmware 300 ms
++	 * to boot before the first I2C access (Linux edt-ft5x06 order). */
+ 	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 0,
+ 	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
++
++	int rpm_on = 1;
++	(void)PE_parse_boot_argn("santonirpm", &rpm_on, sizeof(rpm_on));
++	if (rpm_on) {
++		bool l10 = santoni_rpm_ldo(10, 2850000);
++		bool l5 = santoni_rpm_ldo(5, 1800000);
++		printf("SANTONI RPM: touch rails L10 %s, L5 %s\n",
++		    l10 ? "ok" : "FAILED", l5 ? "ok" : "FAILED");
++	} else {
++		printf("SANTONI RPM: voting disabled (santonirpm=0)\n");
++	}
++
++	santoni_pmic_report();
+ 	delay(20 * 1000);
+ 	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 1,
+ 	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
+@@ -3243,8 +3721,6 @@
+ 	    (unsigned)tlmm_gpio_get(tlmm, PIN_TOUCH_RST),
+ 	    (unsigned)tlmm_gpio_get(tlmm, PIN_TOUCH_INT));
+ 
+-	santoni_pmic_report();
+-
+ 	uint8_t probe[FT5435_REPORT_LEN];
+ 	int prc = santoni_ft5435_report(tlmm, probe);
+ 	if (prc == 0 || prc == 1) {

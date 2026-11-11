@@ -1,0 +1,4 @@
+# A unified diff's context marker precedes the source's literal tab indentation.
+# Keep trailing whitespace checks while allowing that required patch syntax.
+xnu/patches/*.patch whitespace=-space-before-tab
+tools/santoni-graphics/*.patch whitespace=-space-before-tab

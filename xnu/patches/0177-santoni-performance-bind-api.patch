@@ -1,0 +1,18 @@
+Subject: [PATCH 0177] santoni: declare the private processor-binding API
+
+The opt-in CPU probe uses thread_bind, whose declaration is hidden
+from exported IOKit headers. Use its existing C ABI explicitly,
+rather than enabling broad private headers. No runtime/input change.
+
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -28,6 +28,8 @@
+ extern "C" void flush_dcache64(addr64_t addr, unsigned count, int phys);
+ extern "C" vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
+ extern "C" int printf(const char *format, ...);
++/* sched_prim.h omits this private API from the IOKit exported headers. */
++extern "C" processor_t thread_bind(processor_t processor);
+ 
+ #if defined(SANTONI)
+ /* Matches the assembly's private cache-line slot; no neighboring CPU writes. */

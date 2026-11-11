@@ -1,0 +1,264 @@
+diff --git a/src/freedreno/drm/freedreno_bo.c b/src/freedreno/drm/freedreno_bo.c
+index 1f99f36..1c5e7c2 100644
+--- a/src/freedreno/drm/freedreno_bo.c
++++ b/src/freedreno/drm/freedreno_bo.c
+@@ -12,6 +12,13 @@
+ #include "freedreno_drm_perfetto.h"
+ #include "freedreno_priv.h"
+
++#ifdef SANTONI_GFX_MESA
++#include "santoni_drm.h"
++#undef os_mmap
++#define os_mmap(addr, length, prot, flags, fd, offset) sgfx_drm_bo_map(fd, offset, length)
++#define os_munmap(addr, length) sgfx_drm_bo_unmap(addr, length)
++#endif
++
+ simple_mtx_t table_lock = SIMPLE_MTX_INITIALIZER;
+ simple_mtx_t fence_lock = SIMPLE_MTX_INITIALIZER;
+
+diff --git a/src/freedreno/drm/freedreno_device.c b/src/freedreno/drm/freedreno_device.c
+index 5ce05a2..6ac08cb 100644
+--- a/src/freedreno/drm/freedreno_device.c
++++ b/src/freedreno/drm/freedreno_device.c
+@@ -19,6 +19,12 @@
+ #include "freedreno_drm_perfetto.h"
+ #include "freedreno_priv.h"
+
++#ifdef SANTONI_GFX_MESA
++#include "santoni_drm.h"
++#define os_dupfd_cloexec sgfx_drm_dup
++#define close sgfx_drm_close
++#endif
++
+ struct fd_device *msm_device_new(int fd, drmVersionPtr version);
+ #ifdef HAVE_FREEDRENO_VIRTIO
+ struct fd_device *virtio_device_new(int fd, drmVersionPtr version);
+diff --git a/src/freedreno/drm/meson.build b/src/freedreno/drm/meson.build
+index ffaf6c9..ae3d864 100644
+--- a/src/freedreno/drm/meson.build
++++ b/src/freedreno/drm/meson.build
+@@ -62,6 +62,12 @@ if freedreno_kmds.contains('virtio')
+   ]
+ endif
+
++# msm has no virtio transport dependency (also when built for iOS).
++libfreedreno_vdrm_link = []
++if freedreno_kmds.contains('virtio')
++  libfreedreno_vdrm_link += libvdrm
++endif
++
+ libfreedreno_drm = static_library(
+   'freedreno_drm',
+   [
+@@ -73,7 +79,7 @@ libfreedreno_drm = static_library(
+   gnu_symbol_visibility : 'hidden',
+   dependencies : libfreedreno_drm_deps,
+   # TODO
+-  link_with : [libvdrm],
++  link_with : libfreedreno_vdrm_link,
+   build_by_default : false,
+ )
+
+diff --git a/src/freedreno/drm/msm/msm_ringbuffer_sp.c b/src/freedreno/drm/msm/msm_ringbuffer_sp.c
+index d2608a1..cf0a9a1 100644
+--- a/src/freedreno/drm/msm/msm_ringbuffer_sp.c
++++ b/src/freedreno/drm/msm/msm_ringbuffer_sp.c
+@@ -41,6 +41,10 @@ flush_submit_list(struct list_head *submit_list)
+    }
+
+    struct drm_msm_gem_submit_cmd cmds[nr_cmds];
++#ifdef SANTONI_GFX_MESA
++   /* nr_relocs == 0 still requires pointer-free reserved fields to be zero. */
++   memset(cmds, 0, sizeof(cmds));
++#endif
+
+    unsigned cmd_idx = 0;
+
+@@ -118,6 +122,13 @@ flush_submit_list(struct list_head *submit_list)
+
+    for (unsigned i = 0; i < fd_submit->nr_bos; i++) {
+       submit_bos[i].flags = fd_submit->bos[i]->reloc_flags;
++#ifdef SANTONI_GFX_MESA
++      /* Mesa initializes reloc_flags to READ|WRITE even for RING_FLAGS
++       * allocations. The Santoni owner-bound BO retains GPU-read-only
++       * permissions; do not request a write merely as a sync hint. */
++      if (fd_submit->bos[i]->alloc_flags & FD_BO_GPUREADONLY)
++         submit_bos[i].flags &= ~MSM_SUBMIT_BO_WRITE;
++#endif
+       submit_bos[i].handle = fd_submit->bos[i]->handle;
+       submit_bos[i].presumed = 0;
+    }
+diff --git a/src/freedreno/ir3/ir3_disk_cache.c b/src/freedreno/ir3/ir3_disk_cache.c
+index 1d35b43..447706b 100644
+--- a/src/freedreno/ir3/ir3_disk_cache.c
++++ b/src/freedreno/ir3/ir3_disk_cache.c
+@@ -30,6 +30,10 @@
+ void
+ ir3_disk_cache_init(struct ir3_compiler *compiler)
+ {
++#ifndef ENABLE_SHADER_CACHE
++   /* iOS uses the explicitly disabled disk-cache path; no ELF build-ID exists. */
++   compiler->disk_cache = NULL;
++#else
+    if (ir3_shader_debug & IR3_DBG_NOCACHE)
+       return;
+
+@@ -46,6 +50,7 @@ ir3_disk_cache_init(struct ir3_compiler *compiler)
+
+    uint64_t driver_flags = ir3_shader_debug_hash_key();
+    compiler->disk_cache = disk_cache_create(renderer, timestamp, driver_flags);
++#endif
+ }
+
+ void
+diff --git a/src/freedreno/meson.build b/src/freedreno/meson.build
+index 29e1bc4..29e780d 100644
+--- a/src/freedreno/meson.build
++++ b/src/freedreno/meson.build
+@@ -22,7 +22,7 @@ subdir('ir2')
+ subdir('ir3')
+ subdir('fdl')
+
+-if system_has_kms_drm
++if system_has_kms_drm or host_machine.system() == 'darwin'
+   subdir('drm')
+ endif
+
+diff --git a/src/gallium/drivers/freedreno/freedreno_screen.c b/src/gallium/drivers/freedreno/freedreno_screen.c
+index e41699a..24e3ddf 100644
+--- a/src/gallium/drivers/freedreno/freedreno_screen.c
++++ b/src/gallium/drivers/freedreno/freedreno_screen.c
+@@ -25,7 +25,9 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include "drm-uapi/drm_fourcc.h"
++#ifndef SANTONI_GFX_MESA
+ #include <sys/sysinfo.h>
++#endif
+
+ #include "freedreno_fence.h"
+ #include "freedreno_perfetto.h"
+@@ -695,6 +697,11 @@ fd_init_screen_caps(struct fd_screen *screen)
+    caps->uma = true;
+    caps->memobj = fd_device_version(screen->dev) >= FD_VERSION_MEMORY_FD;
+    caps->native_fence_fd = fd_device_version(screen->dev) >= FD_VERSION_FENCE_FD;
++#ifdef SANTONI_GFX_MESA
++   /* The emulated softpin dialect has no shared memory/native sync-file API. */
++   caps->memobj = false;
++   caps->native_fence_fd = false;
++#endif
+    caps->fence_signal = screen->has_syncobj;
+    caps->cull_distance = is_a6xx(screen);
+    caps->shader_stencil_export = is_a6xx(screen);
+@@ -990,6 +997,9 @@ fd_screen_create(int fd,
+
+    if (fd_device_version(dev) >= FD_VERSION_ROBUSTNESS)
+       screen->has_robustness = true;
++#ifdef SANTONI_GFX_MESA
++   screen->has_robustness = false; /* no DRM reset/context fault query is emulated */
++#endif
+
+    screen->has_syncobj = fd_has_syncobj(screen->dev);
+
+@@ -1004,9 +1014,15 @@ fd_screen_create(int fd,
+    screen->driconf.dual_color_blend_by_location =
+          driQueryOptionb(config->options, "dual_color_blend_by_location");
+
++#ifdef SANTONI_GFX_MESA
++   uint64_t physical_memory = 0;
++   os_get_total_physical_memory(&physical_memory);
++   screen->ram_size = MIN2(physical_memory, UINT32_MAX);
++#else
+    struct sysinfo si;
+    sysinfo(&si);
+    screen->ram_size = si.totalram;
++#endif
+
+    DBG("Pipe Info:");
+    DBG(" GPU-id:          %s", fd_dev_name(screen->dev_id));
+diff --git a/src/gallium/drivers/freedreno/freedreno_util.h b/src/gallium/drivers/freedreno/freedreno_util.h
+index 543e4dd..cade78a 100644
+--- a/src/gallium/drivers/freedreno/freedreno_util.h
++++ b/src/gallium/drivers/freedreno/freedreno_util.h
+@@ -96,11 +96,17 @@ extern bool fd_binning_enabled;
+ #include <unistd.h>
+ #include <sys/types.h>
+ #include <sys/syscall.h>
++#ifdef SANTONI_GFX_MESA
++/* Use a supported process-ID tag on iOS; Linux gettid syscall is unavailable. */
++#define FD_DBG_TASK_ID getpid()
++#else
++#define FD_DBG_TASK_ID ((pid_t)syscall(SYS_gettid))
++#endif
+
+ #define DBG(fmt, ...)                                                          \
+    do {                                                                        \
+       if (FD_DBG(MSGS))                                                        \
+-         mesa_logi("%5d: %s:%d: " fmt, ((pid_t)syscall(SYS_gettid)),           \
++         mesa_logi("%5d: %s:%d: " fmt, FD_DBG_TASK_ID,           \
+                                         __func__, __LINE__,                    \
+                                         ##__VA_ARGS__);                        \
+    } while (0)
+diff --git a/src/gallium/winsys/freedreno/drm/freedreno_drm_winsys.c b/src/gallium/winsys/freedreno/drm/freedreno_drm_winsys.c
+index bad823e..e3ed0fb 100644
+--- a/src/gallium/winsys/freedreno/drm/freedreno_drm_winsys.c
++++ b/src/gallium/winsys/freedreno/drm/freedreno_drm_winsys.c
+@@ -19,7 +19,12 @@ struct pipe_screen *
+ fd_drm_screen_create_renderonly(int fd, struct renderonly *ro,
+ 		const struct pipe_screen_config *config)
+ {
++#ifdef SANTONI_GFX_MESA
++   /* The iOS facade owns tracked tokens, not Linux stat-able descriptors. */
++   return fd_screen_create(fd, config, ro);
++#else
+ 	return u_pipe_screen_lookup_or_create(fd, config, ro, fd_screen_create);
++#endif
+ }
+
+ /**
+diff --git a/src/mesa/main/dlist.c b/src/mesa/main/dlist.c
+--- a/src/mesa/main/dlist.c
++++ b/src/mesa/main/dlist.c
+@@ -5929,11 +5929,14 @@
+       if (size >= 4) ASSIGN_UINT64_TO_NODES(n, 8, w);
+    }
+
++   /* Allocation failure must not make the current-value copy dereference
++    * the missing display-list node. Match the 32-bit path: supplied values
++    * still update current state and the optional immediate execution. */
++   uint64_t v[] = {x, y, z, w};
+    ctx->ListState.ActiveAttribSize[index] = size;
+-   memcpy(ctx->ListState.CurrentAttrib[index], &n[2], size * sizeof(uint64_t));
+-
+-   if (ctx->ExecuteFlag) {
+-      uint64_t v[] = {x, y, z, w};
++   memcpy(ctx->ListState.CurrentAttrib[index], v, size * sizeof(uint64_t));
++
++   if (ctx->ExecuteFlag) {
+       if (type == GL_DOUBLE) {
+          if (size == 4)
+             CALL_VertexAttribL4dv(ctx->Dispatch.Exec, (attr, (GLdouble*)v));
+diff --git a/src/util/macros.h b/src/util/macros.h
+index 88b3029..46af5fb 100644
+--- a/src/util/macros.h
++++ b/src/util/macros.h
+@@ -119,7 +119,18 @@
+  * Unreachable macro. Useful for suppressing "control reaches end of non-void
+  * function" warnings.
+  */
+-#if defined(HAVE___BUILTIN_UNREACHABLE) || __has_builtin(__builtin_unreachable)
++#if defined(SANTONI_GFX_MESA)
++/* Keep unsupported internal paths fatal in the iOS port's release build.
++ * __builtin_unreachable alone gives undefined behavior when such a path is
++ * reached; an explicit abort also gives the binary audit a real ABI terminal.
++ * This does not add support for the rejected operation. */
++#include <stdlib.h>
++#define unreachable(str)                                      \
++do {                                                          \
++   fprintf(stderr, "Mesa(Santoni): %s\n", "" str);              \
++   abort();                                                   \
++} while (0)
++#elif defined(HAVE___BUILTIN_UNREACHABLE) || __has_builtin(__builtin_unreachable)
+ #define unreachable(str)    \
+ do {                        \
+    assert(!"" str);         \

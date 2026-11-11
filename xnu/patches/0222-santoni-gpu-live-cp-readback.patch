@@ -1,0 +1,63 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+index a457480..738b079 100644
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -2330,14 +2330,29 @@ static bool __attribute__((noinline)) sgpu_render_live_tables(bool linked)
+     return true;
+ }
+
++/* A5XX_CP_ME_CNTL is vendor a5xx_reg.h word0x832 x4 = byte0x20c8.
++ * adreno_dispatch.c requests A5xx CP/PFP stop with bits0|1. The captured
++ * A505 live handoff writes0x3 and reads0xf: bits2|3 are response fields,
++ * not requested control. Their individual meanings are not established.
++ * Exclude ONLY these observed response bits; both request bits and every
++ * other bit remain checked. Neither request echo nor response bits prove
++ * idle: the separate bounded RBBM/fault/mapping checks remain mandatory.
++ */
++#define SG_CP_LIVE_READBACK_MASK (~0xcu)
++static bool __attribute__((noinline)) sgpu_render_live_cp_state(uint32_t want)
++{
++    return poll(&session_core.p, SG_GPU, SG_ME_CNTL, SG_CP_LIVE_READBACK_MASK, want, 10000);
++}
++
+ static bool __attribute__((noinline)) sgpu_render_live_state(uint32_t wptr, uint32_t me, uint32_t cb, uint32_t route)
+ {
+     struct probe *p = &session_core.p;
+     if (!p->gpu_live || !p->gpu_owned || !p->gpu_resumed || !p->smmu_live ||
+         !p->dma_exposed || !p->commands_started || p->restoring) return false;
++    if (!sgpu_render_live_cp_state(me)) return false;
+     const uint32_t values[][3] = {
+         {SG_GPU,SG_TRUST,0},{SG_GPU,SG_RB_RPTR,wptr},{SG_GPU,SG_RB_WPTR,wptr},
+-        {SG_GPU,SG_ME_CNTL,me},{SG_GPU,SG_INT_MASK,0},
++        {SG_GPU,SG_INT_MASK,0},
+         {SG_GPU,SG_RB_BASE,SGPU_RING_VA},{SG_GPU,SG_RB_BASE_HI,0},
+         {SG_GPU,SG_RB_CNTL,BIT(27)|(2u<<8)|9u},
+         {SG_GPU,SG_PM4_BASE,SGPU_PM4_VA},{SG_GPU,SG_PM4_BASE+4,0},
+@@ -2368,7 +2383,7 @@ static bool __attribute__((noinline)) sgpu_render_live_link(void)
+         return sgpu_render_live_fail(SG_BAD_MEMORY);
+     r->phase = SG_LIVE_HALT;
+     a->exposed = r->exposed = true; /* conservative retention before any handoff write */
+-    if (!checked_write32(p, SG_GPU, SG_ME_CNTL, ~0u, SG_CP_STOP_MASK) ||
++    if (!checked_write32(p, SG_GPU, SG_ME_CNTL, SG_CP_LIVE_READBACK_MASK, SG_CP_STOP_MASK) ||
+         !poll(p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000) ||
+         !checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, SG_S2CR_FAULT) ||
+         !checked_write32(p, SG_SMMU, SG_CB, ~0u, 0x1126u) ||
+@@ -2386,7 +2401,8 @@ static bool __attribute__((noinline)) sgpu_render_live_link(void)
+     /* vendor arm-smmu.c arm_smmu_tlb_inv_context/arm_smmu_tlb_sync:
+      * ASID maintenance commands are checked by TLBSYNC -> TLBSTATUS, not an
+      * echoed command value. These TWO command registers alone use readable
+-     * mask zero; all CP/CB configuration and RPTR/WPTR checks use full masks.
++     * mask zero; CP requests exclude only observed response bits2|3;
++     * all CB configuration and RPTR/WPTR checks retain full masks.
+      * ASID1 is read back from the unchanged owned TTBR high word above.
+      */
+     if (!checked_write32(p, SG_SMMU, SG_CB_TLBIASID, 0, 1) ||
+@@ -2398,7 +2414,7 @@ static bool __attribute__((noinline)) sgpu_render_live_link(void)
+         !sgpu_render_live_state(170,3,0x1127,SG_S2CR_FAULT) ||
+         !checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, 0) ||
+         !sgpu_render_live_state(170,3,0x1127,0) ||
+-        !checked_write32(p, SG_GPU, SG_ME_CNTL, ~0u, 0) ||
++        !checked_write32(p, SG_GPU, SG_ME_CNTL, SG_CP_LIVE_READBACK_MASK, 0) ||
+         !sgpu_render_live_state(170,0,0x1127,0)) return sgpu_render_live_fail(SG_BAD_SMMU);
+     return true;
+ }

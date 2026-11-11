@@ -1,0 +1,83 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3135,6 +3135,9 @@
+ 		if (!core) {
+ 			return false;
+ 		}
++		/* PMIC_ARB_VERSION at +0: 0x2xxxxxxx = v2 arbiter. */
++		printf("SANTONI SPMI: hw_ver=%#x\n",
++		    *(volatile uint32_t *)core);
+ 	}
+ 	for (int i = 0; i < SPMI_APID_MAX; i++) {
+ 		uint32_t map = *(volatile uint32_t *)(core + 0x800 + 4 * i);
+@@ -3241,6 +3244,10 @@
+ #define SMEM_GLOBAL_HOST        0xfffeu
+ #define SMEM_PRIV_ENTRY_SIZE    16u
+ #define SMEM_PRIV_CANARY        0xa5a5u
++/* SMD channel info/fifo items live in the RPM message ram: toc aux_base
++ * 0x60000 (and the next 32 KiB bank at 0x68000 for some fifos). */
++#define RPM_MSGRAM_PHYS         0x00060000UL
++#define RPM_MSGRAM_SIZE         0x00010000UL
+ 
+ #define SMD_ALLOC_TBL_COUNT     2
+ #define SMD_ALLOC_TBL_SIZE      64
+@@ -3276,7 +3283,7 @@
+ #define RPM_KEY_UV              0x00007675u     /* "uv\0\0" */
+ 
+ struct santoni_smd {
+-	vm_offset_t smem, ipc;
++	vm_offset_t smem, ipc, msgram;
+ 	bool mapped, word, open;
+ 	vm_offset_t txinfo, rxinfo;
+ 	vm_offset_t txfifo, rxfifo;
+@@ -3324,7 +3331,9 @@
+ 	}
+ }
+ 
+-/* Global-heap SMEM item: toc[item] = {allocated, offset, size, aux}. */
++/* Global-heap SMEM item: toc[item] = {allocated, offset, size, aux}.
++ * aux 0 (or SMEM_PHYS) resolves in the main region; 0x60000/0x68000 in
++ * the mapped RPM message ram (Linux's qcom,rpm-msg-ram region). */
+ static vm_offset_t
+ santoni_smem_item_legacy(uint32_t item, size_t *size)
+ {
+@@ -3338,16 +3347,26 @@
+ 		return 0;
+ 	}
+ 	uint32_t base = aux & ~3u;
+-	if (base != 0 && base != (uint32_t)SMEM_PHYS) {
++	vm_offset_t region;
++	uint32_t region_size;
++	if (base == 0 || base == (uint32_t)SMEM_PHYS) {
++		region = santoni_smd.smem;
++		region_size = SMEM_MAP_SIZE;
++	} else if (base >= (uint32_t)RPM_MSGRAM_PHYS &&
++	    base < (uint32_t)RPM_MSGRAM_PHYS + RPM_MSGRAM_SIZE &&
++	    santoni_smd.msgram) {
++		region = santoni_smd.msgram + (base - (uint32_t)RPM_MSGRAM_PHYS);
++		region_size = RPM_MSGRAM_SIZE - (base - (uint32_t)RPM_MSGRAM_PHYS);
++	} else {
+ 		printf("SANTONI RPM: smem item %u in unmapped region %#x\n",
+ 		    item, base);
+ 		return 0;
+ 	}
+-	if ((uint64_t)off + sz > SMEM_MAP_SIZE) {
++	if ((uint64_t)off + sz > region_size) {
+ 		return 0;
+ 	}
+ 	*size = sz;
+-	return santoni_smd.smem + off;
++	return region + off;
+ }
+ 
+ /*
+@@ -3641,7 +3660,8 @@
+ 	if (!santoni_smd.mapped) {
+ 		santoni_smd.smem = ml_io_map(SMEM_PHYS, SMEM_MAP_SIZE);
+ 		santoni_smd.ipc = ml_io_map(APCS1_PHYS, 0x1000);
+-		if (!santoni_smd.smem || !santoni_smd.ipc) {
++		santoni_smd.msgram = ml_io_map(RPM_MSGRAM_PHYS, RPM_MSGRAM_SIZE);
++		if (!santoni_smd.smem || !santoni_smd.ipc || !santoni_smd.msgram) {
+ 			printf("SANTONI RPM: MMIO mapping failed\n");
+ 			return false;
+ 		}

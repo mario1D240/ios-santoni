@@ -1,0 +1,520 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -32,12 +32,13 @@
+ _Static_assert(SGPU_PAGE == 4096, "A505 diagnostic format uses 4K pages");
+ static struct {
+     vm_offset_t maps[SG_BLOCKS], pool;
+     uint32_t sizes[SG_BLOCKS], attempted, mode, stock_unsecure;
+     int wait_channel;
+     uint32_t stock_pixels;
++    uint32_t g3;
+ } sg;
+
+ static const uint32_t sgpu_block_pa[SG_BLOCKS] = {
+     0x01859000,0x0185b000,0x01845000,0x01812000,0x01c00000,0x01c40000
+ };
+
+@@ -798,24 +799,40 @@
+     if (enabled == 0) return true;
+     if (mode != 3 || sg.stock_unsecure != 1 || enabled != 1) return false;
+     sg.stock_pixels = 1;
+     return true;
+ }
+
++static bool __attribute__((noinline)) sgpu_g3_options(uint32_t mode)
++{
++    uint32_t enabled=0;
++    sg.g3=0;
++    (void)PE_parse_boot_argn("santonigpu_submit",&enabled,sizeof(enabled));
++    if (!enabled) return true;
++    if (mode!=3 || enabled!=1 || sg.stock_unsecure!=1 || sg.stock_pixels!=1) return false;
++    sg.g3=1;
++    return true;
++}
++
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
+     if (!sgpu_stock_options(sg.mode)) {
+         printf("SANTONI GPU: conflicting/invalid stock transition opt-in; no hardware access\n");
+         thread_terminate_self();
+         return;
+     }
+     if (!sgpu_pixel_options(sg.mode)) {
+         printf("SANTONI GPU: invalid pixel opt-in; requires separate mode3/stock1/pixels1; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
++    if (!sgpu_g3_options(sg.mode)) {
++        printf("SANTONI GPU: invalid G3 opt-in; no hardware access\n");
+         thread_terminate_self();
+         return;
+     }
+     if (sgpu_pas_cache_preflight(sg.mode)) {
+         thread_terminate_self();
+         return;
+@@ -831,13 +848,13 @@
+     if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess)
+         (void)SecureDTGetProperty(chosen, "santoni-gpu-firmware", &firmware, &firmware_size);
+     struct sgpu_ops ops = {
+         .map=io_map, .read32=sgpu_io_read32, .read64=sgpu_io_read64,
+         .write32=sgpu_io_write32, .write64=sgpu_io_write64, .now_us=now_us, .wait_us=sgpu_kernel_wait_us,
+         .allocate=allocate, .release=release, .clean=clean, .invalidate=sgpu_cache_invalidate,
+-        .trace=trace, .stock_unsecure=sg.stock_unsecure, .stock_pixels=sg.stock_pixels
++        .trace=trace, .stock_unsecure=sg.stock_unsecure, .stock_pixels=sg.stock_pixels, .g3=sg.g3
+     };
+     struct sgpu_report report;
+     printf("SANTONI GPU: start mode=%u; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\n", sg.mode);
+     bool passed = sgpu_probe(&ops, sg.mode, firmware, firmware_size, &report);
+     sgpu_failure_summary("FIRST_FAIL", &report.failure);
+     sgpu_failure_summary("ROLLBACK_FAIL", &report.rollback_failure);
+@@ -851,12 +868,16 @@
+             report.stock.attempted ? 1u : 0u, report.stock.echo_zero ? 1u : 0u,
+             report.stock.held ? 1u : 0u, report.stock.before, report.stock.after);
+     if (report.pixel.requested)
+         printf("SANTONI GPU: PIXEL RESULT pass=%u started=%u count=%u held=%u error=%u; NO PAS; NO UI REPLACEMENT; held state requires reboot\n",
+             report.pixel.passed ? 1u : 0u, report.pixel.started ? 1u : 0u, report.pixels,
+             report.stock.held ? 1u : 0u, report.error);
++    if (report.g3.requested)
++        printf("SANTONI GPU: G3 RESULT pass=%u started=%u submitted=%u completed=%u writes=%u held=%u error=%u; KERNEL IB ONLY; NO PAS; NO UI\n",
++            report.g3.passed ? 1u : 0u, report.g3.started ? 1u : 0u, report.g3.submitted,
++            report.g3.completed, report.g3.writes, report.stock.held ? 1u : 0u, report.error);
+     thread_terminate_self();
+ }
+
+ void santoni_gpu_start(void)
+ {
+     uint32_t mode = 0;
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -153,12 +153,189 @@
+         !map_pages(m, SGPU_DEST_VA, 6, 1, true) ||
+         !map_pages(m, SGPU_PM4_VA, 7, ap, false) ||
+         !map_pages(m, SGPU_PFP_VA, 7 + ap, bp, false)) return false;
+     for (unsigned i = 0; i < fw->pm4_bytes; i++) m->va[7 * SGPU_PAGE + i] = fw->pm4[i];
+     for (unsigned i = 0; i < fw->pfp_bytes; i++) m->va[(7 + ap) * SGPU_PAGE + i] = fw->pfp[i];
+     return true;
++}
++
++/* Private kernel-only G3 contracts, included by the portable core.
++ * No platform calls, user mappings, live PTE removal or arbitrary IB packets.
++ * One serialized owner/caller; this is NOT a concurrent IOUserClient API.
++ * VAs use the upper half of the existing Santoni 2MiB L3 window. Physical
++ * pages come only from the unused tail of its validated owned 96KiB pool.
++ * Existing PTE_RO/PTE_RW derive from the actually programmed CB0 attributes.
++ */
++#define SG_G3_FIRST_SLOT (0x100000u / SGPU_PAGE)
++#define SG_G3_SLOTS (0x200000u / SGPU_PAGE)
++#define SG_G3_BOS 6u
++#define SG_G3_MAX_WORDS 64u
++#define SG_G3_BATCH_WORDS 11u
++enum sgpu_g3_role { SG_G3_DATA = 1, SG_G3_IB, SG_G3_FENCE };
++struct sgpu_g3_bo {
++    uint32_t owner, handle, bytes, first, pages, role, last_seq;
++    uint8_t physical[SGPU_POOL_PAGES];
++    bool retired, quarantine;
++};
++struct sgpu_g3 {
++    struct sgpu_memory *memory;
++    struct sgpu_g3_bo bo[SG_G3_BOS];
++    uint8_t physical_used[SGPU_POOL_PAGES], va_used[SG_G3_SLOTS];
++    uint32_t next_handle, submitted, completed, busy;
++    bool sealed, failed;
++};
++
++static struct sgpu_g3_bo *sgpu_g3_lookup(struct sgpu_g3 *g, uint32_t owner, uint32_t handle)
++{
++    if (!g || !owner || !handle) return NULL;
++    for (unsigned i = 0; i < SG_G3_BOS; i++)
++        if (g->bo[i].handle == handle && g->bo[i].owner == owner && !g->bo[i].retired)
++            return &g->bo[i];
++    return NULL;
++}
++
++static bool __attribute__((noinline)) sgpu_g3_init(struct sgpu_g3 *g,
++    struct sgpu_memory *memory, uint32_t first_physical)
++{
++    if (!g || !sgpu_memory_validate(memory) || first_physical < 7 || first_physical >= SGPU_POOL_PAGES)
++        return false;
++    uint64_t *l1 = (uint64_t *)(void *)memory->va;
++    uint64_t *l2 = (uint64_t *)(void *)(memory->va + SGPU_PAGE);
++    uint64_t *l3 = (uint64_t *)(void *)(memory->va + 2 * SGPU_PAGE);
++    if (l1[0] != (memory->pa[1] | 3) || l2[SGPU_VA_BASE >> 21] != (memory->pa[2] | 3)) return false;
++    for (unsigned i = SG_G3_FIRST_SLOT; i < SG_G3_SLOTS; i++) if (l3[i]) return false;
++    /* Reject a supposedly spare physical page referenced by ANY old mapping. */
++    for (unsigned i = 0; i < SG_G3_FIRST_SLOT; i++)
++        for (unsigned j = first_physical; j < SGPU_POOL_PAGES; j++)
++            if ((l3[i] & 0x0000fffffffff000ull) == memory->pa[j]) return false;
++    *g = (struct sgpu_g3){.memory = memory, .next_handle = 1};
++    for (unsigned i = 0; i < first_physical; i++) g->physical_used[i] = 1;
++    return true;
++}
++
++static uint32_t __attribute__((noinline)) sgpu_g3_new(struct sgpu_g3 *g,
++    uint32_t owner, uint32_t bytes, enum sgpu_g3_role role)
++{
++    if (!g || !g->memory || !owner || !bytes || bytes > SGPU_POOL_BYTES ||
++        role < SG_G3_DATA || role > SG_G3_FENCE || g->sealed || g->failed ||
++        !g->next_handle || g->next_handle == UINT32_MAX) return 0;
++    unsigned pages = (bytes + SGPU_PAGE - 1) / SGPU_PAGE;
++    unsigned index = SG_G3_BOS, first = 0, run = 0, count = 0;
++    uint8_t physical[SGPU_POOL_PAGES];
++    uint64_t *l3 = (uint64_t *)(void *)(g->memory->va + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < SG_G3_BOS; i++) if (!g->bo[i].handle) { index = i; break; }
++    if (index == SG_G3_BOS) return 0;
++    for (unsigned i = SG_G3_FIRST_SLOT; i < SG_G3_SLOTS; i++) {
++        run = g->va_used[i] || l3[i] ? 0 : run + 1;
++        if (run == pages + 1) { first = i - pages; break; }
++    }
++    if (!first) return 0;
++    for (unsigned i = 0; i < SGPU_POOL_PAGES && count < pages; i++)
++        if (!g->physical_used[i]) physical[count++] = (uint8_t)i;
++    if (count != pages) return 0;
++    struct sgpu_g3_bo *b = &g->bo[index];
++    *b = (struct sgpu_g3_bo){.owner=owner, .handle=g->next_handle++, .bytes=bytes,
++        .first=first, .pages=pages, .role=(uint32_t)role};
++    for (unsigned i = 0; i < pages; i++) {
++        b->physical[i] = physical[i];
++        g->physical_used[physical[i]] = 1;
++        g->va_used[first+i] = 1;
++        l3[first+i] = g->memory->pa[physical[i]] | (role == SG_G3_IB ? PTE_RO : PTE_RW);
++    }
++    g->va_used[first+pages] = 1; /* guard reserved in metadata, PTE stays invalid */
++    return b->handle;
++}
++
++static bool __attribute__((noinline)) sgpu_g3_free(struct sgpu_g3 *g, uint32_t owner, uint32_t handle)
++{
++    struct sgpu_g3_bo *b = sgpu_g3_lookup(g, owner, handle);
++    if (!b) return false;
++    if (g->sealed || b->last_seq > g->completed) {
++        b->retired = b->quarantine = true;
++        if (b->last_seq > g->completed) g->failed = true;
++        return false; /* no PTE clear, physical release or VA reuse after exposure */
++    }
++    uint64_t *l3 = (uint64_t *)(void *)(g->memory->va + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < b->pages; i++) {
++        l3[b->first+i] = 0;
++        g->va_used[b->first+i] = 0;
++        g->physical_used[b->physical[i]] = 0;
++    }
++    g->va_used[b->first+b->pages] = 0;
++    *b = (struct sgpu_g3_bo){0};
++    return true;
++}
++
++static bool sgpu_g3_mapping(struct sgpu_g3 *g, const struct sgpu_g3_bo *b)
++{
++    if (!b || !b->pages || b->pages > SGPU_POOL_PAGES || b->first < SG_G3_FIRST_SLOT ||
++        b->first >= SG_G3_SLOTS || b->pages >= SG_G3_SLOTS - b->first ||
++        !b->bytes || b->bytes > b->pages * SGPU_PAGE || b->retired || b->quarantine) return false;
++    uint64_t *l3 = (uint64_t *)(void *)(g->memory->va + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < b->pages; i++) {
++        if (b->physical[i] >= SGPU_POOL_PAGES || !g->physical_used[b->physical[i]] ||
++            !g->va_used[b->first+i] || l3[b->first+i] != (g->memory->pa[b->physical[i]] |
++            (b->role == SG_G3_IB ? PTE_RO : PTE_RW))) return false;
++    }
++    return g->va_used[b->first+b->pages] && !l3[b->first+b->pages];
++}
++
++static uint32_t sgpu_g3_va(const struct sgpu_g3_bo *b)
++{ return SGPU_VA_BASE + b->first * SGPU_PAGE; }
++
++/* This first IB contract admits only CP_MEM_WRITE to one declared owned DATA
++ * BO and WAIT_FOR_IDLE. No register packets, nested IB, arbitrary event/fence
++ * writes, relocs or user physical addresses. The kernel owns the immutable IB
++ * page until completion; adding a user client requires a private snapshot. */
++static bool __attribute__((noinline)) sgpu_g3_begin(struct sgpu_g3 *g, uint32_t owner,
++    uint32_t ib_handle, uint32_t data_handle, uint32_t fence_handle, uint32_t words,
++    uint32_t batch[SG_G3_BATCH_WORDS])
++{
++    if (!g || !g->memory || !batch || !g->sealed || g->failed || g->busy ||
++        !words || words > SG_G3_MAX_WORDS || g->submitted == UINT32_MAX) return false;
++    struct sgpu_g3_bo *ib=sgpu_g3_lookup(g,owner,ib_handle), *data=sgpu_g3_lookup(g,owner,data_handle),
++        *fence=sgpu_g3_lookup(g,owner,fence_handle);
++    if (!sgpu_g3_mapping(g,ib) || !sgpu_g3_mapping(g,data) || !sgpu_g3_mapping(g,fence) ||
++        ib->role != SG_G3_IB || data->role != SG_G3_DATA || fence->role != SG_G3_FENCE ||
++        ib->pages != 1 || words * 4 > ib->bytes || fence->bytes < 64) return false;
++    const uint32_t *commands=(const uint32_t *)(const void *)(g->memory->va + ib->physical[0]*SGPU_PAGE);
++    unsigned writes=0;
++    for (unsigned i=0; i<words;) {
++        if (commands[i] == sgpu_packet7(0x26,0)) { i++; continue; }
++        if (commands[i] != sgpu_packet7(0x3d,3) || words-i < 4 || commands[i+2]) return false;
++        uint32_t va=commands[i+1], base=sgpu_g3_va(data);
++        if ((va & 3) || va < base || data->bytes < 4 || va-base > data->bytes-4) return false;
++        writes++; i+=4;
++    }
++    if (!writes) return false;
++    uint32_t seq=g->submitted+1;
++    /* Target stock adreno_pm4types.h: CP_INDIRECT_BUFFER_PFE=0x3f, three
++     * payload dwords for A5xx's 64-bit address. CACHE_FLUSH_TS event4 follows
++     * the existing Santoni blit's event fence, using a GPU VA, never a PA. */
++    uint32_t values[SG_G3_BATCH_WORDS]={sgpu_packet7(0x3f,3),sgpu_g3_va(ib),0,words,
++        sgpu_packet7(0x26,0),sgpu_packet7(0x46,4),4,sgpu_g3_va(fence),0,seq,sgpu_packet7(0x26,0)};
++    g->submitted=g->busy=seq; /* exposure bookkeeping BEFORE caller can submit */
++    ib->last_seq=data->last_seq=fence->last_seq=seq;
++    for (unsigned i=0;i<SG_G3_BATCH_WORDS;i++) batch[i]=values[i];
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_g3_complete(struct sgpu_g3 *g, uint32_t owner,
++    uint32_t fence_handle, uint32_t observed)
++{
++    struct sgpu_g3_bo *f=sgpu_g3_lookup(g,owner,fence_handle);
++    if (!g || g->failed || !g->busy || !f || f->role != SG_G3_FENCE ||
++        f->last_seq != g->busy || observed != g->busy) return false;
++    g->completed=observed; g->busy=0;
++    return true; /* physical memory and mappings still retained until reboot */
++}
++
++static void __attribute__((noinline)) sgpu_g3_abort(struct sgpu_g3 *g)
++{
++    g->failed=true;
++    for (unsigned i=0;i<SG_G3_BOS;i++) if (g->bo[i].handle) g->bo[i].quarantine=true;
+ }
+
+ static uint32_t read32(struct probe *p, enum sgpu_block b, uint32_t off)
+ { return p->ops->read32(p->ops->ctx, b, off); }
+ static void write32(struct probe *p, enum sgpu_block b, uint32_t off, uint32_t v)
+ { p->ops->write32(p->ops->ctx, b, off, v); }
+@@ -949,12 +1126,140 @@
+     if (has_fault(r)) { r->error = SG_FAULT; return false; }
+     r->pixel.passed = true;
+     r->error = SG_STOCK_HELD; /* matched pixels, intentionally no teardown */
+     return true;
+ }
+
++/* Cold-only mappings: no live PTE writes/unmap/TLB reuse in this first wave. */
++static bool __attribute__((noinline)) sgpu_g3_prepare(struct probe *p, struct sgpu_g3 *g,
++    const struct sgpu_firmware *fw)
++{
++    if (p->ops->g3 != 1 || p->ops->stock_pixels != 1 || p->ops->stock_unsecure != 1 || p->dma_exposed)
++        return false;
++    uint32_t first = 7 + (fw->pm4_bytes + SGPU_PAGE - 1) / SGPU_PAGE +
++        (fw->pfp_bytes + SGPU_PAGE - 1) / SGPU_PAGE;
++    if (first > SGPU_POOL_PAGES - 3 || !sgpu_g3_init(g,&p->memory,first)) return false;
++    uint32_t temporary=sgpu_g3_new(g,1,4,SG_G3_DATA);
++    if (!temporary || !sgpu_g3_free(g,1,temporary)) return false;
++    if (!sgpu_g3_new(g,1,128,SG_G3_IB) || !sgpu_g3_new(g,1,16,SG_G3_DATA) ||
++        !sgpu_g3_new(g,1,64,SG_G3_FENCE) || sgpu_g3_lookup(g,1,temporary)) return false;
++    g->sealed=true; /* no further allocation/free even if startup later fails */
++    return true;
++}
++
++static uint32_t __attribute__((noinline)) sgpu_g3_wait(struct probe *p, uint8_t *fence, uint32_t seq)
++{
++    uint64_t start=p->ops->now_us(p->ops->ctx);
++    for (unsigned i=0;i<=POLL_US/100;i++) {
++        p->ops->invalidate(p->ops->ctx,fence,64);
++        uint32_t got=*(volatile uint32_t *)(void *)fence;
++        if (got==seq) return got;
++        if (p->ops->now_us(p->ops->ctx)-start>=POLL_US) break;
++        if (i!=POLL_US/100) wait_us(p,100);
++    }
++    if (!p->report->error) p->report->error=SG_COMMAND_TIMEOUT;
++    return 0;
++}
++
++static bool __attribute__((noinline)) sgpu_g3_test(struct probe *p, struct sgpu_g3 *g,
++    uint32_t mode, uint32_t *wptr)
++{
++    struct sgpu_report *r=p->report;
++    if (mode!=3 || p->ops->g3!=1 || p->ops->stock_unsecure!=1 || p->ops->stock_pixels!=1 ||
++        !r->g3.requested || r->g3.started || !r->pixel.passed || !r->pixel.started ||
++        !r->stock.held || r->error!=SG_STOCK_HELD || r->failure.kind ||
++        !p->gpu_live || !p->gpu_owned || !p->gpu_resumed || !p->smmu_live ||
++        !p->dma_exposed || p->restoring || !p->commands_started ||
++        !wptr || *wptr!=148 || !g || g->memory!=&p->memory || !g->sealed || g->failed ||
++        g->busy || g->submitted || !sgpu_memory_validate(&p->memory)) {
++        sgpu_failure(p,SG_FAIL_GUARD,SG_GPU,SG_RB_WPTR,~0u,148,0,0,0,0,0);
++        if (!r->error || r->error==SG_STOCK_HELD) r->error=SG_BAD_MODE;
++        return false;
++    }
++    r->g3.started=true; r->stage=SG_G3_SUBMIT; r->error=SG_OK;
++    trace(p,"before G3 owned IB proof; two submissions; NO PAS; state held",148,2,SG_G3_FIRST_SLOT);
++    if (!sgpu_stock_check32(p,SG_GPU,SG_TRUST,0) ||
++        !poll(p,SG_GPU,SG_STATUS,SG_BUSY_MASK,0,10000) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_RB_RPTR,148) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_RB_WPTR,148) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_ME_CNTL,0) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_INT_MASK,0) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_RB_BASE,SGPU_RING_VA) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_RB_BASE_HI,0) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_RB_CNTL,BIT(27)|(2u<<8)|9u) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_PM4_BASE,SGPU_PM4_VA) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_PM4_BASE+4,0) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_PFP_BASE,SGPU_PFP_VA) ||
++        !sgpu_stock_check32(p,SG_GPU,SG_PFP_BASE+4,0) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB,0x1127u) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_S2CR0,0) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_GR1_CBA2R0,1) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_GR1_CBAR0,0x1f300u) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB_TTBCR,0x00802560u) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB_TTBCR2,0x38010u) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB_MAIR0,0xff44u) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB_MAIR0+4,0) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB_TTBR0,(uint32_t)p->memory.pa[0]) ||
++        !sgpu_stock_check32(p,SG_SMMU,SG_CB_TTBR0+4,0x10000u)) {
++        r->error=SG_BAD_SMMU; goto failed;
++    }
++    faults(p);
++    if (has_fault(r)) { r->error=SG_FAULT; goto failed; }
++    struct sgpu_g3_bo *ib=&g->bo[0], *data=&g->bo[1], *fence=&g->bo[2];
++    if (!sgpu_g3_mapping(g,ib) || !sgpu_g3_mapping(g,data) || !sgpu_g3_mapping(g,fence) ||
++        ib->owner!=1 || data->owner!=1 || fence->owner!=1 || ib->role!=SG_G3_IB ||
++        data->role!=SG_G3_DATA || fence->role!=SG_G3_FENCE ||
++        ib->pages!=1 || data->pages!=1 || fence->pages!=1) {
++        r->error=SG_BAD_MEMORY; goto failed;
++    }
++    uint32_t *commands=(uint32_t *)(void *)(p->memory.va+ib->physical[0]*SGPU_PAGE);
++    uint8_t *destination=p->memory.va+data->physical[0]*SGPU_PAGE;
++    uint8_t *completion=p->memory.va+fence->physical[0]*SGPU_PAGE;
++    for (unsigned pass=0;pass<2;pass++) {
++        for (unsigned i=0;i<SGPU_PAGE;i++) destination[i]=0xa5;
++        *(uint32_t *)(void *)completion=0;
++        for (unsigned i=0;i<4;i++) {
++            commands[i*4]=sgpu_packet7(0x3d,3);
++            commands[i*4+1]=sgpu_g3_va(data)+i*4;
++            commands[i*4+2]=0;
++            commands[i*4+3]=0xa5054000u^(pass<<12)^i;
++        }
++        commands[16]=sgpu_packet7(0x26,0);
++        p->ops->clean(p->ops->ctx,commands,SGPU_PAGE);
++        p->ops->clean(p->ops->ctx,destination,SGPU_PAGE);
++        p->ops->clean(p->ops->ctx,completion,SGPU_PAGE);
++        uint32_t batch[SG_G3_BATCH_WORDS];
++        if (*wptr >= SGPU_PAGE/4-SG_G3_BATCH_WORDS ||
++            !sgpu_g3_begin(g,1,ib->handle,data->handle,fence->handle,17,batch)) {
++            r->error=SG_BAD_MODE; goto failed;
++        }
++        r->g3.submitted=g->submitted;
++        uint32_t *ring=(uint32_t *)(void *)(p->memory.va+3*SGPU_PAGE);
++        for (unsigned i=0;i<SG_G3_BATCH_WORDS;i++) ring[(*wptr)++]=batch[i];
++        if (!consume(p,*wptr)) goto failed;
++        uint32_t observed=sgpu_g3_wait(p,completion,g->busy);
++        if (!observed) goto failed;
++        p->ops->invalidate(p->ops->ctx,destination,SGPU_PAGE);
++        for (unsigned i=0;i<4;i++) if (((volatile uint32_t *)(void *)destination)[i] !=
++            (0xa5054000u^(pass<<12)^i)) { r->error=SG_MARKER_MISMATCH; goto failed; }
++        for (unsigned i=16;i<SGPU_PAGE;i++) if (((volatile uint8_t *)destination)[i]!=0xa5) {
++            r->error=SG_MARKER_MISMATCH; goto failed;
++        }
++        faults(p);
++        if (has_fault(r)) { r->error=SG_FAULT; goto failed; }
++        if (!sgpu_g3_complete(g,1,fence->handle,observed)) { r->error=SG_FAULT; goto failed; }
++        r->g3.completed=g->completed; r->g3.writes+=4;
++    }
++    r->g3.passed=true; r->error=SG_STOCK_HELD;
++    trace(p,"G3 owned IB/fence PASS; state retained",r->g3.submitted,r->g3.completed,r->g3.writes);
++    return true;
++failed:
++    sgpu_g3_abort(g);
++    return false; /* no reset/unmap/free/retry, including after a partial submit */
++}
++
+ bool sgpu_probe(const struct sgpu_ops *ops, uint32_t mode, const uint8_t *blob,
+     size_t blob_size, struct sgpu_report *report)
+ {
+     if (!report) return false;
+     *report = (struct sgpu_report){0};
+     if (mode == 0) return true;
+@@ -966,28 +1271,34 @@
+     if (ops->stock_unsecure && (ops->stock_unsecure != 1 || mode != 3)) {
+         report->error = SG_BAD_MODE; return false;
+     }
+     if (ops->stock_pixels && (ops->stock_pixels != 1 || ops->stock_unsecure != 1 || mode != 3)) {
+         report->error = SG_BAD_MODE; return false;
+     }
++    if (ops->g3 && (ops->g3 != 1 || ops->stock_pixels != 1 || ops->stock_unsecure != 1 || mode != 3)) {
++        report->error = SG_BAD_MODE; return false;
++    }
++    report->g3.requested = ops->g3 == 1;
+     report->pixel.requested = ops->stock_pixels == 1;
+     report->stock.requested = ops->stock_unsecure == 1;
+     if (report->stock.requested) report->stock.before = report->stock.after = ~0u;
+     struct probe p = {.ops = ops, .report = report};
++    struct sgpu_g3 g3;
+     struct sgpu_firmware fw = {0};
+     struct smmu_saved smmu = {0};
+     bool passed = false, stopped = true;
+     report->stage = SG_FIRMWARE;
+     if (mode >= 2 && !sgpu_firmware_validate(blob, blob_size, &fw)) {
+         report->error = SG_BAD_FIRMWARE; return false;
+     }
+     report->pm4_version = fw.pm4_version; report->pfp_version = fw.pfp_version;
+     if (mode >= 2) {
+         report->stage = SG_TABLES;
+         if (!ops->allocate(ops->ctx, &p.memory)) { report->error = SG_NO_MEMORY; return false; }
+         if (!sgpu_tables_build(&p.memory, &fw)) { report->error = SG_BAD_MEMORY; goto done; }
++        if (ops->g3 == 1 && !sgpu_g3_prepare(&p,&g3,&fw)) { report->error=SG_BAD_MEMORY; goto done; }
+     }
+     const uint32_t pa[] = {0x01859000,0x0185b000,0x01845000,0x01812000};
+     report->stage = SG_POWER;
+     for (unsigned i = 0; i < COUNT(pa); i++)
+         if (!ops->map(ops->ctx, (enum sgpu_block)i, pa[i], 0x1000)) {
+             report->error = SG_NO_MAP; goto done;
+@@ -1064,12 +1375,14 @@
+     if (has_fault(report)) { report->error = SG_FAULT; goto done; }
+     if (ops->stock_unsecure == 1) {
+         report->stage = SG_STOCK_TRANSITION;
+         passed = sgpu_stock_transition(&p, mode, wptr);
+         if (passed && ops->stock_pixels == 1)
+             passed = sgpu_stock_pixels_test(&p, mode, &wptr);
++        if (passed && ops->g3 == 1)
++            passed = sgpu_g3_test(&p, &g3, mode, &wptr);
+         goto done; /* Stock-only never renders; the pixel opt-in still never cleans up. */
+     }
+     if (mode == 3) {
+         report->stage = SG_RENDER;
+         trace(&p, "before TRUST read ONLY; no secure writes", SG_TRUST, 0, 0);
+         report->trust = read32(&p, SG_GPU, SG_TRUST);
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -23,13 +23,13 @@
+ #define SGPU_DEST_VA (SGPU_VA_BASE + 0x50000u)
+ #define SGPU_MARKER_OFFSET 512u
+ #define SGPU_MARKERS 8u
+
+ enum sgpu_block { SG_CC, SG_MISC, SG_VOTE, SG_TCU, SG_GPU, SG_SMMU, SG_BLOCKS };
+ enum sgpu_stage { SG_OFF, SG_FIRMWARE, SG_POWER, SG_REGISTERS, SG_TABLES,
+-    SG_TRANSLATION, SG_COMMANDS, SG_RENDER, SG_COMPLETE, SG_STOCK_TRANSITION, SG_STOCK_PIXELS };
++    SG_TRANSLATION, SG_COMMANDS, SG_RENDER, SG_COMPLETE, SG_STOCK_TRANSITION, SG_STOCK_PIXELS, SG_G3_SUBMIT };
+ enum sgpu_error { SG_OK, SG_BAD_MODE, SG_BAD_FIRMWARE, SG_NO_MAP,
+     SG_POWER_TIMEOUT, SG_BUSY, SG_BAD_ID, SG_NO_MEMORY, SG_BAD_MEMORY,
+     SG_BAD_SMMU, SG_TLB_TIMEOUT, SG_COMMAND_TIMEOUT, SG_FAULT,
+     SG_MARKER_MISMATCH, SG_ROLLBACK_FAILED, SG_NEEDS_UNSECURE, SG_STOCK_HELD };
+
+ struct sgpu_memory { uint8_t *va; uint64_t pa[SGPU_POOL_PAGES]; };
+@@ -50,12 +50,13 @@
+     void (*release)(void *, struct sgpu_memory *);
+     void (*clean)(void *, const void *, uint32_t);
+     void (*invalidate)(void *, const void *, uint32_t);
+     void (*trace)(void *, const char *, uint32_t, uint32_t, uint32_t);
+     uint32_t stock_unsecure; /* exactly 1 + mode3: transition-only unless separately opted in below */
+     uint32_t stock_pixels; /* exactly 1 + stock1/mode3: owned 256-pixel test, no cleanup */
++    uint32_t g3; /* exact mode3/stock1/pixels1/g3=1: kernel-only bounded IB proof */
+ };
+ enum sgpu_failure_kind { SG_FAIL_NONE, SG_FAIL_OWNER, SG_FAIL_READBACK,
+     SG_FAIL_POLL, SG_FAIL_GUARD };
+ struct sgpu_failure {
+     uint32_t kind, stage, block, offset, mask, want, old, written, got;
+     uint32_t elapsed_us, budget_us, saved_count;
+@@ -69,12 +70,13 @@
+     struct sgpu_failure failure, rollback_failure;
+     struct {
+         uint32_t before, after;
+         bool requested, attempted, echo_zero, held;
+     } stock;
+     struct { bool requested, started, passed; } pixel;
++    struct { bool requested, started, passed; uint32_t submitted, completed, writes; } g3;
+ };
+
+ uint32_t sgpu_crc32(const uint8_t *, size_t);
+ uint32_t sgpu_packet7(uint32_t, uint32_t);
+ bool sgpu_firmware_validate(const uint8_t *, size_t, struct sgpu_firmware *);
+ bool sgpu_memory_validate(const struct sgpu_memory *);

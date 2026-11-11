@@ -1,0 +1,129 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3229,6 +3229,18 @@
+ #define SMEM_MAP_SIZE           0x00100000UL
+ #define SMEM_TOC_OFFSET         0xd0u
+ #define SMEM_ITEM_COUNT         512u
++/* Newer SMEM: a "$TOC" partition table in the last 4 KiB points at
++ * per-host partitions ("$PRT"); items live there as 16-byte canary'd
++ * private entries. qcom_smem_get prefers the global partition. */
++#define SMEM_PTABLE_OFFSET      (SMEM_MAP_SIZE - 0x1000u)
++#define SMEM_PTABLE_MAGIC       0x434f5424u     /* "$TOC" */
++#define SMEM_PTABLE_HDR         32u
++#define SMEM_PENTRY_SIZE        40u
++#define SMEM_PART_HDR_SIZE      32u
++#define SMEM_PART_MAGIC         0x54525024u     /* "$PRT" */
++#define SMEM_GLOBAL_HOST        0xfffeu
++#define SMEM_PRIV_ENTRY_SIZE    16u
++#define SMEM_PRIV_CANARY        0xa5a5u
+ 
+ #define SMD_ALLOC_TBL_COUNT     2
+ #define SMD_ALLOC_TBL_SIZE      64
+@@ -3314,7 +3326,7 @@
+ 
+ /* Global-heap SMEM item: toc[item] = {allocated, offset, size, aux}. */
+ static vm_offset_t
+-santoni_smem_item(uint32_t item, size_t *size)
++santoni_smem_item_legacy(uint32_t item, size_t *size)
+ {
+ 	if (item >= SMEM_ITEM_COUNT) {
+ 		return 0;
+@@ -3338,6 +3350,98 @@
+ 	return santoni_smd.smem + off;
+ }
+ 
++/*
++ * Find an item: the "$TOC" global partition first (qcom_smem_get order),
++ * then the legacy toc[]. Logs what it saw once, so one photo shows the
++ * real SMEM layout of this phone.
++ */
++static vm_offset_t
++santoni_smem_item(uint32_t item, size_t *size)
++{
++	static bool logged;
++	vm_offset_t sm = santoni_smd.smem;
++	vm_offset_t pt = sm + SMEM_PTABLE_OFFSET;
++	vm_offset_t part = 0;
++	uint32_t psize = 0;
++	uint32_t magic = *(volatile uint32_t *)pt;
++	uint32_t n = *(volatile uint32_t *)(pt + 8);
++
++	if (magic == SMEM_PTABLE_MAGIC && n <= 32u) {
++		for (uint32_t i = 0; i < n; i++) {
++			vm_offset_t e = pt + SMEM_PTABLE_HDR + SMEM_PENTRY_SIZE * i;
++			uint32_t off = *(volatile uint32_t *)e;
++			uint32_t sz = *(volatile uint32_t *)(e + 4);
++			uint16_t h0 = *(volatile uint16_t *)(e + 12);
++			uint16_t h1 = *(volatile uint16_t *)(e + 14);
++			if (!logged && i < 6u) {
++				printf("SANTONI SMEM: pentry%u off=%#x sz=%#x "
++				    "h0=%hx h1=%hx\n", i, off, sz, h0, h1);
++			}
++			if (off && sz && (uint64_t)off + sz <= SMEM_MAP_SIZE &&
++			    h0 == SMEM_GLOBAL_HOST && h1 == SMEM_GLOBAL_HOST) {
++				part = sm + off;
++				psize = sz;
++			}
++		}
++	}
++
++	if (part) {
++		uint32_t pm = *(volatile uint32_t *)part;
++		uint16_t ph0 = *(volatile uint16_t *)(part + 4);
++		uint16_t ph1 = *(volatile uint16_t *)(part + 6);
++		uint32_t psz = *(volatile uint32_t *)(part + 8);
++		uint32_t fre = *(volatile uint32_t *)(part + 12);
++		if (!logged) {
++			printf("SANTONI SMEM: part=%#x sz=%#x free=%#x "
++			    "magic=%#x h=%hx,%hx\n", (unsigned)(part - sm),
++			    psz, fre, pm, ph0, ph1);
++		}
++		if (pm == SMEM_PART_MAGIC && ph0 == SMEM_GLOBAL_HOST &&
++		    ph1 == SMEM_GLOBAL_HOST && psz == psize && fre <= psz) {
++			uint32_t limit = fre ? fre : psz;
++			uint32_t off = SMEM_PART_HDR_SIZE;
++			while (off + SMEM_PRIV_ENTRY_SIZE <= limit &&
++			    off + SMEM_PRIV_ENTRY_SIZE <= psz) {
++				vm_offset_t e = part + off;
++				uint16_t canary = *(volatile uint16_t *)e;
++				uint16_t it = *(volatile uint16_t *)(e + 2);
++				uint32_t sz = *(volatile uint32_t *)(e + 4);
++				uint16_t pdata = *(volatile uint16_t *)(e + 8);
++				uint16_t phdr = *(volatile uint16_t *)(e + 10);
++				if (canary != SMEM_PRIV_CANARY) {
++					break;
++				}
++				if (it == item) {
++					uint32_t d = off + SMEM_PRIV_ENTRY_SIZE +
++					    phdr;
++					if (sz >= pdata && d + sz <= psz) {
++						if (!logged) {
++							printf("SANTONI SMEM: "
++							    "item %u in part "
++							    "@%#x sz=%u\n",
++							    item, d, sz);
++						}
++						logged = true;
++						*size = sz - pdata;
++						return part + d;
++					}
++					break;
++				}
++				off += SMEM_PRIV_ENTRY_SIZE + phdr + sz;
++			}
++		}
++	}
++
++	if (!logged) {
++		volatile uint32_t *toc = (volatile uint32_t *)(sm +
++		    SMEM_TOC_OFFSET + 16u * 13u);
++		printf("SANTONI SMEM: ptable=%#x n=%u toc13 a=%u o=%#x s=%#x "
++		    "aux=%#x\n", magic, n, toc[0], toc[1], toc[2], toc[3]);
++	}
++	logged = true;
++	return santoni_smem_item_legacy(item, size);
++}
++
+ static bool
+ santoni_smd_map_channel(void)
+ {

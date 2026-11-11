@@ -52,7 +52,7 @@ diff --git a/bsd/dev/santoni_sdhci.c b/bsd/dev/santoni_sdhci.c
 new file mode 100644
 --- /dev/null
 +++ b/bsd/dev/santoni_sdhci.c
-@@ -0,0 +1,2773 @@
+@@ -0,0 +1,2813 @@
 +/*
 + * SANTONI internal eMMC 5.1 root device (polled SDHCI MSM v4, SDCC1).
 + *
@@ -2442,22 +2442,34 @@ new file mode 100644
 +		uint32_t want = MIN(count - done, (uint32_t)BOUNCE_SIZE - skip);
 +		uint32_t blocks = (skip + want + SDHCI_BLOCK - 1) / SDHCI_BLOCK;
 +		char *bounce = (char *)(se.dma + DMA_BOUNCE);
++		bool partial = skip || (want % SDHCI_BLOCK);
 +
++		/*
++		 * Kernel buffers are copied under the controller lock: the
++		 * bounce buffer (se.dma + DMA_BOUNCE) is shared by every
++		 * caller, so a read/write pair that released the lock between
++		 * santoni_sdhci_*_blocks() and memcpy() could be interleaved
++		 * with another VFS request and move the wrong page.
++		 *
++		 * User buffers (B_PHYS without B_CLUSTER) must not be touched
++		 * under the lock: copyin()/copyout() can fault, and the fault
++		 * may page in through the root filesystem, which re-enters
++		 * strategy() and deadlocks on this non-recursive lock.
++		 */
 +		if (rd) {
 +			lck_mtx_lock(&santoni_sdhci_lock);
 +			error = santoni_sdhci_read_blocks(se.first_block + lba,
 +			    blocks, bounce);
-+			lck_mtx_unlock(&santoni_sdhci_lock);
-+			if (!error) {
-+				if (user) {
-+					error = copyout(bounce + skip,
-+					    (user_addr_t)(vaddr + done), want);
-+				} else {
-+					memcpy(vaddr + done, bounce + skip, want);
-+				}
++			if (!error && !user) {
++				memcpy(vaddr + done, bounce + skip, want);
 +			}
-+		} else {
-+			if (skip || (want % SDHCI_BLOCK)) {
++			lck_mtx_unlock(&santoni_sdhci_lock);
++			if (!error && user) {
++				error = copyout(bounce + skip,
++				    (user_addr_t)(vaddr + done), want);
++			}
++		} else if (user) {
++			if (partial) {
 +				lck_mtx_lock(&santoni_sdhci_lock);
 +				error = santoni_sdhci_read_blocks(se.first_block + lba,
 +				    blocks, bounce);
@@ -2466,18 +2478,26 @@ new file mode 100644
 +					break;
 +				}
 +			}
-+			if (user) {
-+				error = copyin((user_addr_t)(vaddr + done),
-+				    bounce + skip, want);
-+			} else {
-+				memcpy(bounce + skip, vaddr + done, want);
-+			}
++			error = copyin((user_addr_t)(vaddr + done),
++			    bounce + skip, want);
 +			if (!error) {
 +				lck_mtx_lock(&santoni_sdhci_lock);
 +				error = santoni_sdhci_write_blocks(
 +				    se.first_block + lba, blocks, bounce);
 +				lck_mtx_unlock(&santoni_sdhci_lock);
 +			}
++		} else {
++			lck_mtx_lock(&santoni_sdhci_lock);
++			if (partial) {
++				error = santoni_sdhci_read_blocks(se.first_block + lba,
++				    blocks, bounce);
++			}
++			if (!error) {
++				memcpy(bounce + skip, vaddr + done, want);
++				error = santoni_sdhci_write_blocks(
++				    se.first_block + lba, blocks, bounce);
++			}
++			lck_mtx_unlock(&santoni_sdhci_lock);
 +		}
 +		if (error) {
 +			break;
@@ -2523,6 +2543,20 @@ new file mode 100644
 +	case DKIOCISWRITABLE:
 +		*f = se.writable ? 1 : 0;
 +		return 0;
++	case DKIOCSYNCHRONIZE:
++	case DKIOCSYNCHRONIZECACHE:
++		/*
++		 * Polled PIO: a write returns only after the card's data
++		 * transfer and AUTO_CMD12 complete, so there is no write cache
++		 * to flush and no barrier to wait for.
++		 */
++		return 0;
++	case DKIOCISSOLIDSTATE:
++		*f = 1;
++		return 0;
++	case DKIOCGETFEATURES:
++		*f = DK_FEATURE_BARRIER;
++		return 0;
 +	case DKIOCGETMAXBLOCKCOUNTREAD:
 +		*o = BOUNCE_SIZE / se.secsize;
 +		return 0;
@@ -2552,11 +2586,17 @@ new file mode 100644
 +	return santoni_sdhci_ioctl(dev, cmd, data, flag, p, 1);
 +}
 +
++/*
++ * d_psize is in 512-byte (DEV_BSIZE) units for the raw device, not in
++ * se.secsize units: svc, the buffer cache and the boot code size the device
++ * from this value, so returning block count scaled by the current logical
++ * sector size under-reports the partition after any DKIOCSETBLOCKSIZE.
++ */
 +static int
 +santoni_sdhci_psize(__unused dev_t dev)
 +{
 +	return se.ready ?
-+	       (int)MIN(se.nblocks * SDHCI_BLOCK / se.secsize, (uint64_t)INT_MAX) :
++	       (int)MIN(se.nblocks, (uint64_t)INT_MAX) :
 +	       -1;
 +}
 +

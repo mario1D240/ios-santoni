@@ -1,0 +1,135 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3285,6 +3285,8 @@
+ struct santoni_smd {
+ 	vm_offset_t smem, ipc, msgram;
+ 	bool mapped, word, open;
++	uint32_t fifo_aux, fifo_off;   /* raw toc entry of the fifo item */
++	bool alt_tried;
+ 	vm_offset_t txinfo, rxinfo;
+ 	vm_offset_t txfifo, rxfifo;
+ 	uint32_t fifo_size;
+@@ -3527,6 +3529,14 @@
+ 			santoni_smd.fifo_size = (uint32_t)fsz / 2u;
+ 			santoni_smd.txfifo = fifo;
+ 			santoni_smd.rxfifo = fifo + santoni_smd.fifo_size;
++			/* Remember the raw toc entry: if the vote gets no
++			 * answer we retry once with the fifo relative to
++			 * the msg-ram base instead of the aux base. */
++			volatile uint32_t *ftoc = (volatile uint32_t *)
++			    (santoni_smd.smem + SMEM_TOC_OFFSET +
++			    16u * (tbl[t].fifo + cid));
++			santoni_smd.fifo_aux = ftoc[3] & ~3u;
++			santoni_smd.fifo_off = ftoc[1];
+ 			if (santoni_smd.fifo_size == 0 ||
+ 			    (santoni_smd.fifo_size & (santoni_smd.fifo_size - 1u)) ||
+ 			    santoni_smd.fifo_size > 8192u) {
+@@ -3536,8 +3546,9 @@
+ 				return false;
+ 			}
+ 			printf("SANTONI RPM: channel found (tbl %u cid %u, "
+-			    "%s, fifo %u)\n", t, cid,
+-			    word ? "word" : "byte", santoni_smd.fifo_size);
++			    "%s, fifo %u aux=%#x off=%#x)\n", t, cid,
++			    word ? "word" : "byte", santoni_smd.fifo_size,
++			    santoni_smd.fifo_aux, santoni_smd.fifo_off);
+ 			return true;
+ 		}
+ 	}
+@@ -3746,6 +3757,8 @@
+ /*
+  * Vote PM8937 LDOn on at uv in the active set, exactly like Linux
+  * qcom_smd_regulator with SWEN + UV keys.  rsc "ldoa", id = n.
++ * On silence: dump where the msg ram holds reply magic, try the fifo
++ * rebased to the msg-ram base once, then send again.
+  */
+ static bool
+ santoni_rpm_ldo(unsigned ldo, uint32_t uv)
+@@ -3760,18 +3773,58 @@
+ 		RPM_KEY_SWEN, 4u, 1u,
+ 		RPM_KEY_UV, 4u, uv,
+ 	};
+-	santoni_smd.resp_ready = false;
+-	if (!santoni_smd_send(msg, sizeof(msg))) {
+-		return false;
+-	}
+-	for (int ms = 0; ms < 1000 && !santoni_smd.resp_ready; ms++) {
+-		(void)santoni_smd_rx_drain();
+-		if (!santoni_smd.resp_ready) {
+-			delay(1000);
++
++	for (int attempt = 0; attempt < 2; attempt++) {
++		santoni_smd.resp_ready = false;
++		if (!santoni_smd_send(msg, sizeof(msg))) {
++			return false;
++		}
++		for (int ms = 0; ms < 700 && !santoni_smd.resp_ready; ms++) {
++			(void)santoni_smd_rx_drain();
++			if (!santoni_smd.resp_ready) {
++				delay(1000);
++			}
++		}
++		if (santoni_smd.resp_ready) {
++			break;
++		}
++		printf("SANTONI RPM: L%u: no answer (attempt %d)\n", ldo,
++		    attempt);
++		if (attempt == 0) {
++			/* Where does reply magic actually live? */
++			unsigned hits = 0;
++			for (uint32_t off = 0;
++			    off + 4u <= RPM_MSGRAM_SIZE && hits < 6u;
++			    off += 4u) {
++				uint32_t w = *(volatile uint32_t *)
++				    (santoni_smd.msgram + off);
++				if (w == RPM_MSG_REQ || w == RPM_MSG_MSG_ID) {
++					printf("SANTONI RPM: scan %#x: "
++					    "magic %08x\n", off, w);
++					hits++;
++				}
++			}
++			uint32_t gm = *(volatile uint32_t *)(santoni_smd.msgram +
++			    RPM_MSGRAM_SIZE - 0x100u);
++			printf("SANTONI RPM: msgram end=%#x\n", gm);
++			if (!santoni_smd.alt_tried &&
++			    santoni_smd.fifo_aux > (uint32_t)RPM_MSGRAM_PHYS &&
++			    santoni_smd.fifo_off < RPM_MSGRAM_SIZE) {
++				santoni_smd.alt_tried = true;
++				santoni_smd.txfifo = santoni_smd.msgram +
++				    santoni_smd.fifo_off;
++				santoni_smd.rxfifo = santoni_smd.txfifo +
++				    santoni_smd.fifo_size;
++				smd_write32(santoni_smd.txinfo, INFO_HEAD, 0);
++				smd_write32(santoni_smd.rxinfo, INFO_TAIL, 0);
++				santoni_smd_kick();
++				printf("SANTONI RPM: fifo rebased to "
++				    "msgram+%#x, retrying\n",
++				    santoni_smd.fifo_off);
++			}
+ 		}
+ 	}
+ 	if (!santoni_smd.resp_ready) {
+-		printf("SANTONI RPM: L%u: no answer\n", ldo);
+ 		return false;
+ 	}
+ 	bool acked = false, err = false;
+@@ -3934,13 +3987,17 @@
+ 		 * console shows exactly where the touch bring-up stands. */
+ 		if ((tick % 200) == 0) {
+ 			printf("SANTONI DIAG: rpm ch=%d open=%d L10=%d L5=%d "
+-			    "rxst=%u pmicL5=%02x pmicL10=%02x probe=%d "
+-			    "nack=%u bad=%u rep=%u\n",
++			    "rxst=%u fifo h/t=%u,%u pmicL5=%02x pmicL10=%02x "
++			    "probe=%d nack=%u bad=%u rep=%u\n",
+ 			    santoni_smd.mapped ? 1 : 0,
+ 			    santoni_smd.open ? 1 : 0,
+ 			    santoni_diag.l10, santoni_diag.l5,
+ 			    santoni_smd.mapped ?
+ 			    smd_read32(santoni_smd.rxinfo, INFO_STATE) : 99u,
++			    santoni_smd.mapped ?
++			    smd_read32(santoni_smd.txinfo, INFO_HEAD) : 0u,
++			    santoni_smd.mapped ?
++			    smd_read32(santoni_smd.rxinfo, INFO_HEAD) : 0u,
+ 			    santoni_diag.l5_en, santoni_diag.l10_en,
+ 			    last_rc, nack, bad, reports);
+ 		}

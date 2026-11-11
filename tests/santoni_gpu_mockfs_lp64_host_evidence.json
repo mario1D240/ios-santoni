@@ -1,0 +1,20 @@
+{
+  "success": true,
+  "scope": "new LP64 VFS/registration host contracts; CI consumes results without replay",
+  "native_cases": {
+    "O0": 18,
+    "O2": 18,
+    "UBSan": 18
+  },
+  "compiled_rejected_mutants": 3,
+  "kernel_certified": false,
+  "hardware_verified": false,
+  "source_commit": "3e7ffe006080062c8bedb6c4dec22d2f89e708ad",
+  "sha256": {
+    "xnu/patches/0210-santoni-gpu-mockfs-lp64-registration.patch": "86f0d60fac5f82174b8d58e8c61e406540a684b9fcfef01e18d7db5e1f9c9a1a",
+    "tests/test_santoni_gpu_mockfs_lp64.c": "bcbc58d1c98900ff928cc5dd90f9cabe3d3e949abf9e8b4165fa4f436dc1aeef",
+    "tests/verify_santoni_gpu_mockfs_lp64.py": "947b45f0c2c86766b1af44e12ee27032ffa5429b39ed4c300d116c5e01f01605"
+  },
+  "native_result_record": "out/santoni-mockfs-lp64-20261101T170441314577Z/native/result.json",
+  "native_result_sha256": "093cd681255d5c4d740dd254036a7fa1be89a8b267020275f260820119bd482f"
+}

@@ -1,0 +1,6238 @@
+{
+  "success": true,
+  "hardware_verified": false,
+  "rows": [
+    {
+      "label": "O0",
+      "mutant": false,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "c3842464fab0d6ec9806af6744ffd52f7ec976eb8dc52ab701ae47f868d48393",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=40 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=41 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=42 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=43 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=44 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=45 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "label": "O2",
+      "mutant": false,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "c3842464fab0d6ec9806af6744ffd52f7ec976eb8dc52ab701ae47f868d48393",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=40 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=41 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=42 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=43 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=44 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=45 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "label": "ubsan",
+      "mutant": false,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "c3842464fab0d6ec9806af6744ffd52f7ec976eb8dc52ab701ae47f868d48393",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=40 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=41 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=42 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=43 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=44 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=45 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "label": "parity-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "8ab99c3daa45ec09ea016b331a38bc68dc1b144bac32590bf8dfed43d7cf8760",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "parity-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "8ab99c3daa45ec09ea016b331a38bc68dc1b144bac32590bf8dfed43d7cf8760",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "parity-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "8ab99c3daa45ec09ea016b331a38bc68dc1b144bac32590bf8dfed43d7cf8760",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "write-ro-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "568f6b729faeaf44ac0a33e4b46a2b4aba87d32a11ebb5a6e7c50ba40ab2eb5a",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "write-ro-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "568f6b729faeaf44ac0a33e4b46a2b4aba87d32a11ebb5a6e7c50ba40ab2eb5a",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "write-ro-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "568f6b729faeaf44ac0a33e4b46a2b4aba87d32a11ebb5a6e7c50ba40ab2eb5a",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "span-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "a518cc37b8f4b85e9b0da3e494ed86c780583c07a724e9452b4f63cd3503155c",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "span-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "a518cc37b8f4b85e9b0da3e494ed86c780583c07a724e9452b4f63cd3503155c",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "span-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "a518cc37b8f4b85e9b0da3e494ed86c780583c07a724e9452b4f63cd3503155c",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "relocate-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "87ab04391e45ea5f15a3cb390f38409276f57a02480b2cea07fd2bc1d4f470d3",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:122: int main(int, char **): assertion \"a[1]==snapshots[1].gpu_va\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "relocate-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "87ab04391e45ea5f15a3cb390f38409276f57a02480b2cea07fd2bc1d4f470d3",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:122: int main(int, char **): assertion \"a[1]==snapshots[1].gpu_va\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "relocate-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "87ab04391e45ea5f15a3cb390f38409276f57a02480b2cea07fd2bc1d4f470d3",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:122: int main(int, char **): assertion \"a[1]==snapshots[1].gpu_va\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "cycle-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "3cfa55981d0006a95600b75d6bd6e50eaaf5f82c6425f08121d787c579a1ceb5",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "cycle-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "3cfa55981d0006a95600b75d6bd6e50eaaf5f82c6425f08121d787c579a1ceb5",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "cycle-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "3cfa55981d0006a95600b75d6bd6e50eaaf5f82c6425f08121d787c579a1ceb5",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "depth-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "65418bf283f13a20fae01f3a206869ec920acad63430d55887f32fcc97dd54fa",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=40 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=41 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=42 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=43 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=44 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "depth-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "65418bf283f13a20fae01f3a206869ec920acad63430d55887f32fcc97dd54fa",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=40 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=41 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=42 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=43 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=44 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "depth-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "65418bf283f13a20fae01f3a206869ec920acad63430d55887f32fcc97dd54fa",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=38 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=39 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=40 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=41 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=42 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=43 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=44 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "a6xx-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "c7382fd51e9457479cb1f621bd160c2db0c0d9d800ae313faed387d65f971ffd",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "a6xx-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "c7382fd51e9457479cb1f621bd160c2db0c0d9d800ae313faed387d65f971ffd",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "a6xx-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "c7382fd51e9457479cb1f621bd160c2db0c0d9d800ae313faed387d65f971ffd",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "high-address-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "9ad8217a6fca0437a4ed38c174f4703476f6731414099bd24f4386c04b9924da",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "high-address-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "9ad8217a6fca0437a4ed38c174f4703476f6731414099bd24f4386c04b9924da",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "high-address-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "9ad8217a6fca0437a4ed38c174f4703476f6731414099bd24f4386c04b9924da",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "packet-size-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "dbc663fee2091b6f5c34ddbf8bad5fefb32b09ad265698b5b787eb955f17055a",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "packet-size-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "dbc663fee2091b6f5c34ddbf8bad5fefb32b09ad265698b5b787eb955f17055a",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "packet-size-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "dbc663fee2091b6f5c34ddbf8bad5fefb32b09ad265698b5b787eb955f17055a",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "nodes-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "a2412db64f906646c5e05239602a492771a8021dde57ee989e48a01f1d1ad7d6",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "nodes-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "a2412db64f906646c5e05239602a492771a8021dde57ee989e48a01f1d1ad7d6",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "nodes-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "a2412db64f906646c5e05239602a492771a8021dde57ee989e48a01f1d1ad7d6",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "budget-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d82717af71524020dc981dac83325045003f179c162fb37fa5e93186e7de49bc",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "budget-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d82717af71524020dc981dac83325045003f179c162fb37fa5e93186e7de49bc",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    },
+    {
+      "label": "budget-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d82717af71524020dc981dac83325045003f179c162fb37fa5e93186e7de49bc",
+      "runs": [
+        {
+          "case": 0,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=0 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=1 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=2 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=3 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=4 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=5 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=6 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=7 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=8 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=9 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=10 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=11 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=12 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=13 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=14 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=15 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=16 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=17 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=18 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=19 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=20 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=21 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=22 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=23 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=24 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=25 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=26 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=27 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=28 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=29 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=30 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=31 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=32 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=33 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=34 expected=1; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=35 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=36 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "exit_code": 0,
+          "stdout": "PASS PM4 case=37 expected=0; private commands only, no hardware\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "exit_code": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_pm4.c:120: int main(int, char **): assertion \"result==success\" failed\n"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "bsd/dev/santoni_gpu_core.h": "d872161c1e74ec0e9b4d9aceda42c9dde89e3a40e909ebd19b723c8bad01e118",
+    "bsd/dev/santoni_gpu_graphics.h": "d66496ddaf6c2bb13587fdf757866a5a687daaee4f511b8d13a6859ddbb54dfb",
+    "bsd/dev/santoni_gpu_pm4.h": "d90f4b9d6b2231e99faa4d1760a7ded3b3fbc343cb8ef039598b5bdf4ac801f4",
+    "bsd/dev/santoni_gpu_pm4.c": "c3842464fab0d6ec9806af6744ffd52f7ec976eb8dc52ab701ae47f868d48393"
+  },
+  "inputs_sha256": {
+    "tests/test_santoni_gpu_pm4.c": "f1d4160f3d942a7e560183c29537558bf7a29354ac108943f7cf2e7d4e4206a4",
+    "tests/test_santoni_gpu_pm4.py": "190a375c32fff2b5b0596f7395e5c53b57383f6edf2fcf91c01646f4767ec346",
+    "tests/reconstruct_santoni_touch.py": "c249ccf32a2114774ca7ce9e0ef5ba19bc1196d2c6ce795f59ddcc6f5b29ae48"
+  },
+  "scope": "actual PM4 functions; private snapshots/ranges modeled; no hardware/shader result",
+  "public_metadata_redaction": {
+    "scope": "absolute host paths only",
+    "original_receipt_sha256": "39ddf71ac45595fc326aedb6d531aca7c7b22e96726941739bffbb5ea0f5cf85",
+    "results_and_source_input_hashes_preserved": true,
+    "path_placeholders": [
+      "${PROJECT_ROOT}",
+      "${HOST_TMP}",
+      "${HOST_HOME}"
+    ]
+  }
+}

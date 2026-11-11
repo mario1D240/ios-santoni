@@ -1,0 +1,20 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index 7c66d55..73dcfcc 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -953,6 +953,15 @@ static bool __attribute__((noinline)) sgpu_user_publish(void)
+     sgpu_user_published=true;
+     lck_mtx_unlock(&sgpu_session_lock);
+     printf("SANTONI GPU: USER ready /dev/santonigpu; root, one task, WRITE4; no user DMA maps; NO UI\n");
++    if (sg.mode==3) {
++        /* Report after publication and mutex release, beside the late USER line.
++         * The existing CPU-only getters do not prove child entry or completion:
++         * worker_ready also returns true for the explicit launcher-off role. */
++        bool ready=santoni_gpu_user_launch_worker_ready(sg.mode);
++        bool mounted=santoni_gpu_user_launch_mount_published();
++        printf("SANTONI GPU: USER LAUNCH LATE mode=%u worker_ready=%u mounted=%u; CPU snapshot; EL0 RESULT still required\n",
++            sg.mode,ready?1u:0u,mounted?1u:0u);
++    }
+     return true;
+ }
+ 

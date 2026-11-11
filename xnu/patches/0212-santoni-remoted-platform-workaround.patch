@@ -1,0 +1,102 @@
+diff --git a/bsd/kern/kern_cs.c b/bsd/kern/kern_cs.c
+index 43b1ea6..42f569a 100644
+--- a/bsd/kern/kern_cs.c
++++ b/bsd/kern/kern_cs.c
+@@ -871,6 +871,15 @@ csproc_get_platform_binary(struct proc *p)
+ {
+ 	struct cs_blob *csblob;
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	/* Match the explicit, exec-local remoted workaround in kern_exec.c. */
++	extern uint32_t santoni_remoted_platform;
++	if (santoni_remoted_platform == 1 && p != NULL && p->p_textvp != NULL &&
++	    (proc_getcsflags(p) & CS_PLATFORM_BINARY) != 0) {
++		return 1;
++	}
++#endif
++
+ 	csblob = csproc_get_blob(p);
+ 
+ 	/* If there is no csblob this returns 0 because
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 2028423..f0c17f7 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -7339,6 +7339,67 @@ proc_process_signature(proc_t p, os_reason_t *signature_failure_reason)
+ 	return error;
+ }
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++/*
++ * Temporary bring-up workaround for launchd's remoted platform assertion.
++ * This grants platform status to one successful root-filesystem exec, not
++ * CS_SIGNED, CS_VALID, entitlements or trust-cache authentication. Keep the
++ * missing signature state visible until the actual root file can be inspected.
++ * vn_getpath() uses the name cache and does not enter the filesystem (vnode.h).
++ */
++TUNABLE(uint32_t, santoni_remoted_platform, "santoni_remoted_platform", 0);
++static uint32_t santoni_remoted_platform_logged;
++
++static void __attribute__((noinline))
++santoni_remoted_platform_exec(proc_t p)
++{
++	if (santoni_remoted_platform != 1 || p == NULL) {
++		return;
++	}
++	char name[32] = { 0 };
++	proc_name(proc_getpid(p), name, sizeof(name));
++	if (strcmp(name, "remoted") != 0) {
++		return;
++	}
++
++	uint32_t before = proc_getcsflags(p);
++	struct vnode *vp = p->p_textvp;
++	struct cs_blob *blob = NULL;
++	bool regular = vp != NULL && vnode_vtype(vp) == VREG;
++	mount_t mp = regular ? vnode_mount(vp) : NULL;
++	bool root = mp != NULL && (vfs_flags(mp) & MNT_ROOTFS) != 0;
++	char path[64] = { 0 };
++	int path_len = sizeof(path);
++	int path_error = ENOENT;
++	bool exact = false;
++	if (root) {
++		path_error = vn_getpath(vp, path, &path_len);
++		exact = path_error == 0 &&
++		    path_len == (int)sizeof("/usr/libexec/remoted") &&
++		    memcmp(path, "/usr/libexec/remoted", sizeof("/usr/libexec/remoted")) == 0;
++		blob = ubc_cs_blob_get(vp, -1, -1, p->p_textoff);
++	}
++	bool blob_valid = blob != NULL && (blob->csb_flags & CS_VALID) != 0;
++	bool promoted = false;
++	if (exact && (before & CS_KILLED) == 0 && (blob == NULL || blob_valid) &&
++	    !csproc_get_platform_binary(p)) {
++		proc_lock(p);
++		proc_csflags_set(p, CS_PLATFORM_BINARY);
++		proc_unlock(p);
++		task_set_platform_binary(proc_task(p), TRUE);
++		promoted = true;
++	}
++	/* One CPU-only observation per boot; no retry or device address is exposed. */
++	if (__atomic_exchange_n(&santoni_remoted_platform_logged, 1, __ATOMIC_RELAXED) == 0) {
++		printf("SANTONI PLATFORM: remoted pid=%d csflags=%08x signed=%u blob=%u "
++		    "blob_valid=%u blob_platform=%u root=%u exact=%u path_errno=%d workaround=%u\n",
++		    proc_getpid(p), before, !!(before & CS_SIGNED), blob != NULL,
++		    blob_valid, blob != NULL && blob->csb_platform_binary, root, exact,
++		    path_error, promoted);
++	}
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
++
+ static int
+ process_signature(proc_t p, struct image_params *imgp)
+ {
+@@ -7564,6 +7625,9 @@ done:
+ 	}
+ 
+ 	if (0 == error) {
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++		santoni_remoted_platform_exec(p);
++#endif
+ 		/* The process's code signature related properties are
+ 		 * fully set up, so this is an opportune moment to log
+ 		 * platform binary execution, if desired. */

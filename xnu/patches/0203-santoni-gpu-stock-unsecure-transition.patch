@@ -1,0 +1,376 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -29,13 +29,13 @@
+ extern void thread_terminate_self(void);
+ void santoni_gpu_start(void);
+
+ _Static_assert(SGPU_PAGE == 4096, "A505 diagnostic format uses 4K pages");
+ static struct {
+     vm_offset_t maps[SG_BLOCKS], pool;
+-    uint32_t sizes[SG_BLOCKS], attempted, mode;
++    uint32_t sizes[SG_BLOCKS], attempted, mode, stock_unsecure;
+     int wait_channel;
+ } sg;
+
+ static const uint32_t sgpu_block_pa[SG_BLOCKS] = {
+     0x01859000,0x0185b000,0x01845000,0x01812000,0x01c00000,0x01c40000
+ };
+@@ -77,17 +77,24 @@
+     uint64_t value;
+     __asm__ volatile("ldr %0, [%1]\n\tdmb sy" : "=r"(value) : "r"(addr) : "memory");
+     return value;
+ }
+
+ /* Values use real argument registers: do not let HYP emulation see str wzr/xzr. */
++static bool __attribute__((noinline)) sgpu_stock_write_allowed(uint32_t mode,
++    uint32_t enabled, enum sgpu_block block, uint32_t off, uint32_t value)
++{
++    return mode == 3 && enabled == 1 && block == SG_GPU && off == SG_TRUST && value == 0;
++}
++
+ static void __attribute__((noinline)) sgpu_io_write32(void *ctx, enum sgpu_block block, uint32_t off, uint32_t value)
+ {
+     (void)ctx;
+     vm_offset_t addr = address(block, off, 4);
+-    if (!addr || (block == SG_GPU && off >= 0x3c000u)) return; /* SECVID never written */
++    if (!addr || (block == SG_GPU && off >= 0x3c000u &&
++        !sgpu_stock_write_allowed(sg.mode, sg.stock_unsecure, block, off, value))) return;
+     __asm__ volatile("dmb sy\n\tstr %w0, [%1]\n\tdsb sy" : : "r"(value), "r"(addr) : "memory");
+ }
+
+ static void __attribute__((noinline)) sgpu_io_write64(void *ctx, enum sgpu_block block, uint32_t off, uint64_t value)
+ {
+     (void)ctx;
+@@ -761,17 +768,39 @@
+     printf("SANTONI GPU: %s stage=%u kind=%s block=%u addr=%08x off=%08x mask=%08x want=%08x\n",
+         label, f->stage, kind, f->block, pa, f->offset, f->mask, f->want);
+     printf("SANTONI GPU: %s old=%08x wrote=%08x got=%08x elapsed=%u budget=%u saved=%u\n",
+         label, f->old, f->written, f->got, f->elapsed_us, f->budget_us, f->saved_count);
+ }
+
++/* Separate stock route. Reject conflicting roles before allocation, SCM or
++ * GPU work. The no-TRUST-write policy is unchanged unless exactly opted in. */
++static bool __attribute__((noinline)) sgpu_stock_options(uint32_t mode)
++{
++    uint32_t enabled = 0, zap = 0, scm = 0, cache = 0;
++    sg.stock_unsecure = 0;
++    (void)PE_parse_boot_argn("santonigpu_stock", &enabled, sizeof(enabled));
++    if (enabled == 0) return true;
++    if (mode != 3 || enabled != 1) return false;
++    (void)PE_parse_boot_argn("santonigpu_zap", &zap, sizeof(zap));
++    (void)PE_parse_boot_argn("santonigpu_scm", &scm, sizeof(scm));
++    (void)PE_parse_boot_argn("santonigpu_cache", &cache, sizeof(cache));
++    if (zap || scm || cache) return false;
++    sg.stock_unsecure = 1;
++    return true;
++}
++
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
++    if (!sgpu_stock_options(sg.mode)) {
++        printf("SANTONI GPU: conflicting/invalid stock transition opt-in; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
+     if (sgpu_pas_cache_preflight(sg.mode)) {
+         thread_terminate_self();
+         return;
+     }
+     if (sgpu_scm_capability_probe(sg.mode)) {
+         thread_terminate_self();
+@@ -784,24 +813,28 @@
+     if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess)
+         (void)SecureDTGetProperty(chosen, "santoni-gpu-firmware", &firmware, &firmware_size);
+     struct sgpu_ops ops = {
+         .map=io_map, .read32=sgpu_io_read32, .read64=sgpu_io_read64,
+         .write32=sgpu_io_write32, .write64=sgpu_io_write64, .now_us=now_us, .wait_us=sgpu_kernel_wait_us,
+         .allocate=allocate, .release=release, .clean=clean, .invalidate=sgpu_cache_invalidate,
+-        .trace=trace
++        .trace=trace, .stock_unsecure=sg.stock_unsecure
+     };
+     struct sgpu_report report;
+     printf("SANTONI GPU: start mode=%u; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\n", sg.mode);
+     bool passed = sgpu_probe(&ops, sg.mode, firmware, firmware_size, &report);
+     sgpu_failure_summary("FIRST_FAIL", &report.failure);
+     sgpu_failure_summary("ROLLBACK_FAIL", &report.rollback_failure);
+     printf("SANTONI GPU: RESULT pass=%u stage=%u error=%u markers=%u pixels=%u trust=%08x restored=%u retained=%u trust_read=%u quiescent=%u smmu_restored=%u power_pending=%u\n",
+         passed ? 1u : 0u, report.stage, report.error, report.markers, report.pixels,
+         report.trust, report.restored ? 1u : 0u, report.memory_retained ? SGPU_POOL_BYTES : 0u,
+         report.trust_read ? 1u : 0u, report.gpu_quiescent ? 1u : 0u,
+         report.smmu_restored ? 1u : 0u, report.power_pending);
++    if (report.stock.requested)
++        printf("SANTONI GPU: STOCK RESULT attempted=%u echo_zero=%u held=%u before=%08x after=%08x; NO PAS; NO PIXELS; held state requires reboot\n",
++            report.stock.attempted ? 1u : 0u, report.stock.echo_zero ? 1u : 0u,
++            report.stock.held ? 1u : 0u, report.stock.before, report.stock.after);
+     thread_terminate_self();
+ }
+
+ void santoni_gpu_start(void)
+ {
+     uint32_t mode = 0;
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -3,14 +3,15 @@
+  * msm8937.dtsi (CX GDSC override), clock-gcc-8952.c, adreno_a5xx.c,
+  * a5xx_reg.h, arm-smmu.c and io-pgtable-arm.c. No Pixel/SC7280 addresses.
+  *
+  * This is a diagnostic, NOT an IOAccelerator or a user submission API.
+  * mode 1: bounded XO-rate power/readback; mode 2: owned CP memory markers;
+  * mode 3: additionally copy a 16x16 RGBA image with the A5xx 2D primitive,
+- * ONLY if the live GPU is already non-secure. Never write TRUST_CNTL or load
+- * a substitute ZAP. No RPM/PMIC/PLL, GIC, input, storage or panel programming.
++ * ONLY if the live GPU is already non-secure. A separate exact mode3/stock1
++ * opt-in tests the stock A505 TRUST transition and NEVER continues to pixels.
++ * No ZAP/PAS, RPM/PMIC/PLL, GIC, input, storage or panel programming.
+  *
+  * Only 4K pages belonging to one <=96K wired allocation are GPU-mapped.
+  * Firmware, ring and source mappings are read-only, destinations read/write;
+  * holes remain unmapped. A once-only caller bounds retained DMA memory.
+  * Once DMA has been exposed the pool is conservatively kept until reboot,
+  * including on success: an unproven reset never hands live pages to the VM.
+@@ -241,12 +242,21 @@
+ }
+
+ static bool __attribute__((noinline)) checked_write32(struct probe *p, enum sgpu_block b, uint32_t off,
+     uint32_t mask, uint32_t value)
+ {
+     uint32_t old = read32(p, b, off);
++    /* Recheck the last pre-store TRUST observation too: a changed/unknown
++     * word must not slip through between the transition's first read and
++     * this helper. This exception never applies to ordinary register writes. */
++    if (b == SG_GPU && off == SG_TRUST && (old != 1 || value != 0 || mask != ~0u ||
++        p->ops->stock_unsecure != 1 || p->restoring ||
++        !p->report->stock.attempted || !p->report->stock.held)) {
++        sgpu_failure(p, SG_FAIL_GUARD, b, off, ~0u, 1, old, 0, old, 0, 0);
++        return false;
++    }
+     write32(p, b, off, value);
+     uint32_t got = read32(p, b, off);
+     if ((got & mask) == (value & mask)) return true;
+     sgpu_failure(p, SG_FAIL_READBACK, b, off, mask, value & mask, old, value, got, 0, 0);
+     return false;
+ }
+@@ -430,12 +440,87 @@
+ }
+
+ static bool has_fault(const struct sgpu_report *r)
+ {
+     return (r->interrupt_status & SG_ERROR_IRQ_MASK) ||
+         (r->smmu_fsr & SG_SMMU_FSR_FAULT) || r->smmu_global_fsr;
++}
++
++static bool __attribute__((noinline)) sgpu_stock_check32(struct probe *p,
++    enum sgpu_block block, uint32_t off, uint32_t want)
++{
++    uint32_t got = read32(p, block, off);
++    if (got == want) return true;
++    sgpu_failure(p, SG_FAIL_GUARD, block, off, ~0u, want, got, 0, got, 0, 0);
++    return false;
++}
++
++/* Stock Xiaomi santoni-n-oss adreno-gpulist.h A505 has no zap_name or
++ * CONTENT_PROTECTION. adreno_a5xx.c a5xx_rb_start calls ME_INIT, waits idle,
++ * then a5xx_set_unsecured_mode writes TRUST_CNTL=0 on that feature branch.
++ * This target-specific opt-in is NOT permission/safety proof from live TZ.
++ * We require the existing owned ME_INIT + two marker passes before one write.
++ * No packets, reset, restore-to-one, or further MMIO follow that attempt. */
++static bool __attribute__((noinline)) sgpu_stock_transition(struct probe *p,
++    uint32_t mode, uint32_t wptr)
++{
++    struct sgpu_report *r = p->report;
++    if (mode != 3 || p->ops->stock_unsecure != 1 || !p->gpu_live ||
++        !p->gpu_owned || !p->gpu_resumed || !p->smmu_live || !p->dma_exposed ||
++        !p->commands_started || p->restoring || r->error || r->failure.kind ||
++        r->markers != 2 * SGPU_MARKERS || wptr != 75 || r->stock.attempted ||
++        !sgpu_memory_validate(&p->memory)) {
++        sgpu_failure(p, SG_FAIL_GUARD, SG_GPU, SG_TRUST, ~0u, 1, 0, 0, 0, 0, 0);
++        if (!r->error) r->error = SG_BAD_MODE;
++        return false;
++    }
++    /* trace() may pause to let the disk log flush. All live preconditions
++     * are checked AFTER it, not before an eleven-second observation gap. */
++    trace(p, "before stock A505 TRUST transition; NO PAS; NO PIXELS", SG_TRUST, 1, 0);
++    if (!poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000) ||
++        !sgpu_stock_check32(p, SG_GPU, SG_RB_RPTR, wptr) ||
++        !sgpu_stock_check32(p, SG_GPU, SG_RB_WPTR, wptr) ||
++        !sgpu_stock_check32(p, SG_GPU, SG_ME_CNTL, 0) ||
++        !sgpu_stock_check32(p, SG_GPU, SG_INT_MASK, 0) ||
++        !sgpu_stock_check32(p, SG_GPU, SG_RB_BASE, SGPU_RING_VA) ||
++        !sgpu_stock_check32(p, SG_GPU, SG_RB_BASE_HI, 0) ||
++        !sgpu_stock_check32(p, SG_SMMU, SG_CB, 0x1127u) ||
++        !sgpu_stock_check32(p, SG_SMMU, SG_S2CR0, 0) ||
++        !sgpu_stock_check32(p, SG_SMMU, SG_GR1_CBA2R0, 1) ||
++        !sgpu_stock_check32(p, SG_SMMU, SG_CB_TTBR0, (uint32_t)p->memory.pa[0]) ||
++        !sgpu_stock_check32(p, SG_SMMU, SG_CB_TTBR0 + 4, 0x10000u)) {
++        r->error = SG_BUSY;
++        return false;
++    }
++    faults(p);
++    if (has_fault(r)) { r->error = SG_FAULT; return false; }
++    r->stock.before = read32(p, SG_GPU, SG_TRUST);
++    r->trust = r->stock.before;
++    r->trust_read = true;
++    if (r->stock.before == 0) {
++        r->stock.after = 0;
++        r->stock.echo_zero = true;
++        return true; /* Already zero: no write, ordinary checked teardown. */
++    }
++    if (r->stock.before != 1) {
++        sgpu_failure(p, SG_FAIL_GUARD, SG_GPU, SG_TRUST, ~0u, 1,
++            r->stock.before, 0, r->stock.before, 0, 0);
++        r->error = SG_NEEDS_UNSECURE;
++        return false; /* No guessed mask, retry or write for unknown state. */
++    }
++    /* Mark before the callback: even a failed echo may have changed security
++     * state. Do not infer a reversible transition, safe reset or clean power
++     * collapse. The once-only adapter bounds this retained pool to 96 KiB. */
++    r->stock.attempted = true;
++    r->stock.held = true;
++    bool ok = checked_write32(p, SG_GPU, SG_TRUST, ~0u, 0);
++    r->stock.after = ok ? 0 : r->failure.got;
++    r->stock.echo_zero = ok;
++    r->trust = r->stock.after;
++    r->error = ok ? SG_STOCK_HELD : SG_FAULT;
++    return ok;
+ }
+
+ struct smmu_saved {
+     uint32_t cr0, smr, s2cr, cbar, cba2r, sctlr, tcr, tcr2, mair0, mair1;
+     uint64_t ttbr0, ttbr1;
+     bool matching, changed;
+@@ -778,12 +863,17 @@
+     if (mode == 0) return true;
+     if (mode > 3 || !ops || !ops->map || !ops->read32 || !ops->write32 ||
+         !ops->read64 || !ops->write64 || !ops->now_us || !ops->wait_us || !ops->allocate ||
+         !ops->release || !ops->clean || !ops->invalidate || !ops->trace) {
+         report->error = SG_BAD_MODE; return false;
+     }
++    if (ops->stock_unsecure && (ops->stock_unsecure != 1 || mode != 3)) {
++        report->error = SG_BAD_MODE; return false;
++    }
++    report->stock.requested = ops->stock_unsecure == 1;
++    if (report->stock.requested) report->stock.before = report->stock.after = ~0u;
+     struct probe p = {.ops = ops, .report = report};
+     struct sgpu_firmware fw = {0};
+     struct smmu_saved smmu = {0};
+     bool passed = false, stopped = true;
+     report->stage = SG_FIRMWARE;
+     if (mode >= 2 && !sgpu_firmware_validate(blob, blob_size, &fw)) {
+@@ -868,12 +958,17 @@
+     if (!marker_test(&p, &fw, &wptr)) {
+         if (!report->error) report->error = SG_COMMAND_TIMEOUT;
+         goto done;
+     }
+     faults(&p);
+     if (has_fault(report)) { report->error = SG_FAULT; goto done; }
++    if (ops->stock_unsecure == 1) {
++        report->stage = SG_STOCK_TRANSITION;
++        passed = sgpu_stock_transition(&p, mode, wptr);
++        goto done; /* Transition-only even if already zero; NEVER render. */
++    }
+     if (mode == 3) {
+         report->stage = SG_RENDER;
+         trace(&p, "before TRUST read ONLY; no secure writes", SG_TRUST, 0, 0);
+         report->trust = read32(&p, SG_GPU, SG_TRUST);
+         report->trust_read = true;
+         if (report->trust != 0) {
+@@ -888,12 +983,25 @@
+         faults(&p);
+         if (has_fault(report)) { report->error = SG_FAULT; goto done; }
+     }
+     report->stage = SG_COMPLETE;
+     passed = true;
+ done:
++    if (report->stock.attempted) {
++        /* No more MMIO after the checked attempt. Hold empty ring, owned
++         * translations, DMA pages and all power prerequisites until reboot.
++         * Echo-zero is reported separately; overall pass/restored stay false. */
++        report->memory_retained = true;
++        report->restored = false;
++        report->gpu_quiescent = false;
++        report->smmu_restored = false;
++        report->power_pending = p.saved_count;
++        trace(&p, "stock TRUST attempted; state HELD until reboot; no cleanup",
++            report->stock.before, report->stock.after, report->stock.echo_zero ? 1u : 0u);
++        return false;
++    }
+     p.restoring = true;
+     report->smmu_restored = !smmu.changed;
+     if (p.gpu_live && p.gpu_owned) {
+         faults(&p);
+         /* Failed post-reset resume must not grant further CP access/teardown. */
+         stopped = p.gpu_resumed && sgpu_a505_halt(&p, 3) &&
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -23,17 +23,17 @@
+ #define SGPU_DEST_VA (SGPU_VA_BASE + 0x50000u)
+ #define SGPU_MARKER_OFFSET 512u
+ #define SGPU_MARKERS 8u
+
+ enum sgpu_block { SG_CC, SG_MISC, SG_VOTE, SG_TCU, SG_GPU, SG_SMMU, SG_BLOCKS };
+ enum sgpu_stage { SG_OFF, SG_FIRMWARE, SG_POWER, SG_REGISTERS, SG_TABLES,
+-    SG_TRANSLATION, SG_COMMANDS, SG_RENDER, SG_COMPLETE };
++    SG_TRANSLATION, SG_COMMANDS, SG_RENDER, SG_COMPLETE, SG_STOCK_TRANSITION };
+ enum sgpu_error { SG_OK, SG_BAD_MODE, SG_BAD_FIRMWARE, SG_NO_MAP,
+     SG_POWER_TIMEOUT, SG_BUSY, SG_BAD_ID, SG_NO_MEMORY, SG_BAD_MEMORY,
+     SG_BAD_SMMU, SG_TLB_TIMEOUT, SG_COMMAND_TIMEOUT, SG_FAULT,
+-    SG_MARKER_MISMATCH, SG_ROLLBACK_FAILED, SG_NEEDS_UNSECURE };
++    SG_MARKER_MISMATCH, SG_ROLLBACK_FAILED, SG_NEEDS_UNSECURE, SG_STOCK_HELD };
+
+ struct sgpu_memory { uint8_t *va; uint64_t pa[SGPU_POOL_PAGES]; };
+ struct sgpu_firmware {
+     const uint8_t *pm4, *pfp;
+     uint32_t pm4_bytes, pfp_bytes, pm4_version, pfp_version;
+ };
+@@ -48,12 +48,13 @@
+     void (*wait_us)(void *, uint32_t);
+     bool (*allocate)(void *, struct sgpu_memory *);
+     void (*release)(void *, struct sgpu_memory *);
+     void (*clean)(void *, const void *, uint32_t);
+     void (*invalidate)(void *, const void *, uint32_t);
+     void (*trace)(void *, const char *, uint32_t, uint32_t, uint32_t);
++    uint32_t stock_unsecure; /* exactly 1 + mode3: transition-only, never render */
+ };
+ enum sgpu_failure_kind { SG_FAIL_NONE, SG_FAIL_OWNER, SG_FAIL_READBACK,
+     SG_FAIL_POLL, SG_FAIL_GUARD };
+ struct sgpu_failure {
+     uint32_t kind, stage, block, offset, mask, want, old, written, got;
+     uint32_t elapsed_us, budget_us, saved_count;
+@@ -62,12 +63,16 @@
+     uint32_t stage, error, markers, trust, vbif, aon_delta, pixels;
+     uint32_t status, interrupt_status, smmu_fsr, smmu_global_fsr;
+     uint32_t pm4_version, pfp_version;
+     uint32_t power_pending;
+     bool memory_retained, restored, trust_read, gpu_quiescent, smmu_restored;
+     struct sgpu_failure failure, rollback_failure;
++    struct {
++        uint32_t before, after;
++        bool requested, attempted, echo_zero, held;
++    } stock;
+ };
+
+ uint32_t sgpu_crc32(const uint8_t *, size_t);
+ uint32_t sgpu_packet7(uint32_t, uint32_t);
+ bool sgpu_firmware_validate(const uint8_t *, size_t, struct sgpu_firmware *);
+ bool sgpu_memory_validate(const struct sgpu_memory *);
+@@ -86,12 +91,14 @@
+ #define SG_ME_CNTL 0x20c8u
+ #define SG_PFP_BASE 0x20d4u
+ #define SG_PM4_BASE 0x20e0u
+ #define SG_STATUS 0x13d4u
+ #define SG_AON_LO 0x1348u
+ #define SG_VBIF_VERSION 0xc000u
++/* Xiaomi santoni-n-oss a5xx_reg.h: word 0xf400 * 4 = byte 0x3d000.
++ * Only the explicitly opted-in stock transition may write zero here. */
+ #define SG_TRUST 0x3d000u
+ #define SG_INT_MASK 0xe0u
+ #define SG_INT_STATUS 0x1384u
+ #define SG_RESET 0x10cu
+ /* adreno_dispatch.c: A5xx CP/PFP stop requests are bits0|1, not A3xx bit28. */
+ #define SG_CP_STOP_MASK 3u

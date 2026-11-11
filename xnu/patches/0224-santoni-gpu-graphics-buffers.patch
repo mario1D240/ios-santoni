@@ -1,0 +1,1409 @@
+diff --git a/bsd/conf/files b/bsd/conf/files
+index 7761688..699bee8 100644
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -115,6 +115,8 @@ bsd/dev/santoni_gpu.c			standard
+ bsd/dev/santoni_gpu_launch.c		standard
+ bsd/dev/santoni_gpu_launch_core.c		standard
+ bsd/dev/santoni_gpu_core.c		standard
++bsd/dev/santoni_gpu_graphics.c		standard
++bsd/dev/santoni_gpu_pm4.c			standard
+ bsd/dev/sweet_rpmh.c			standard
+ bsd/dev/sweet_spmi.c			standard
+ bsd/dev/sweet_usb.c			standard
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index 26d205a..c5de865 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -25,6 +25,7 @@
+ #include <vm/pmap.h>
+ #include <arm/memory_types.h>
+ #include "santoni_gpu_core.h"
++#include "santoni_gpu_graphics_hw.h"
+ #include "santoni_gpu_launch.h"
+
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+@@ -1352,6 +1353,24 @@ bool __attribute__((noinline)) santoni_gpu_ui_frame(const void **out,uint32_t *s
+     return ok;
+ }
+
++static uint32_t sgpu_graphics_enabled;
++static uint32_t sgpu_graphics_published;
++bool __attribute__((noinline)) santoni_gpu_graphics_worker_ready(void)
++{
++    return __atomic_load_n(&sgpu_graphics_published,__ATOMIC_ACQUIRE)==1;
++}
++static bool __attribute__((noinline)) sgpu_graphics_options(uint32_t mode)
++{
++    int enabled=0;
++    PE_parse_boot_argn("santonigpu_graphics",&enabled,sizeof(enabled));
++    sgpu_graphics_enabled=0;
++    __atomic_store_n(&sgpu_graphics_published,0,__ATOMIC_RELEASE);
++    if (!enabled) return true;
++    if (enabled!=1 || mode!=3 || sgpu_render_enabled!=1 || sgpu_ui_enabled) return false;
++    sgpu_graphics_enabled=1;
++    return true;
++}
++
+ static void __attribute__((noinline)) sgpu_render_worker(const struct sgpu_ops *ops,
+     const uint8_t *firmware, size_t bytes, struct sgpu_report *boot)
+ {
+@@ -1361,6 +1380,7 @@ static void __attribute__((noinline)) sgpu_render_worker(const struct sgpu_ops *
+         return;
+     }
+     struct sgpu_render_live_result result = {0};
++    bool graphics_ready=false;
+     sgpu_render_allocation_retained = true; /* never release while the call may expose pages */
+     bool passed = sgpu_render_live_start(ops,sg.mode,sgpu_render_enabled,firmware,bytes,
+         &sgpu_render_owned,boot,&result);
+@@ -1376,7 +1396,18 @@ static void __attribute__((noinline)) sgpu_render_worker(const struct sgpu_ops *
+         result.started?1u:0u,result.exposed?1u:0u,result.publish_attempted?1u:0u,
+         sgpu_render_allocation_retained ? (SGPU_RENDER_TABLE_PAGES + SGPU_RENDER_LIVE_PAGES)*SGPU_PAGE : 0u,
+         boot->memory_retained ? SGPU_POOL_BYTES : 0u);
++    if (sgpu_graphics_enabled==1) {
++        graphics_ready=passed && sgpu_graphics_hw_begin(sg.mode,sgpu_graphics_enabled);
++        struct sgpu_graphics_hw_result graphics={0};
++        sgpu_graphics_hw_snapshot(&graphics);
++        sgpu_failure_summary("GRAPHICS FIRST_FAIL",&graphics.failure);
++        printf("SANTONI GPU: GRAPHICS VM RESULT ready=%u failed=%u exposed=%u error=%u wptr=%u; owned BO/IB transport; CPU panel retained\n",
++            graphics_ready?1u:0u,graphics.failed?1u:0u,graphics.exposed?1u:0u,graphics.error,graphics.wptr);
++    }
+     sgpu_ui_publish(passed);
++    /* Finish every bootstrap/report/UI-publication operation before a task
++     * can acquire the new VM. The acquire getter orders all controller state. */
++    if(graphics_ready)__atomic_store_n(&sgpu_graphics_published,1,__ATOMIC_RELEASE);
+ }
+
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+@@ -1434,6 +1465,11 @@ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused
+         thread_terminate_self();
+         return;
+     }
++    if (!sgpu_graphics_options(sg.mode)) {
++        printf("SANTONI GPU: invalid graphics transport role; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
+     if (sgpu_pas_cache_preflight(sg.mode)) {
+         thread_terminate_self();
+         return;
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+index 3d53b8b..9eb3d73 100644
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -2929,4 +2929,251 @@ bool __attribute__((noinline)) sgpu_ui_frame(const uint8_t **out,uint32_t *strid
+     return true;
+ }
+
++#include "santoni_gpu_graphics_hw.h"
++#include <string.h>
++/* Used only by the separately opted-in rendering client, after live bootstrap.
++ * The original UI-copy producer must remain absent while this VM is owned. */
++static struct {
++    bool initialized,failed,exposed;
++    uint32_t error,wptr,pending;
++    struct sgpu_report report;
++    struct sgpu_render_memory owned;
++    uint8_t *old_va;
++    uint64_t old_pa[SGPU_POOL_PAGES],owned_pa[SGPU_RENDER_LIVE_PAGES];
++    uint64_t old_l1[512],old_l2[512],old_l3[512],new_l1[512],new_l2[512];
++    uint64_t ptes[SGPU_RENDER_MAX_PAGES];
++} sgpu_graphics_hw;
++static bool __attribute__((noinline)) sgpu_graphics_hw_fail(uint32_t error)
++{
++    if (!sgpu_graphics_hw.error) sgpu_graphics_hw.error=error;
++    sgpu_graphics_hw.failed=true;
++    return false; /* no rollback, unmap or release after an uncertain handoff */
++}
++bool __attribute__((noinline)) sgpu_graphics_hw_ready(void)
++{return sgpu_graphics_hw.initialized && !sgpu_graphics_hw.failed;}
++bool __attribute__((noinline)) sgpu_graphics_hw_reserved(uint64_t pa)
++{
++    for (unsigned i=0;i<SGPU_POOL_PAGES;i++)if(pa==sgpu_graphics_hw.old_pa[i])return true;
++    for (unsigned i=0;i<SGPU_RENDER_TABLE_PAGES;i++)if(pa==sgpu_graphics_hw.owned.table_pa[i])return true;
++    for (unsigned i=0;i<SGPU_RENDER_LIVE_PAGES;i++)if(pa==sgpu_graphics_hw.owned_pa[i])return true;
++    return false;
++}
++static bool __attribute__((noinline)) sgpu_graphics_hw_tables(void)
++{
++    const struct sgpu_memory *old=&session_core.p.memory;
++    const struct sgpu_render_memory *m=&sgpu_render_live.arena.memory,*saved=&sgpu_graphics_hw.owned;
++    if (old->va!=sgpu_graphics_hw.old_va || m->tables!=saved->tables || m->pixels!=saved->pixels ||
++        m->pa!=saved->pa || m->pages!=SGPU_RENDER_LIVE_PAGES) return false;
++    for (unsigned i=0;i<SGPU_POOL_PAGES;i++)if(old->pa[i]!=sgpu_graphics_hw.old_pa[i])return false;
++    for (unsigned i=0;i<SGPU_RENDER_TABLE_PAGES;i++)if(m->table_pa[i]!=saved->table_pa[i])return false;
++    for (unsigned i=0;i<SGPU_RENDER_LIVE_PAGES;i++)if(m->pa[i]!=sgpu_graphics_hw.owned_pa[i])return false;
++    const uint64_t *ol1=(const uint64_t *)(const void *)old->va,*ol2=ol1+512,*ol3=ol2+512;
++    const uint64_t *nl1=(const uint64_t *)(const void *)m->tables,*nl2=nl1+512,*nl3=nl2+512;
++    for (unsigned i=0;i<512;i++)if(ol1[i]!=sgpu_graphics_hw.old_l1[i] || ol2[i]!=sgpu_graphics_hw.old_l2[i] ||
++        ol3[i]!=sgpu_graphics_hw.old_l3[i] || nl1[i]!=sgpu_graphics_hw.new_l1[i] || nl2[i]!=sgpu_graphics_hw.new_l2[i])return false;
++    for (unsigned i=0;i<SGPU_RENDER_MAX_PAGES;i++)if(nl3[i]!=sgpu_graphics_hw.ptes[i])return false;
++    return true;
++}
++static bool __attribute__((noinline)) sgpu_graphics_hw_state(uint32_t wptr, uint32_t me, uint32_t cb, uint32_t route)
++{
++    struct probe *p = &session_core.p;
++    if (!p->gpu_live || !p->gpu_owned || !p->gpu_resumed || !p->smmu_live ||
++        !p->dma_exposed || !p->commands_started || p->restoring) return false;
++    if (!sgpu_render_live_cp_state(me)) return false;
++    const uint32_t values[][3] = {
++        {SG_GPU,SG_TRUST,0},{SG_GPU,SG_RB_RPTR,wptr},{SG_GPU,SG_RB_WPTR,wptr},
++        {SG_GPU,SG_INT_MASK,0},
++        {SG_GPU,SG_RB_BASE,SGPU_RING_VA},{SG_GPU,SG_RB_BASE_HI,0},
++        {SG_GPU,SG_RB_CNTL,BIT(27)|(2u<<8)|9u},
++        {SG_GPU,SG_PM4_BASE,SGPU_PM4_VA},{SG_GPU,SG_PM4_BASE+4,0},
++        {SG_GPU,SG_PFP_BASE,SGPU_PFP_VA},{SG_GPU,SG_PFP_BASE+4,0},
++        {SG_SMMU,SG_CB,cb},{SG_SMMU,SG_S2CR0,route},{SG_SMMU,SG_GR1_CBA2R0,1},
++        {SG_SMMU,SG_GR1_CBAR0,0x1f300u},{SG_SMMU,SG_CB_TTBCR,0x00802560u},
++        {SG_SMMU,SG_CB_TTBCR2,0x38010u},{SG_SMMU,SG_CB_MAIR0,0xff44u},
++        {SG_SMMU,SG_CB_MAIR0+4,0},{SG_SMMU,SG_CB_TTBR0,(uint32_t)p->memory.pa[0]},
++        {SG_SMMU,SG_CB_TTBR0+4,0x10000u}};
++    for (unsigned i = 0; i < COUNT(values); i++)
++        if (!sgpu_stock_check32(p, (enum sgpu_block)values[i][0], values[i][1], values[i][2])) return false;
++    if ((read32(p,SG_SMMU,0x20)&BIT(27)) && !sgpu_stock_check32(p,SG_SMMU,SG_SMR0,BIT(31))) return false;
++    sgpu_ui_faults(p);
++    return !has_fault(p->report) && poll(p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000);
++}
++
++
++static bool __attribute__((noinline)) sgpu_graphics_hw_stop(void)
++{
++    struct probe *p=&session_core.p;uint32_t wptr=sgpu_graphics_hw.wptr;
++    if (!sgpu_graphics_hw_tables() || !sgpu_graphics_hw_state(wptr,0,0x1127,0)) return sgpu_graphics_hw_fail(SG_BAD_MEMORY);
++    sgpu_graphics_hw.exposed=true;
++    if (!checked_write32(p,SG_GPU,SG_ME_CNTL,SG_CP_LIVE_READBACK_MASK,SG_CP_STOP_MASK) ||
++        !poll(p,SG_GPU,SG_STATUS,SG_IDLE_MASK,0,10000) ||
++        !checked_write32(p,SG_SMMU,SG_S2CR0,~0u,SG_S2CR_FAULT) ||
++        !checked_write32(p,SG_SMMU,SG_CB,~0u,0x1126) ||
++        !sgpu_graphics_hw_state(wptr,3,0x1126,SG_S2CR_FAULT) || !sgpu_graphics_hw_tables())
++        return sgpu_graphics_hw_fail(SG_BAD_SMMU);
++    return true;
++}
++static bool __attribute__((noinline)) sgpu_graphics_hw_resume(void)
++{
++    struct probe *p=&session_core.p;uint32_t wptr=sgpu_graphics_hw.wptr;
++    if (!sgpu_graphics_hw_tables() || !checked_write32(p,SG_SMMU,SG_CB_TLBIASID,0,1) ||
++        !checked_write32(p,SG_SMMU,SG_CB_TLBSYNC,0,0) ||
++        !poll(p,SG_SMMU,SG_CB_TLBSTATUS,1,0,10000))return sgpu_graphics_hw_fail(SG_TLB_TIMEOUT);
++    if (!sgpu_graphics_hw_state(wptr,3,0x1126,SG_S2CR_FAULT) || !sgpu_graphics_hw_tables() ||
++        !checked_write32(p,SG_SMMU,SG_CB,~0u,0x1127) ||
++        !sgpu_graphics_hw_state(wptr,3,0x1127,SG_S2CR_FAULT) ||
++        !checked_write32(p,SG_SMMU,SG_S2CR0,~0u,0) ||
++        !sgpu_graphics_hw_state(wptr,3,0x1127,0) ||
++        !checked_write32(p,SG_GPU,SG_ME_CNTL,SG_CP_LIVE_READBACK_MASK,0) ||
++        !sgpu_graphics_hw_state(wptr,0,0x1127,0) || !sgpu_graphics_hw_tables())return sgpu_graphics_hw_fail(SG_BAD_SMMU);
++    return true;
++}
++bool __attribute__((noinline)) sgpu_graphics_hw_begin(uint32_t mode,uint32_t enabled)
++{
++    struct probe *p=&session_core.p;struct sgpu_render_memory *m=&sgpu_render_live.arena.memory;
++    if (mode!=3 || enabled!=1 || sgpu_graphics_hw.initialized || sgpu_graphics_hw.failed ||
++        sgpu_ui.ready || sgpu_ui.failed || sgpu_ui.imported || !sgpu_render_live.result.passed ||
++        !sgpu_render_live.linked || sgpu_render_live.result.phase!=SG_LIVE_DONE ||
++        sgpu_render_live.arena.busy || sgpu_render_live.arena.error || !p->report ||
++        p->report->failure.kind || !p->report->pixel.started) return false;
++    struct sgpu_report *saved_report=p->report;
++    sgpu_graphics_hw.report=*saved_report;sgpu_graphics_hw.report.error=0;
++    p->report=&sgpu_graphics_hw.report;p->report->stage=SGPU_RENDER_LIVE_STAGE;
++    bool ok=false;
++    if (!sgpu_render_live_tables(true) || !sgpu_render_live_state(sgpu_render_live.result.wptr,0,0x1127,0)) {
++        sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;
++    }
++    sgpu_graphics_hw.owned=*m;sgpu_graphics_hw.old_va=p->memory.va;
++    memcpy(sgpu_graphics_hw.owned_pa,m->pa,sizeof(sgpu_graphics_hw.owned_pa));
++    memcpy(sgpu_graphics_hw.old_pa,p->memory.pa,sizeof(sgpu_graphics_hw.old_pa));
++    memcpy(sgpu_graphics_hw.old_l1,p->memory.va,SGPU_PAGE);
++    memcpy(sgpu_graphics_hw.old_l2,p->memory.va+SGPU_PAGE,SGPU_PAGE);
++    memcpy(sgpu_graphics_hw.old_l3,p->memory.va+2*SGPU_PAGE,SGPU_PAGE);
++    memcpy(sgpu_graphics_hw.new_l1,m->tables,SGPU_PAGE);
++    memcpy(sgpu_graphics_hw.new_l2,m->tables+SGPU_PAGE,SGPU_PAGE);
++    memcpy(sgpu_graphics_hw.ptes,m->tables+2*SGPU_PAGE,sizeof(sgpu_graphics_hw.ptes));
++    sgpu_graphics_hw.wptr=sgpu_render_live.result.wptr;
++    if (!sgpu_graphics_hw_stop())goto done;
++    uint64_t *l3=(uint64_t *)(void *)(m->tables+2*SGPU_PAGE);
++    for (unsigned i=1;i<SGPU_RENDER_MAX_PAGES;i++)l3[i]=sgpu_graphics_hw.ptes[i]=0;
++    *(uint32_t *)(void *)(m->tables+6*SGPU_PAGE)=0;
++    /* Shader memory stores must not modify the CPU-owned command ring. */
++    unsigned ring=(SGPU_RING_VA-SGPU_VA_BASE)/SGPU_PAGE;
++    uint64_t *old_l3=(uint64_t *)(void *)(p->memory.va+2*SGPU_PAGE);
++    old_l3[ring]=sgpu_graphics_hw.old_l3[ring]=(old_l3[ring]&0x0000fffffffff000ull)|PTE_RO;
++    p->ops->clean(p->ops->ctx,old_l3,SGPU_PAGE);
++    p->ops->clean(p->ops->ctx,l3,4*SGPU_PAGE);
++    p->ops->clean(p->ops->ctx,m->tables+6*SGPU_PAGE,64);
++    if (!sgpu_graphics_hw_resume())goto done;
++    sgpu_graphics_hw.initialized=ok=true;
++done:
++    p->report=saved_report;return ok;
++}
++uint64_t __attribute__((noinline)) sgpu_graphics_hw_pte(uint32_t va)
++{
++    if (!sgpu_graphics_hw_ready() || va<SGPU_RENDER_VA || (va&(SGPU_PAGE-1)) ||
++        va-SGPU_RENDER_VA>=SGPU_RENDER_MAX_PAGES*SGPU_PAGE)return ~0ull;
++    return ((const uint64_t *)(const void *)(sgpu_graphics_hw.owned.tables+2*SGPU_PAGE))[(va-SGPU_RENDER_VA)/SGPU_PAGE];
++}
++static bool __attribute__((noinline)) sgpu_graphics_hw_change(uint32_t va,const uint64_t *pa,
++    uint32_t pages,uint64_t attrs,uint32_t guard)
++{
++    if (!sgpu_graphics_hw_ready() || sgpu_graphics_hw.pending || !pages || va<SGPU_RENDER_VA+SGPU_PAGE ||
++        (va&(SGPU_PAGE-1)) || pages>=SGPU_RENDER_MAX_PAGES ||
++        va-SGPU_RENDER_VA>(SGPU_RENDER_MAX_PAGES-pages-1)*SGPU_PAGE || guard!=va+pages*SGPU_PAGE ||
++        (pa && attrs!=PTE_RO && attrs!=PTE_RW))return false;
++    uint32_t first=(va-SGPU_RENDER_VA)/SGPU_PAGE;
++    if(sgpu_graphics_hw.ptes[first+pages])return false;
++    for(unsigned i=0;i<pages;i++) {
++        if(pa) {
++            if(sgpu_graphics_hw.ptes[first+i] || (pa[i]&(SGPU_PAGE-1)) || pa[i]<SGPU_DMA_MIN ||
++                pa[i]>SGPU_DMA_END-SGPU_PAGE || sgpu_graphics_hw_reserved(pa[i]))return false;
++            for(unsigned j=0;j<i;j++)if(pa[j]==pa[i])return false;
++            for(unsigned j=0;j<SGPU_RENDER_MAX_PAGES;j++)
++                if((sgpu_graphics_hw.ptes[j]&0x0000fffffffff000ull)==pa[i])return false;
++        } else if(!sgpu_graphics_hw.ptes[first+i])return false;
++    }
++    struct probe *p=&session_core.p;struct sgpu_report *saved=p->report;p->report=&sgpu_graphics_hw.report;
++    bool ok=false;if(!sgpu_graphics_hw_stop())goto done;
++    uint64_t *l3=(uint64_t *)(void *)(sgpu_graphics_hw.owned.tables+2*SGPU_PAGE);
++    for(unsigned i=0;i<pages;i++)l3[first+i]=sgpu_graphics_hw.ptes[first+i]=pa?pa[i]|attrs:0;
++    p->ops->clean(p->ops->ctx,l3,4*SGPU_PAGE);
++    ok=sgpu_graphics_hw_resume();
++done:
++    p->report=saved;return ok;
++}
++bool __attribute__((noinline)) sgpu_graphics_hw_map(uint32_t va,const uint64_t *pa,uint32_t pages,uint64_t attrs,uint32_t guard)
++{return pa && sgpu_graphics_hw_change(va,pa,pages,attrs,guard);}
++bool __attribute__((noinline)) sgpu_graphics_hw_unmap(uint32_t va,uint32_t pages,uint32_t guard)
++{return sgpu_graphics_hw_change(va,NULL,pages,0,guard);}
++uint64_t __attribute__((noinline)) sgpu_graphics_hw_fence_pa(void)
++{return sgpu_graphics_hw_ready()?sgpu_graphics_hw.owned.table_pa[6]:0;}
++void __attribute__((noinline)) sgpu_graphics_hw_clean(const void *address,uint32_t bytes)
++{if(sgpu_graphics_hw_ready() && address && bytes)session_core.ops.clean(session_core.ops.ctx,address,bytes);}
++void __attribute__((noinline)) sgpu_graphics_hw_invalidate(const void *address,uint32_t bytes)
++{if(sgpu_graphics_hw_ready() && address && bytes)session_core.ops.invalidate(session_core.ops.ctx,address,bytes);}
++void __attribute__((noinline)) sgpu_graphics_hw_invalidate_fence(void)
++{if(sgpu_graphics_hw_ready())session_core.ops.invalidate(session_core.ops.ctx,sgpu_graphics_hw.owned.tables+6*SGPU_PAGE,64);}
++uint32_t __attribute__((noinline)) sgpu_graphics_hw_fence(void)
++{return sgpu_graphics_hw_ready()?*(volatile uint32_t *)(void *)(sgpu_graphics_hw.owned.tables+6*SGPU_PAGE):~0u;}
++bool __attribute__((noinline)) sgpu_graphics_hw_faulted(void)
++{
++    if(!sgpu_graphics_hw_ready())return true;
++    struct probe *p=&session_core.p;struct sgpu_report *saved=p->report;p->report=&sgpu_graphics_hw.report;
++    sgpu_ui_faults(p);bool failed=has_fault(p->report);
++    if(failed)sgpu_graphics_hw_fail(SG_FAULT);
++    p->report=saved;return failed;
++}
++bool __attribute__((noinline)) sgpu_graphics_hw_idle(void)
++{
++    if(!sgpu_graphics_hw_ready())return false;
++    struct probe *p=&session_core.p;struct sgpu_report *saved=p->report;p->report=&sgpu_graphics_hw.report;
++    bool ok=sgpu_graphics_hw_tables() && sgpu_graphics_hw_state(sgpu_graphics_hw.wptr,0,0x1127,0);
++    if(ok)sgpu_graphics_hw.pending=0;
++    else sgpu_graphics_hw_fail(SG_BAD_MEMORY);
++    p->report=saved;return ok;
++}
++bool __attribute__((noinline)) sgpu_graphics_hw_publish(const struct sgpu_graphics_command *cmd,uint32_t count,uint32_t sequence)
++{
++    if(!sgpu_graphics_hw_ready() || !cmd || !count || count>SGPU_GRAPHICS_IBS || !sequence || sgpu_graphics_hw.pending)return false;
++    uint32_t out[SGPU_GRAPHICS_IBS*4+8],n=0;
++    for(unsigned i=0;i<count;i++) {
++        if(!cmd[i].bytes || (cmd[i].bytes|cmd[i].gpu_va)&3 || cmd[i].bytes>SGPU_GRAPHICS_IB_BYTES ||
++            cmd[i].gpu_va<SGPU_RENDER_VA+SGPU_PAGE ||
++            cmd[i].gpu_va-SGPU_RENDER_VA>SGPU_RENDER_MAX_PAGES*SGPU_PAGE-cmd[i].bytes)return false;
++        uint32_t first=(cmd[i].gpu_va-SGPU_RENDER_VA)/SGPU_PAGE,last=(cmd[i].gpu_va-SGPU_RENDER_VA+cmd[i].bytes-1)/SGPU_PAGE;
++        for(unsigned j=first;j<=last;j++)if((sgpu_graphics_hw.ptes[j]&~0x0000fffffffff000ull)!=PTE_RO)return false;
++        out[n++]=sgpu_packet7(0x3f,3);out[n++]=cmd[i].gpu_va;out[n++]=0;out[n++]=cmd[i].bytes/4;
++    }
++    /* Same existing CACHE_FLUSH_TS event, into the kernel-owned private fence. */
++    out[n++]=sgpu_packet7(0x46,4);out[n++]=4;out[n++]=SGPU_RENDER_VA;out[n++]=0;out[n++]=sequence;
++    out[n++]=sgpu_packet7(0x26,0);
++    struct probe *p=&session_core.p;struct sgpu_report *saved=p->report;p->report=&sgpu_graphics_hw.report;
++    bool ok=false;
++    if(!sgpu_graphics_hw_tables() || !sgpu_graphics_hw_state(sgpu_graphics_hw.wptr,0,0x1127,0)) {sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;}
++    uint32_t previous=sgpu_graphics_hw.wptr,pos=previous,remain=SGPU_PAGE/4-pos;
++    uint32_t *ring=(uint32_t *)(void *)(p->memory.va+3*SGPU_PAGE);
++    if(remain<n+2) {ring[pos]=sgpu_packet7(0x10,remain-1);for(unsigned i=pos+1;i<SGPU_PAGE/4;i++)ring[i]=0;pos=0;}
++    for(unsigned i=0;i<n;i++)ring[pos+i]=out[i];
++    sgpu_graphics_hw.pending=sequence;sgpu_graphics_hw.wptr=pos+n;
++    /* Cache publication is a callback boundary. Recheck all owned tables and
++     * CP/SID0/CB state AFTER it, immediately before making this IB reachable.
++     * Keep the original consume() and every legacy/UI producer unchanged. */
++    p->ops->clean(p->ops->ctx,ring,SGPU_PAGE);
++    if (!sgpu_graphics_hw_tables() || !sgpu_graphics_hw_state(previous,0,0x1127,0) ||
++        !sgpu_graphics_hw_tables()) {sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;}
++    if (!checked_write32(p,SG_GPU,SG_RB_WPTR,~0u,pos+n) ||
++        !poll(p,SG_GPU,SG_RB_RPTR,~0u,pos+n,POLL_US) ||
++        !poll(p,SG_GPU,SG_STATUS,SG_BUSY_MASK,0,POLL_US)) {sgpu_graphics_hw_fail(SG_COMMAND_TIMEOUT);goto done;}
++    ok=true;
++done:
++    p->report=saved;return ok;
++}
++void __attribute__((noinline)) sgpu_graphics_hw_snapshot(struct sgpu_graphics_hw_result *out)
++{
++    if(out)*out=(struct sgpu_graphics_hw_result){.error=sgpu_graphics_hw.error,.wptr=sgpu_graphics_hw.wptr,
++        .pending=sgpu_graphics_hw.pending,.ready=sgpu_graphics_hw_ready(),.failed=sgpu_graphics_hw.failed,
++        .exposed=sgpu_graphics_hw.exposed,.failure=sgpu_graphics_hw.report.failure};
++}
++
+ #endif
+diff --git a/bsd/dev/santoni_gpu_graphics.c b/bsd/dev/santoni_gpu_graphics.c
+new file mode 100644
+index 0000000..dc20059
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_graphics.c
+@@ -0,0 +1,314 @@
++#include "santoni_gpu_graphics.h"
++#include <string.h>
++
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++/* Exact PTE_FLAGS in santoni_gpu_core.c: descriptor3, AttrIdx1, SH2, AF,
++ * nG and PXN/UXN. Keep both high execute-never bits, not just low attributes.
++ * AP3 is read-only and AP1 is writable in the programmed 4K Santoni tables. */
++#define CLIENT_PTE_FLAGS (3ull|(1ull<<2)|(2ull<<8)|(1ull<<10)|(1ull<<11)|(3ull<<53))
++#define CLIENT_PTE_RO (CLIENT_PTE_FLAGS|(3ull<<6))
++#define CLIENT_PTE_RW (CLIENT_PTE_FLAGS|(1ull<<6))
++#define CLIENT_FN __attribute__((noinline))
++
++static bool CLIENT_FN sgpu_graphics_admitted(const struct sgpu_graphics *c, uint64_t owner)
++{
++    return c && c->initialized && !c->closed && !c->quarantined &&
++        owner && owner == c->owner;
++}
++static struct sgpu_graphics_bo *CLIENT_FN sgpu_graphics_lookup(struct sgpu_graphics *c, uint32_t handle)
++{
++    if (!handle) return NULL;
++    for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++)
++        if (c->bo[i].live && c->bo[i].handle==handle) return &c->bo[i];
++    return NULL;
++}
++static bool CLIENT_FN sgpu_graphics_fail(struct sgpu_graphics *c, uint32_t error)
++{
++    if (!c->error) c->error=error;
++    c->quarantined=true;
++    for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++)
++        if (c->bo[i].live && c->bo[i].exposed) c->bo[i].quarantine=true;
++    return false;
++}
++bool CLIENT_FN sgpu_graphics_init(struct sgpu_graphics *c, uint64_t owner,
++    const struct sgpu_graphics_ops *ops)
++{
++    if (!c || !owner || !ops || !ops->ready || !ops->allocate || !ops->release ||
++        !ops->page_pa || !ops->reserved_pa || !ops->map || !ops->unmap || !ops->pte ||
++        !ops->clean || !ops->invalidate || !ops->prepare_ibs || !ops->validate_ib || !ops->publish ||
++        !ops->invalidate_fence || !ops->fence || !ops->faulted || !ops->idle ||
++        !ops->now_us || !ops->wait_us || !ops->ready(ops->ctx)) return false;
++    /* Caller supplies fresh, zeroed state. Reinitialization could lose leases. */
++    if (c->initialized || c->retained_pages || c->owner ||
++        (ops->fence_pa&(SGPU_PAGE-1)) || ops->fence_pa<SGPU_DMA_MIN ||
++        ops->fence_pa>SGPU_DMA_END-SGPU_PAGE || !ops->reserved_pa(ops->ctx,ops->fence_pa) ||
++        !ops->idle(ops->ctx) || ops->faulted(ops->ctx) ||
++        ops->pte(ops->ctx,SGPU_RENDER_VA)!=(ops->fence_pa|CLIENT_PTE_RW)) return false;
++    for (uint32_t i=1;i<SGPU_RENDER_MAX_PAGES;i++)
++        if (ops->pte(ops->ctx,SGPU_RENDER_VA+i*SGPU_PAGE)) return false;
++    ops->invalidate_fence(ops->ctx);
++    if (ops->fence(ops->ctx)) return false;
++    memset(c,0,sizeof(*c));c->ops=*ops;c->owner=owner;
++    c->next_handle=1;c->va_used[0]=2;c->initialized=true;
++    return true;
++}
++static uint32_t CLIENT_FN sgpu_graphics_run(const uint8_t *used, uint32_t count,
++    uint32_t start, uint32_t pages)
++{
++    if (!pages || pages>count-start) return count;
++    for (uint32_t i=start;i<=count-pages;i++) {
++        uint32_t j=0;
++        for (;j<pages;j++) if (used[i+j]) break;
++        if (j==pages) return i;
++        i+=j;
++    }
++    return count;
++}
++static bool CLIENT_FN sgpu_graphics_memory_valid(const struct sgpu_graphics *c,
++    const struct sgpu_graphics_memory *m, uint32_t pages)
++{
++    if (!m->va || ((uintptr_t)m->va&(SGPU_PAGE-1)) || !m->pa ||
++        ((uintptr_t)m->pa&7) || !m->cookie ||
++        m->pages!=pages || pages>SGPU_GRAPHICS_PAGES) return false;
++    uintptr_t va=(uintptr_t)m->va,pa=(uintptr_t)m->pa;
++    uintptr_t length=(uintptr_t)pages*SGPU_PAGE,pa_length=(uintptr_t)pages*8;
++    if (va>UINTPTR_MAX-length || pa>UINTPTR_MAX-pa_length ||
++        (va<pa+pa_length && pa<va+length)) return false;
++    for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++) if (c->bo[i].live) {
++        uintptr_t old=(uintptr_t)c->bo[i].memory.va,bytes=(uintptr_t)c->bo[i].pages*SGPU_PAGE;
++        if (va<old+bytes && old<va+length) return false;
++    }
++    for (uint32_t i=0;i<pages;i++) {
++        uint64_t pa=m->pa[i];
++        if ((pa&(SGPU_PAGE-1)) || pa<SGPU_DMA_MIN || pa>SGPU_DMA_END-SGPU_PAGE ||
++            c->ops.page_pa(c->ops.ctx,m,i)!=pa || c->ops.reserved_pa(c->ops.ctx,pa)) return false;
++        for (uint32_t j=0;j<i;j++) if (m->pa[j]==pa) return false;
++        for (uint32_t j=0;j<SGPU_GRAPHICS_PAGES;j++)
++            if (c->physical_used[j] && c->pa[j]==pa) return false;
++    }
++    return true;
++}
++static uint32_t CLIENT_FN sgpu_graphics_allocate(struct sgpu_graphics *c,
++    uint32_t bytes, uint32_t flags, bool private_ib)
++{
++    if (!bytes || bytes>SGPU_RENDER_BO_BYTES || (flags!=SGPU_GRAPHICS_RO && flags!=SGPU_GRAPHICS_RW) ||
++        c->active || !c->next_handle || c->next_handle==UINT32_MAX) return 0;
++    if (!c->ops.ready(c->ops.ctx)) {sgpu_graphics_fail(c,SG_GRAPHICS_OFF);return 0;}
++    uint32_t pages=(bytes+SGPU_PAGE-1)/SGPU_PAGE;
++    unsigned slot=0;
++    while (slot<SGPU_GRAPHICS_BOS && c->bo[slot].live) slot++;
++    uint32_t first=sgpu_graphics_run(c->va_used,SGPU_RENDER_MAX_PAGES,1,pages+1);
++    uint32_t physical=sgpu_graphics_run(c->physical_used,SGPU_GRAPHICS_PAGES,0,pages);
++    if (slot==SGPU_GRAPHICS_BOS || first==SGPU_RENDER_MAX_PAGES || physical==SGPU_GRAPHICS_PAGES) return 0;
++    struct sgpu_graphics_memory m={0};
++    if (!c->ops.allocate(c->ops.ctx,pages*SGPU_PAGE,private_ib,&m)) return 0;
++    if (!sgpu_graphics_memory_valid(c,&m,pages)) {c->ops.release(c->ops.ctx,&m);return 0;}
++    uint32_t handle=c->next_handle++;
++    struct sgpu_graphics_bo *b=&c->bo[slot];
++    *b=(struct sgpu_graphics_bo){.memory=m,.handle=handle,.bytes=bytes,.first=first,
++        .pages=pages,.physical=physical,.flags=flags,.live=true,.private_ib=private_ib};
++    for (uint32_t i=0;i<pages;i++) {
++        c->pa[physical+i]=m.pa[i];c->physical_used[physical+i]=1;c->va_used[first+i]=1;
++    }
++    c->va_used[first+pages]=2;c->retained_pages+=pages;
++    memset(m.va,0,pages*SGPU_PAGE);
++    c->ops.clean(c->ops.ctx,m.va,pages*SGPU_PAGE);
++    if (!c->ops.ready(c->ops.ctx)) {sgpu_graphics_fail(c,SG_GRAPHICS_OFF);return 0;}
++    uint32_t va=SGPU_RENDER_VA+first*SGPU_PAGE,guard=va+pages*SGPU_PAGE;
++    /* Preserve owned backing before the first potentially live map callback. */
++    b->exposed=true;
++    uint64_t attr=flags==SGPU_GRAPHICS_RO?CLIENT_PTE_RO:CLIENT_PTE_RW;
++    if (!c->ops.map(c->ops.ctx,va,&c->pa[physical],pages,attr,guard)) {
++        sgpu_graphics_fail(c,SG_GRAPHICS_MAP);return 0;
++    }
++    for (uint32_t i=0;i<pages;i++) if (c->ops.pte(c->ops.ctx,va+i*SGPU_PAGE)!=(c->pa[physical+i]|attr)) {
++        sgpu_graphics_fail(c,SG_GRAPHICS_MAP);return 0;
++    }
++    if (c->ops.pte(c->ops.ctx,guard)) {sgpu_graphics_fail(c,SG_GRAPHICS_MAP);return 0;}
++    return handle;
++}
++uint32_t CLIENT_FN sgpu_graphics_new(struct sgpu_graphics *c, uint64_t owner, uint32_t bytes, uint32_t flags)
++{
++    return sgpu_graphics_admitted(c,owner)?sgpu_graphics_allocate(c,bytes,flags,false):0;
++}
++bool CLIENT_FN sgpu_graphics_info(const struct sgpu_graphics *c, uint64_t owner,
++    uint32_t handle, struct sgpu_graphics_range *out)
++{
++    if (!out || !sgpu_graphics_admitted(c,owner)) return false;
++    for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++) {
++        const struct sgpu_graphics_bo *b=&c->bo[i];
++        if (b->live && !b->private_ib && b->handle==handle) {
++            *out=(struct sgpu_graphics_range){handle,SGPU_RENDER_VA+b->first*SGPU_PAGE,b->bytes,b->flags};
++            return true;
++        }
++    }
++    return false;
++}
++static bool CLIENT_FN sgpu_graphics_bo_valid(struct sgpu_graphics *c, struct sgpu_graphics_bo *b)
++{
++    uint64_t attr=b->flags==SGPU_GRAPHICS_RO?CLIENT_PTE_RO:CLIENT_PTE_RW;
++    uint32_t va=SGPU_RENDER_VA+b->first*SGPU_PAGE;
++    for (uint32_t i=0;i<b->pages;i++)
++        if (c->ops.page_pa(c->ops.ctx,&b->memory,i)!=c->pa[b->physical+i] ||
++            c->ops.pte(c->ops.ctx,va+i*SGPU_PAGE)!=(c->pa[b->physical+i]|attr))
++            return sgpu_graphics_fail(c,SG_GRAPHICS_PAGES_CHANGED);
++    if (c->ops.pte(c->ops.ctx,va+b->pages*SGPU_PAGE)) return sgpu_graphics_fail(c,SG_GRAPHICS_MAP);
++    return true;
++}
++bool CLIENT_FN sgpu_graphics_cpu(struct sgpu_graphics *c, uint64_t owner, uint32_t handle,
++    uint32_t offset, uint32_t bytes, uint8_t **out)
++{
++    if (!out || !bytes || !sgpu_graphics_admitted(c,owner) || c->active) return false;
++    if (!c->ops.ready(c->ops.ctx)) return sgpu_graphics_fail(c,SG_GRAPHICS_OFF);
++    struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,handle);
++    if (!b || b->private_ib || offset>b->bytes || bytes>b->bytes-offset || !sgpu_graphics_bo_valid(c,b)) return false;
++    c->ops.invalidate(c->ops.ctx,b->memory.va+offset,bytes);*out=b->memory.va+offset;
++    return true;
++}
++static bool CLIENT_FN sgpu_graphics_retire(struct sgpu_graphics *c, struct sgpu_graphics_bo *b)
++{
++    if (c->active || b->quarantine) return false;
++    if (!c->ops.ready(c->ops.ctx)) return sgpu_graphics_fail(c,SG_GRAPHICS_OFF);
++    uint32_t va=SGPU_RENDER_VA+b->first*SGPU_PAGE;
++    if (!c->ops.unmap(c->ops.ctx,va,b->pages,va+b->pages*SGPU_PAGE)) return sgpu_graphics_fail(c,SG_GRAPHICS_UNMAP);
++    for (uint32_t i=0;i<=b->pages;i++)
++        if (c->ops.pte(c->ops.ctx,va+i*SGPU_PAGE)) return sgpu_graphics_fail(c,SG_GRAPHICS_UNMAP);
++    for (uint32_t i=0;i<b->pages;i++) {
++        c->physical_used[b->physical+i]=0;c->pa[b->physical+i]=0;c->va_used[b->first+i]=0;
++    }
++    c->va_used[b->first+b->pages]=0;c->retained_pages-=b->pages;
++    c->ops.release(c->ops.ctx,&b->memory);memset(b,0,sizeof(*b));return true;
++}
++bool CLIENT_FN sgpu_graphics_free(struct sgpu_graphics *c, uint64_t owner, uint32_t handle)
++{
++    if (!sgpu_graphics_admitted(c,owner) || c->active) return false;
++    struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,handle);
++    return b && !b->private_ib && sgpu_graphics_retire(c,b);
++}
++static bool CLIENT_FN sgpu_graphics_drop_snapshots(struct sgpu_graphics *c)
++{
++    for (uint32_t i=0;i<c->snapshot_count;i++) {
++        struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,c->snapshots[i]);
++        if (!b || !sgpu_graphics_retire(c,b)) return false;
++    }
++    c->snapshot_count=0;return true;
++}
++uint32_t CLIENT_FN sgpu_graphics_submit(struct sgpu_graphics *c, uint64_t owner,
++    const struct sgpu_graphics_ib *ibs, uint32_t ni, const uint32_t *handles, uint32_t nb)
++{
++    if (!sgpu_graphics_admitted(c,owner) || c->active || !ibs || !handles || !ni ||
++        ni>SGPU_GRAPHICS_IBS || !nb || nb>SGPU_GRAPHICS_BOS-SGPU_GRAPHICS_IBS || c->submitted==UINT32_MAX) return 0;
++    if (!c->ops.ready(c->ops.ctx)) {sgpu_graphics_fail(c,SG_GRAPHICS_OFF);return 0;}
++    struct sgpu_graphics_ib input[SGPU_GRAPHICS_IBS];uint32_t ids[SGPU_GRAPHICS_BOS];
++    struct sgpu_graphics_range ranges[SGPU_GRAPHICS_BOS];
++    struct sgpu_graphics_command commands[SGPU_GRAPHICS_IBS];
++    struct sgpu_graphics_snapshot snapshots[SGPU_GRAPHICS_IBS];
++    uint32_t snapshot_sources[SGPU_GRAPHICS_IBS],command_snapshot[SGPU_GRAPHICS_IBS];
++    memcpy(input,ibs,ni*sizeof(input[0]));memcpy(ids,handles,nb*sizeof(ids[0]));
++    for (uint32_t i=0;i<nb;i++) {
++        if (!sgpu_graphics_info(c,owner,ids[i],&ranges[i])) return 0;
++        for (uint32_t j=0;j<i;j++) if (ids[i]==ids[j]) return 0;
++        if (!sgpu_graphics_bo_valid(c,sgpu_graphics_lookup(c,ids[i]))) return 0;
++    }
++    for (uint32_t i=0;i<ni;i++) {
++        struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,input[i].handle);
++        bool listed=false;for (uint32_t j=0;j<nb;j++) if (ids[j]==input[i].handle) listed=true;
++        if (!listed || !b || b->private_ib || b->bytes>SGPU_GRAPHICS_IB_BYTES ||
++            !input[i].bytes || input[i].bytes>SGPU_GRAPHICS_IB_BYTES ||
++            ((input[i].offset|input[i].bytes)&3) || input[i].offset>b->bytes || input[i].bytes>b->bytes-input[i].offset) return 0;
++    }
++    c->snapshot_count=0;
++    for (uint32_t i=0;i<ni;i++) {
++        struct sgpu_graphics_bo *source=sgpu_graphics_lookup(c,input[i].handle);
++        uint32_t index=0;
++        for (;index<c->snapshot_count;index++) if (snapshot_sources[index]==input[i].handle) break;
++        if (index==c->snapshot_count) {
++            uint32_t handle=sgpu_graphics_allocate(c,source->bytes,SGPU_GRAPHICS_RO,true);
++            if (!handle) {if (!c->quarantined) sgpu_graphics_drop_snapshots(c);return 0;}
++            c->snapshots[c->snapshot_count++]=handle;snapshot_sources[index]=input[i].handle;
++            struct sgpu_graphics_bo *snapshot=sgpu_graphics_lookup(c,handle);
++            /* Copy the entire command BO once. State groups outside a root's
++             * execute interval must also be immutable; they can be relocated
++             * within this one private copy. Root offsets/lengths stay bounded. */
++            memcpy(snapshot->memory.va,source->memory.va,source->bytes);
++            snapshots[index]=(struct sgpu_graphics_snapshot){SGPU_RENDER_VA+source->first*SGPU_PAGE,
++                SGPU_RENDER_VA+snapshot->first*SGPU_PAGE,source->bytes,(uint32_t *)(void *)snapshot->memory.va};
++        }
++        command_snapshot[i]=index;
++        commands[i]=(struct sgpu_graphics_command){snapshots[index].gpu_va+input[i].offset,input[i].bytes};
++    }
++    if (!c->ops.prepare_ibs(c->ops.ctx,snapshots,c->snapshot_count,commands,ni,ranges,nb)) {sgpu_graphics_drop_snapshots(c);return 0;}
++    for (uint32_t i=0;i<ni;i++) {
++        struct sgpu_graphics_bo *snapshot=sgpu_graphics_lookup(c,c->snapshots[command_snapshot[i]]);
++        if (!c->ops.validate_ib(c->ops.ctx,(const uint32_t *)(const void *)(snapshot->memory.va+input[i].offset),
++            input[i].bytes/4,ranges,nb)) {sgpu_graphics_drop_snapshots(c);return 0;}
++    }
++    /* Allocator/map/validator callbacks may have changed another mapping.
++     * Repeat exact original PA/PTE/guard checks immediately before publication. */
++    for (uint32_t i=0;i<nb;i++) if (!sgpu_graphics_bo_valid(c,sgpu_graphics_lookup(c,ids[i]))) return 0;
++    for (uint32_t i=0;i<c->snapshot_count;i++)
++        if (!sgpu_graphics_bo_valid(c,sgpu_graphics_lookup(c,c->snapshots[i]))) return 0;
++    uint32_t seq=c->submitted+1;c->submitted=seq;c->active=seq;
++    for (uint32_t i=0;i<nb;i++) {
++        struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,ids[i]);b->last_sequence=seq;
++        c->ops.clean(c->ops.ctx,b->memory.va,b->pages*SGPU_PAGE);
++    }
++    for (uint32_t i=0;i<c->snapshot_count;i++) {
++        struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,c->snapshots[i]);b->last_sequence=seq;
++        c->ops.clean(c->ops.ctx,b->memory.va,b->pages*SGPU_PAGE);
++    }
++    for (uint32_t i=0;i<nb;i++) if (!sgpu_graphics_bo_valid(c,sgpu_graphics_lookup(c,ids[i]))) return 0;
++    for (uint32_t i=0;i<c->snapshot_count;i++) {
++        struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,c->snapshots[i]);
++        if (!sgpu_graphics_bo_valid(c,b)) return 0;
++    }
++    for (uint32_t i=0;i<ni;i++) {
++        struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,c->snapshots[command_snapshot[i]]);
++        if (!c->ops.validate_ib(c->ops.ctx,(const uint32_t *)(const void *)(b->memory.va+input[i].offset),
++            input[i].bytes/4,ranges,nb)) {sgpu_graphics_fail(c,SG_GRAPHICS_COMMAND);return 0;}
++    }
++    if (!c->ops.ready(c->ops.ctx)) {sgpu_graphics_fail(c,SG_GRAPHICS_OFF);return 0;}
++    if (!c->ops.publish(c->ops.ctx,commands,ni,seq)) {sgpu_graphics_fail(c,SG_GRAPHICS_PUBLISH);return 0;}
++    return seq;
++}
++bool CLIENT_FN sgpu_graphics_wait(struct sgpu_graphics *c, uint64_t owner, uint32_t sequence)
++{
++    if (!sgpu_graphics_admitted(c,owner) || !sequence || sequence>c->submitted) return false;
++    if (sequence<=c->completed) return true;
++    if (sequence!=c->active) return false;
++    if (!c->ops.ready(c->ops.ctx)) return sgpu_graphics_fail(c,SG_GRAPHICS_OFF);
++    uint64_t start=c->ops.now_us(c->ops.ctx);
++    for (uint32_t i=0;i<SGPU_GRAPHICS_WAIT_READS;i++) {
++        c->ops.invalidate_fence(c->ops.ctx);
++        uint32_t fence=c->ops.fence(c->ops.ctx);
++        if (c->ops.faulted(c->ops.ctx)) return sgpu_graphics_fail(c,SG_GRAPHICS_FAULT);
++        if (fence>c->active) return sgpu_graphics_fail(c,SG_GRAPHICS_FENCE);
++        uint64_t now=c->ops.now_us(c->ops.ctx);
++        if (now<start || now-start>=SGPU_RENDER_WAIT_US) return sgpu_graphics_fail(c,SG_GRAPHICS_TIMEOUT);
++        if (fence==c->active && c->ops.idle(c->ops.ctx)) {
++            for (unsigned j=0;j<SGPU_GRAPHICS_BOS;j++) if (c->bo[j].live && c->bo[j].last_sequence==sequence) {
++                if (!sgpu_graphics_bo_valid(c,&c->bo[j])) return false;
++                if (c->bo[j].flags==SGPU_GRAPHICS_RW)
++                    c->ops.invalidate(c->ops.ctx,c->bo[j].memory.va,c->bo[j].pages*SGPU_PAGE);
++            }
++            c->completed=sequence;c->active=0;
++            return sgpu_graphics_drop_snapshots(c);
++        }
++        c->ops.wait_us(c->ops.ctx,100);
++    }
++    return sgpu_graphics_fail(c,SG_GRAPHICS_TIMEOUT);
++}
++void CLIENT_FN sgpu_graphics_abort(struct sgpu_graphics *c, uint64_t owner, uint32_t error)
++{
++    if (c && c->initialized && owner && owner==c->owner && error && error<=SG_GRAPHICS_OFF)
++        sgpu_graphics_fail(c,error);
++}
++bool CLIENT_FN sgpu_graphics_close(struct sgpu_graphics *c, uint64_t owner)
++{
++    if (!c || !c->initialized || !owner || owner!=c->owner || c->closed) return false;
++    if (c->quarantined || (c->active && !sgpu_graphics_wait(c,owner,c->active))) {c->closed=true;return false;}
++    for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++) if (c->bo[i].live)
++        if (!sgpu_graphics_retire(c,&c->bo[i])) {c->closed=true;return false;}
++    c->closed=true;return true;
++}
++#endif
+diff --git a/bsd/dev/santoni_gpu_graphics.h b/bsd/dev/santoni_gpu_graphics.h
+new file mode 100644
+index 0000000..d4d0d48
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_graphics.h
+@@ -0,0 +1,103 @@
++/* Owner-bound A505 rendering contracts. All platform/GPU work is in callbacks. */
++#ifndef SANTONI_GPU_GRAPHICS_H
++#define SANTONI_GPU_GRAPHICS_H
++#include "santoni_gpu_core.h"
++
++/* Engineering limits within the existing programmed Santoni eight-MiB window.
++ * These are not A530 limits or hardware throughput measurements. */
++#define SGPU_GRAPHICS_BOS 64u
++#define SGPU_GRAPHICS_IBS 8u
++#define SGPU_GRAPHICS_IB_BYTES (16u*SGPU_PAGE)
++#define SGPU_GRAPHICS_PAGES SGPU_RENDER_LIVE_PAGES
++#define SGPU_GRAPHICS_RO 1u
++#define SGPU_GRAPHICS_RW 2u
++#define SGPU_GRAPHICS_WAIT_READS 2001u
++
++struct sgpu_graphics_memory {
++    uint8_t *va;
++    const uint64_t *pa;
++    uintptr_t cookie; /* allocator-owned identity, never an input user pointer */
++    uint32_t pages;
++};
++struct sgpu_graphics_bo {
++    struct sgpu_graphics_memory memory;
++    uint32_t handle, bytes, first, pages, physical, flags, last_sequence;
++    bool live, private_ib, exposed, quarantine;
++};
++struct sgpu_graphics_ib { uint32_t handle, offset, bytes; };
++struct sgpu_graphics_range { uint32_t handle, gpu_va, bytes, flags; };
++struct sgpu_graphics_command { uint32_t gpu_va, bytes; };
++struct sgpu_graphics_snapshot {
++    uint32_t source_va,gpu_va,bytes;
++    uint32_t *words; /* private kernel alias, accessible only during preparation */
++};
++enum sgpu_graphics_error {
++    SG_GRAPHICS_OK, SG_GRAPHICS_MAP, SG_GRAPHICS_PAGES_CHANGED, SG_GRAPHICS_COMMAND,
++    SG_GRAPHICS_PUBLISH, SG_GRAPHICS_FAULT, SG_GRAPHICS_FENCE, SG_GRAPHICS_TIMEOUT,
++    SG_GRAPHICS_UNMAP, SG_GRAPHICS_OFF
++};
++struct sgpu_graphics_ops {
++    void *ctx;
++    uint64_t fence_pa; /* fresh owned page, writable GPU / read-only user view */
++    /* The adapter must enforce explicit opt-in, one owner and the same mutex
++     * as all GPU producers. A ready callback does not certify hardware. */
++    bool (*ready)(void *);
++    /* CPU alias and PA metadata stay owned/stable until release; scattered
++     * physical pages are valid. page_pa must resolve actual current mappings. */
++    /* Private allocations must never reuse storage exposed through user maps,
++     * including retired user mappings. The kind is generated by the core. */
++    bool (*allocate)(void *, uint32_t, bool, struct sgpu_graphics_memory *);
++    void (*release)(void *, struct sgpu_graphics_memory *);
++    uint64_t (*page_pa)(void *, const struct sgpu_graphics_memory *, uint32_t);
++    bool (*reserved_pa)(void *, uint64_t);
++    /* Map/unmap callbacks must stop CP, route SID0 to fault, disable CB,
++     * update checked PTEs, TLBI/TLBSYNC, and verify state before resuming.
++     * A failed callback is potentially exposed; core retains all mappings.
++     * The final argument is an unmapped guard VA, not an allocated page. */
++    bool (*map)(void *, uint32_t, const uint64_t *, uint32_t, uint64_t, uint32_t);
++    bool (*unmap)(void *, uint32_t, uint32_t, uint32_t);
++    uint64_t (*pte)(void *, uint32_t);
++    void (*clean)(void *, const void *, uint32_t);
++    void (*invalidate)(void *, const void *, uint32_t);
++    /* Called after ALL IBs have private copies, before validation/cache publish.
++     * The adapter can relocate nested command references into those copies;
++     * it must reject cycles and unlisted/unowned command targets. */
++    bool (*prepare_ibs)(void *, const struct sgpu_graphics_snapshot *, uint32_t,
++                        const struct sgpu_graphics_command *, uint32_t,
++                        const struct sgpu_graphics_range *, uint32_t);
++    /* The adapter must validate the immutable snapshot's A505 packets and
++     * every address against these owner ranges; no permissive default exists.
++     * Nested IBs, registers and unsupported packets require explicit proof.
++     * This generic contract itself does not authorize raw Mesa commands. */
++    bool (*validate_ib)(void *, const uint32_t *, uint32_t,
++                        const struct sgpu_graphics_range *, uint32_t);
++    bool (*publish)(void *, const struct sgpu_graphics_command *, uint32_t, uint32_t);
++    void (*invalidate_fence)(void *);
++    uint32_t (*fence)(void *);
++    bool (*faulted)(void *);
++    bool (*idle)(void *);
++    uint64_t (*now_us)(void *);
++    void (*wait_us)(void *, uint32_t);
++};
++struct sgpu_graphics {
++    struct sgpu_graphics_ops ops;
++    uint64_t owner;
++    struct sgpu_graphics_bo bo[SGPU_GRAPHICS_BOS];
++    uint64_t pa[SGPU_GRAPHICS_PAGES];
++    uint8_t physical_used[SGPU_GRAPHICS_PAGES], va_used[SGPU_RENDER_MAX_PAGES];
++    uint32_t next_handle, submitted, completed, active, error, retained_pages;
++    uint32_t snapshots[SGPU_GRAPHICS_IBS], snapshot_count;
++    bool initialized, closed, quarantined;
++};
++bool sgpu_graphics_init(struct sgpu_graphics *, uint64_t, const struct sgpu_graphics_ops *);
++uint32_t sgpu_graphics_new(struct sgpu_graphics *, uint64_t, uint32_t, uint32_t);
++bool sgpu_graphics_info(const struct sgpu_graphics *, uint64_t, uint32_t, struct sgpu_graphics_range *);
++bool sgpu_graphics_cpu(struct sgpu_graphics *, uint64_t, uint32_t, uint32_t, uint32_t, uint8_t **);
++bool sgpu_graphics_free(struct sgpu_graphics *, uint64_t, uint32_t);
++uint32_t sgpu_graphics_submit(struct sgpu_graphics *, uint64_t,
++    const struct sgpu_graphics_ib *, uint32_t, const uint32_t *, uint32_t);
++bool sgpu_graphics_wait(struct sgpu_graphics *, uint64_t, uint32_t);
++/* Adapter's asynchronous fault/publication failure; first error never changes. */
++void sgpu_graphics_abort(struct sgpu_graphics *, uint64_t, uint32_t);
++bool sgpu_graphics_close(struct sgpu_graphics *, uint64_t);
++#endif
+diff --git a/bsd/dev/santoni_gpu_graphics_hw.h b/bsd/dev/santoni_gpu_graphics_hw.h
+new file mode 100644
+index 0000000..9b5556a
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_graphics_hw.h
+@@ -0,0 +1,26 @@
++/* Kernel controller entry points. Adapter owns one lock and the memory pools. */
++#ifndef SANTONI_GPU_GRAPHICS_HW_H
++#define SANTONI_GPU_GRAPHICS_HW_H
++#include "santoni_gpu_graphics.h"
++struct sgpu_graphics_hw_result {
++    uint32_t error,wptr,pending;
++    bool ready,failed,exposed;
++    struct sgpu_failure failure;
++};
++bool santoni_gpu_graphics_worker_ready(void);
++bool sgpu_graphics_hw_begin(uint32_t,uint32_t);
++bool sgpu_graphics_hw_ready(void);
++bool sgpu_graphics_hw_map(uint32_t,const uint64_t *,uint32_t,uint64_t,uint32_t);
++bool sgpu_graphics_hw_unmap(uint32_t,uint32_t,uint32_t);
++uint64_t sgpu_graphics_hw_pte(uint32_t);
++bool sgpu_graphics_hw_reserved(uint64_t);
++uint64_t sgpu_graphics_hw_fence_pa(void);
++void sgpu_graphics_hw_clean(const void *,uint32_t);
++void sgpu_graphics_hw_invalidate(const void *,uint32_t);
++void sgpu_graphics_hw_invalidate_fence(void);
++uint32_t sgpu_graphics_hw_fence(void);
++bool sgpu_graphics_hw_faulted(void);
++bool sgpu_graphics_hw_idle(void);
++bool sgpu_graphics_hw_publish(const struct sgpu_graphics_command *,uint32_t,uint32_t);
++void sgpu_graphics_hw_snapshot(struct sgpu_graphics_hw_result *);
++#endif
+diff --git a/bsd/dev/santoni_gpu_graphics_uapi.h b/bsd/dev/santoni_gpu_graphics_uapi.h
+new file mode 100644
+index 0000000..afe1ddd
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_graphics_uapi.h
+@@ -0,0 +1,16 @@
++#ifndef SANTONI_GPU_GRAPHICS_UAPI_H
++#define SANTONI_GPU_GRAPHICS_UAPI_H
++#include <stdint.h>
++#define SGPU_GRAPHICS_UAPI_VERSION 1u
++#define SGPU_GRAPHICS_UAPI_IBS 8u
++#define SGPU_GRAPHICS_UAPI_HANDLES 56u
++enum sgpu_graphics_selector { SG_GFX_INFO,SG_GFX_NEW,SG_GFX_FREE,SG_GFX_BO_INFO,
++    SG_GFX_SUBMIT,SG_GFX_WAIT,SG_GFX_CPU_PREP,SG_GFX_CLOSE };
++/* Fixed pointer-free transport. Only the requested prefix may be nonzero. */
++struct sgpu_graphics_wire_ib { uint32_t handle,offset,bytes; };
++struct sgpu_graphics_wire_submit {
++    uint32_t version,ibs,handles,reserved;
++    struct sgpu_graphics_wire_ib ib[SGPU_GRAPHICS_UAPI_IBS];
++    uint32_t handle[SGPU_GRAPHICS_UAPI_HANDLES];
++};
++#endif
+diff --git a/bsd/dev/santoni_gpu_pm4.c b/bsd/dev/santoni_gpu_pm4.c
+new file mode 100644
+index 0000000..e0711fc
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_pm4.c
+@@ -0,0 +1,214 @@
++#include "santoni_gpu_pm4.h"
++#include <string.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#define PM4_FN __attribute__((noinline))
++/* Opcode/header layouts: msm-4.9-main/drivers/gpu/msm/adreno_pm4types.h.
++ * A5xx DRAW/SET_DRAW_STATE fields: the local adreno_pm4.xml and KGSL
++ * adreno_cp_parser.c. A6xx-only draw-state mode bits are NOT admitted. */
++struct pm4_walk {
++    const struct sgpu_pm4_policy *policy;
++    const struct sgpu_graphics_snapshot *snapshots;
++    const struct sgpu_graphics_range *ranges;
++    uint32_t ns,nr,words,nodes,depth;
++    uint32_t active_va[SGPU_PM4_DEPTH],active_bytes[SGPU_PM4_DEPTH];
++    bool prepare;
++};
++static uint32_t PM4_FN sgpu_pm4_parity(uint32_t value)
++{
++    uint32_t p=1;
++    for (;value;value>>=1)p^=value&1;
++    return p;
++}
++static bool PM4_FN sgpu_pm4_header(uint32_t h,uint32_t *op,uint32_t *count,uint32_t *type)
++{
++    *type=h>>28;
++    if (*type==4) {
++        *count=h&127;*op=(h>>8)&0x3ffff;
++        return *count && h==(0x40000000u|*count|(sgpu_pm4_parity(*count)<<7)|
++            (*op<<8)|(sgpu_pm4_parity(*op)<<27));
++    }
++    if (*type==7) {
++        *count=h&0x3fff;*op=(h>>16)&127;
++        return h==(0x70000000u|*count|(sgpu_pm4_parity(*count)<<15)|
++            (*op<<16)|(sgpu_pm4_parity(*op)<<23));
++    }
++    return false;
++}
++static bool PM4_FN sgpu_pm4_data(const struct pm4_walk *w,uint64_t va,uint32_t bytes,bool write)
++{
++    if (!bytes || va>UINT32_MAX || (va&3)) return false;
++    for (uint32_t i=0;i<w->nr;i++) {
++        const struct sgpu_graphics_range *r=&w->ranges[i];
++        if ((!write || r->flags==SGPU_GRAPHICS_RW) && va>=r->gpu_va &&
++            va-r->gpu_va<=r->bytes && bytes<=r->bytes-(va-r->gpu_va)) return true;
++    }
++    return false;
++}
++static const struct sgpu_graphics_snapshot *PM4_FN sgpu_pm4_snapshot(
++    const struct pm4_walk *w,uint32_t va,uint32_t bytes,bool original)
++{
++    for (uint32_t i=0;i<w->ns;i++) {
++        const struct sgpu_graphics_snapshot *s=&w->snapshots[i];
++        uint32_t base=original?s->source_va:s->gpu_va;
++        if (va>=base && va-base<=s->bytes && bytes<=s->bytes-(va-base)) return s;
++    }
++    return NULL;
++}
++static const struct sgpu_pm4_rule *PM4_FN sgpu_pm4_rule(const struct pm4_walk *w,uint32_t reg)
++{
++    /* CP/RBBM, VBIF and the adapter's protected/security window are never
++     * exposed through a register policy. SG_* are documented byte offsets;
++     * PM4 registers are word indices. See core.h and vendor a5xx_reg.h. */
++    if (reg<0xa00 || (reg>=SG_VBIF_VERSION/4 && reg<0x4000) || reg>=0x3c000/4) return NULL;
++    for (uint32_t i=0;i<w->policy->count;i++)if(w->policy->rules[i].reg==reg)return &w->policy->rules[i];
++    return NULL;
++}
++static bool PM4_FN sgpu_pm4_registers(struct pm4_walk *w,uint32_t reg,const uint32_t *p,uint32_t count)
++{
++    for (uint32_t i=0;i<count;) {
++        const struct sgpu_pm4_rule *r=sgpu_pm4_rule(w,reg+i);
++        if (!r || (p[i]&~r->allowed_bits) || (p[i]&r->required_mask)!=r->required_value) return false;
++        if (r->kind==SG_PM4_VALUE) {i++;continue;}
++        if ((r->kind!=SG_PM4_READ64 && r->kind!=SG_PM4_WRITE64) || i+1>=count ||
++            p[i+1] || r->shift>12 || !r->alignment || (r->alignment&(r->alignment-1)) ||
++            r->alignment>SGPU_PAGE || !r->minimum_bytes ||
++            (p[i]&r->address_flags)!=r->address_value) return false;
++        uint64_t va=(uint64_t)(p[i]&~r->address_flags)<<r->shift;
++        if (va&(r->alignment-1) || !sgpu_pm4_data(w,va,r->minimum_bytes,r->kind==SG_PM4_WRITE64)) return false;
++        i+=2;
++    }
++    return true;
++}
++static bool sgpu_pm4_walk(struct pm4_walk *,uint32_t,uint32_t);
++static bool PM4_FN sgpu_pm4_child(struct pm4_walk *w,uint32_t *lo,uint32_t hi,uint32_t words)
++{
++    if (hi || !words || words>SGPU_GRAPHICS_IB_BYTES/4 || (*lo&3)) return false;
++    uint32_t bytes=words*4,va=*lo;
++    if (w->prepare) {
++        const struct sgpu_graphics_snapshot *s=sgpu_pm4_snapshot(w,va,bytes,true);
++        if (s) {va=s->gpu_va+va-s->source_va;*lo=va;}
++        else if (!sgpu_pm4_snapshot(w,va,bytes,false)) return false;
++    } else if (!sgpu_pm4_snapshot(w,va,bytes,false)) return false;
++    return sgpu_pm4_walk(w,va,bytes);
++}
++static bool PM4_FN sgpu_pm4_draw(struct pm4_walk *w,uint32_t op,const uint32_t *p,uint32_t n)
++{
++    if (!w->policy->draw || !n || (p[0]&~0xfffu) || (p[0]&63)>0x1fu) return false;
++    uint32_t source=(p[0]>>6)&3,index=(p[0]>>10)&3;
++    if (index>2) return false;
++    if (op==0x38) { /* A5xx DRAW_INDX_OFFSET: AUTO4 or DMA7, NOT the A4xx six-word form */
++        if (n==4) return source==2 && p[1] && p[1]<=65535 && p[2] && p[2]<=1048576 && p[3]<=1048576-p[2];
++        if (n!=7 || source || !p[1] || p[1]>65535 || !p[2] || p[3]>p[6] || p[2]>p[6]-p[3]) return false;
++        uint64_t bytes=(uint64_t)p[6]*(1u<<index);
++        return bytes && bytes<=UINT32_MAX && sgpu_pm4_data(w,(uint64_t)p[4]|((uint64_t)p[5]<<32),(uint32_t)bytes,false);
++    }
++    if (op==0x28) return n==3 && source==2 && sgpu_pm4_data(w,(uint64_t)p[1]|((uint64_t)p[2]<<32),16,false);
++    if (op==0x29) {
++        if (n!=6 || source) return false;
++        uint64_t bytes=(uint64_t)p[3]*(1u<<index);
++        return bytes && bytes<=UINT32_MAX && sgpu_pm4_data(w,(uint64_t)p[1]|((uint64_t)p[2]<<32),(uint32_t)bytes,false) &&
++            sgpu_pm4_data(w,(uint64_t)p[4]|((uint64_t)p[5]<<32),20,false);
++    }
++    return false;
++}
++static bool PM4_FN sgpu_pm4_packet(struct pm4_walk *w,uint32_t op,uint32_t *p,uint32_t n)
++{
++    switch (op) {
++    case 0x10:return true; /* CP_NOP: payload intentionally opaque */
++    case 0x12:case 0x13:case 0x26:return n==0; /* vendor WAIT_MEM_WRITES / WAIT_FOR_ME / WAIT_FOR_IDLE */
++    case 0x37:case 0x3f:return n==3 && sgpu_pm4_child(w,&p[0],p[1],p[2]);
++    case 0x43: /* 32 A5xx groups; bits20..22 are A6xx-only and rejected */
++        if (!n || n%3) return false;
++        for (uint32_t i=0;i<n;i+=3) {
++            uint32_t control=p[i],count=control&0xffff;
++            if (control&~0x1f0fffffu) return false;
++            if ((control&(3u<<17)) || !count) {
++                if (count || p[i+1] || p[i+2]) return false;
++            } else if (!sgpu_pm4_child(w,&p[i+1],p[i+2],count)) return false;
++        }
++        return true;
++    case 0x3d: /* CP_MEM_WRITE: 64-bit address then bounded data */
++        return n>=3 && sgpu_pm4_data(w,(uint64_t)p[0]|((uint64_t)p[1]<<32),(n-2)*4,true);
++    case 0x46: /* No private/kernel fence address is admitted from userspace. */
++        if (n==1)return p[0]<64 && ((w->policy->events_without_address>>p[0])&1);
++        return n==4 && (p[0]==4 || p[0]==0x1d) &&
++            sgpu_pm4_data(w,(uint64_t)p[1]|((uint64_t)p[2]<<32),4,true);
++    case 0x28:case 0x29:case 0x38:return sgpu_pm4_draw(w,op,p,n);
++    default:return false; /* no secure/protected/preemption/SMMU/compute or unbounded wait packets */
++    }
++}
++static bool PM4_FN sgpu_pm4_walk(struct pm4_walk *w,uint32_t va,uint32_t bytes)
++{
++    if ((va|bytes)&3 || !bytes || w->depth>=SGPU_PM4_DEPTH || w->nodes>=SGPU_PM4_NODES ||
++        bytes/4>SGPU_PM4_WORDS-w->words) return false;
++    const struct sgpu_graphics_snapshot *s=sgpu_pm4_snapshot(w,va,bytes,false);
++    if (!s) return false;
++    for (uint32_t i=0;i<w->depth;i++)
++        if ((uint64_t)va<(uint64_t)w->active_va[i]+w->active_bytes[i] &&
++            (uint64_t)w->active_va[i]<(uint64_t)va+bytes) return false;
++    w->active_va[w->depth]=va;w->active_bytes[w->depth++]=bytes;w->nodes++;w->words+=bytes/4;
++    uint32_t *words=s->words+(va-s->gpu_va)/4;
++    for (uint32_t pos=0;pos<bytes/4;) {
++        uint32_t type,op,count;
++        if (!sgpu_pm4_header(words[pos],&op,&count,&type) || count>bytes/4-pos-1) return false;
++        bool ok=type==4?sgpu_pm4_registers(w,op,&words[pos+1],count):sgpu_pm4_packet(w,op,&words[pos+1],count);
++        if (!ok)return false;
++        pos+=count+1;
++    }
++    w->depth--;return true;
++}
++static bool PM4_FN sgpu_pm4_inputs(const struct sgpu_pm4_policy *policy,
++    const struct sgpu_graphics_snapshot *s,uint32_t ns,const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *r,uint32_t nr)
++{
++    if (!policy || policy->count>256 || (policy->count && !policy->rules) || !s || !ns ||
++        ns>SGPU_GRAPHICS_IBS || !roots || !ni || ni>SGPU_GRAPHICS_IBS || !r || !nr || nr>SGPU_GRAPHICS_BOS) return false;
++    for (uint32_t i=0;i<ns;i++) {
++        if (!s[i].words || ((uintptr_t)s[i].words&3) || !s[i].bytes || s[i].bytes>SGPU_GRAPHICS_IB_BYTES ||
++            ((s[i].source_va|s[i].gpu_va|s[i].bytes)&3) || s[i].source_va>UINT32_MAX-s[i].bytes ||
++            s[i].gpu_va>UINT32_MAX-s[i].bytes || (uintptr_t)s[i].words>UINTPTR_MAX-s[i].bytes ||
++            s[i].source_va<SGPU_RENDER_VA+SGPU_PAGE || s[i].gpu_va<SGPU_RENDER_VA+SGPU_PAGE ||
++            s[i].source_va+s[i].bytes>SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE ||
++            s[i].gpu_va+s[i].bytes>SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE) return false;
++        for (uint32_t j=0;j<ns;j++) {
++            if ((uint64_t)s[i].source_va<(uint64_t)s[j].gpu_va+s[j].bytes &&
++                (uint64_t)s[j].gpu_va<(uint64_t)s[i].source_va+s[i].bytes) return false;
++            if (j<i && (((uint64_t)s[i].source_va<(uint64_t)s[j].source_va+s[j].bytes &&
++                    (uint64_t)s[j].source_va<(uint64_t)s[i].source_va+s[i].bytes) ||
++                ((uint64_t)s[i].gpu_va<(uint64_t)s[j].gpu_va+s[j].bytes &&
++                    (uint64_t)s[j].gpu_va<(uint64_t)s[i].gpu_va+s[i].bytes))) return false;
++            if (j<i && (uintptr_t)s[i].words<(uintptr_t)s[j].words+s[j].bytes &&
++                (uintptr_t)s[j].words<(uintptr_t)s[i].words+s[i].bytes) return false;
++        }
++    }
++    for (uint32_t i=0;i<nr;i++) {
++        if (!r[i].handle || !r[i].bytes || r[i].gpu_va>UINT32_MAX-r[i].bytes ||
++            r[i].gpu_va<SGPU_RENDER_VA+SGPU_PAGE ||
++            r[i].gpu_va+r[i].bytes>SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE ||
++            (r[i].flags!=SGPU_GRAPHICS_RO && r[i].flags!=SGPU_GRAPHICS_RW)) return false;
++        for (uint32_t j=0;j<i;j++)if(r[i].handle==r[j].handle ||
++            ((uint64_t)r[i].gpu_va<(uint64_t)r[j].gpu_va+r[j].bytes &&
++             (uint64_t)r[j].gpu_va<(uint64_t)r[i].gpu_va+r[i].bytes))return false;
++        for (uint32_t j=0;j<ns;j++) if ((uint64_t)r[i].gpu_va<(uint64_t)s[j].gpu_va+s[j].bytes &&
++            (uint64_t)s[j].gpu_va<(uint64_t)r[i].gpu_va+r[i].bytes) return false;
++    }
++    return true;
++}
++static bool PM4_FN sgpu_pm4_run(const struct sgpu_pm4_policy *policy,
++    const struct sgpu_graphics_snapshot *s,uint32_t ns,const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *r,uint32_t nr,bool prepare)
++{
++    if (!sgpu_pm4_inputs(policy,s,ns,roots,ni,r,nr)) return false;
++    struct pm4_walk w={.policy=policy,.snapshots=s,.ranges=r,.ns=ns,.nr=nr,.prepare=prepare};
++    for (uint32_t i=0;i<ni;i++)if(!sgpu_pm4_walk(&w,roots[i].gpu_va,roots[i].bytes))return false;
++    return true;
++}
++bool PM4_FN sgpu_pm4_prepare(const struct sgpu_pm4_policy *policy,
++    const struct sgpu_graphics_snapshot *s,uint32_t ns,const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *r,uint32_t nr)
++{return sgpu_pm4_run(policy,s,ns,roots,ni,r,nr,true);}
++bool PM4_FN sgpu_pm4_validate(const struct sgpu_pm4_policy *policy,
++    const struct sgpu_graphics_snapshot *s,uint32_t ns,const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *r,uint32_t nr)
++{return sgpu_pm4_run(policy,s,ns,roots,ni,r,nr,false);}
++#endif
+diff --git a/bsd/dev/santoni_gpu_pm4.h b/bsd/dev/santoni_gpu_pm4.h
+new file mode 100644
+index 0000000..f4e147d
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_pm4.h
+@@ -0,0 +1,32 @@
++/* A505 command validation/relocation. Policy tables are kernel-owned. */
++#ifndef SANTONI_GPU_PM4_H
++#define SANTONI_GPU_PM4_H
++#include "santoni_gpu_graphics.h"
++#define SGPU_PM4_DEPTH 8u
++#define SGPU_PM4_NODES 512u
++#define SGPU_PM4_WORDS (SGPU_GRAPHICS_IBS*SGPU_GRAPHICS_IB_BYTES/4u)
++enum sgpu_pm4_kind { SG_PM4_VALUE, SG_PM4_READ64, SG_PM4_WRITE64 };
++struct sgpu_pm4_rule {
++    uint32_t reg,allowed_bits,required_mask,required_value;
++    uint32_t address_flags,address_value,alignment,minimum_bytes,shift;
++    enum sgpu_pm4_kind kind;
++};
++struct sgpu_pm4_policy {
++    const struct sgpu_pm4_rule *rules;
++    uint32_t count;
++    uint64_t events_without_address; /* audited event IDs only; default empty */
++    bool draw; /* explicitly enable only after the adapter's raster-state audit */
++};
++/* Private snapshots cover full command BOs; roots select execute intervals.
++ * Preparation relocates only command pointers, never shader/data pointers.
++ * Unsupported opcodes, control/security register writes and unowned data
++ * addresses are rejected. No GPU/MMIO/platform call is made here. */
++bool sgpu_pm4_prepare(const struct sgpu_pm4_policy *,
++    const struct sgpu_graphics_snapshot *,uint32_t,
++    const struct sgpu_graphics_command *,uint32_t,
++    const struct sgpu_graphics_range *,uint32_t);
++bool sgpu_pm4_validate(const struct sgpu_pm4_policy *,
++    const struct sgpu_graphics_snapshot *,uint32_t,
++    const struct sgpu_graphics_command *,uint32_t,
++    const struct sgpu_graphics_range *,uint32_t);
++#endif
+diff --git a/iokit/Kernel/arm/SantoniGraphics.cpp b/iokit/Kernel/arm/SantoniGraphics.cpp
+new file mode 100644
+index 0000000..db0a280
+--- /dev/null
++++ b/iokit/Kernel/arm/SantoniGraphics.cpp
+@@ -0,0 +1,287 @@
++/* Opt-in single-owner rendering transport. No framework injection or Metal.
++ * Public buffers share a retained pool; private command pages have a separate
++ * pool which is NEVER returned through user mapping APIs. Pools and task leases
++ * persist until reboot, including after logical frees/close and GPU failure. */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <IOKit/IOService.h>
++#include <IOKit/IOUserClient.h>
++#include <IOKit/IOKitKeys.h>
++#include <IOKit/IOLib.h>
++#include <IOKit/IOLocks.h>
++#include <IOKit/IOBufferMemoryDescriptor.h>
++#include <IOKit/IOMemoryDescriptor.h>
++#include <kern/task.h>
++#include <vm/pmap.h>
++#include <pexpert/pexpert.h>
++#include <mach/mach_time.h>
++extern "C" {
++#include "../../../bsd/dev/santoni_gpu_graphics.h"
++#include "../../../bsd/dev/santoni_gpu_graphics_hw.h"
++#include "../../../bsd/dev/santoni_gpu_graphics_uapi.h"
++#include "../../../bsd/dev/santoni_gpu_pm4.h"
++extern ppnum_t pmap_find_phys(pmap_t,addr64_t);
++}
++
++#define GFX_PRIVATE_PAGES (SGPU_GRAPHICS_IBS*SGPU_GRAPHICS_IB_BYTES/SGPU_PAGE)
++#define GFX_PUBLIC_PAGES (SGPU_GRAPHICS_PAGES-GFX_PRIVATE_PAGES)
++struct gfx_pool {
++    IOBufferMemoryDescriptor *memory;
++    uint8_t *bytes;
++    uint64_t pa[SGPU_GRAPHICS_PAGES];
++    uint8_t used[SGPU_GRAPHICS_PAGES];
++    uint32_t pages;
++};
++struct gfx_lease { gfx_pool *pool;uint32_t first,pages;bool live; };
++static struct {
++    IOLock *lock;
++    task_t owner;
++    bool claimed,pools_ready;
++    gfx_pool user,commands;
++    gfx_lease leases[SGPU_GRAPHICS_BOS];
++    sgpu_graphics core;
++    sgpu_graphics_snapshot snapshots[SGPU_GRAPHICS_IBS];
++    uint32_t snapshot_count;
++    sgpu_pm4_policy policy;
++} gfx;
++
++extern "C" {
++static bool __attribute__((noinline)) gfx_ready(void *) { return santoni_gpu_graphics_worker_ready() && gfx.pools_ready && sgpu_graphics_hw_ready(); }
++static bool __attribute__((noinline)) gfx_pool_init(gfx_pool *p,uint32_t pages,bool user)
++{
++    p->pages=pages;
++    IOOptionBits flags=kIODirectionInOut|(user?kIOMemoryKernelUserShared:0);
++    p->memory=IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task,flags,(uint64_t)pages*SGPU_PAGE,SGPU_PAGE);
++    if (!p->memory || p->memory->getLength()!=(uint64_t)pages*SGPU_PAGE) return false;
++    p->bytes=(uint8_t *)p->memory->getBytesNoCopy();
++    if (!p->bytes || ((uintptr_t)p->bytes&(SGPU_PAGE-1))) return false;
++    for (uint32_t i=0;i<pages;i++) {
++        p->pa[i]=(uint64_t)pmap_find_phys(kernel_pmap,(addr64_t)(uintptr_t)(p->bytes+i*SGPU_PAGE))<<12;
++        if (p->pa[i]<SGPU_DMA_MIN || p->pa[i]>SGPU_DMA_END-SGPU_PAGE || sgpu_graphics_hw_reserved(p->pa[i])) return false;
++        for (uint32_t j=0;j<i;j++) if (p->pa[i]==p->pa[j]) return false;
++    }
++    return true;
++}
++static gfx_lease * __attribute__((noinline)) gfx_lease_for(const sgpu_graphics_memory *m)
++{
++    uintptr_t value=m->cookie,first=(uintptr_t)&gfx.leases[0],end=(uintptr_t)&gfx.leases[SGPU_GRAPHICS_BOS];
++    if (value<first || value>=end || (value-first)%sizeof(gfx_lease)) return nullptr;
++    gfx_lease *l=(gfx_lease *)value;
++    return l->live && l->pool && m->va==l->pool->bytes+l->first*SGPU_PAGE && m->pages==l->pages?l:nullptr;
++}
++static bool __attribute__((noinline)) gfx_allocate(void *,uint32_t bytes,bool private_ib,sgpu_graphics_memory *out)
++{
++    if (!bytes || (bytes&(SGPU_PAGE-1)) || !out) return false;
++    gfx_pool *p=private_ib?&gfx.commands:&gfx.user;
++    uint32_t pages=bytes/SGPU_PAGE,first=p->pages,slot=SGPU_GRAPHICS_BOS;
++    if (pages>p->pages) return false;
++    for (uint32_t i=0;i<SGPU_GRAPHICS_BOS;i++) if (!gfx.leases[i].live) {slot=i;break;}
++    for (uint32_t i=0;i<=p->pages-pages;i++) {
++        uint32_t j=0;for (;j<pages && !p->used[i+j];j++) {}
++        if (j==pages) {first=i;break;}i+=j;
++    }
++    if (slot==SGPU_GRAPHICS_BOS || first==p->pages) return false;
++    gfx.leases[slot]={p,first,pages,true};
++    for (uint32_t i=0;i<pages;i++) p->used[first+i]=1;
++    *out={p->bytes+first*SGPU_PAGE,&p->pa[first],(uintptr_t)&gfx.leases[slot],pages};
++    return true;
++}
++static void __attribute__((noinline)) gfx_release(void *,sgpu_graphics_memory *memory)
++{
++    gfx_lease *l=gfx_lease_for(memory);
++    if (!l) return;
++    /* Core already proved CP/CB/TLB unmap. Return the slice to the SAME pool;
++     * existing user aliases cannot ever address the private command pool. */
++    for (uint32_t i=0;i<l->pages;i++) l->pool->used[l->first+i]=0;
++    *l={};
++}
++static uint64_t __attribute__((noinline)) gfx_page_pa(void *,const sgpu_graphics_memory *memory,uint32_t page)
++{
++    if (!gfx_lease_for(memory) || page>=memory->pages) return 0;
++    return (uint64_t)pmap_find_phys(kernel_pmap,(addr64_t)(uintptr_t)(memory->va+page*SGPU_PAGE))<<12;
++}
++static bool __attribute__((noinline)) gfx_reserved(void *,uint64_t pa) { return sgpu_graphics_hw_reserved(pa); }
++static bool __attribute__((noinline)) gfx_map(void *,uint32_t va,const uint64_t *pa,uint32_t pages,uint64_t attr,uint32_t guard)
++{return sgpu_graphics_hw_map(va,pa,pages,attr,guard);}
++static bool __attribute__((noinline)) gfx_unmap(void *,uint32_t va,uint32_t pages,uint32_t guard) {return sgpu_graphics_hw_unmap(va,pages,guard);}
++static uint64_t __attribute__((noinline)) gfx_pte(void *,uint32_t va) { return sgpu_graphics_hw_pte(va); }
++static void __attribute__((noinline)) gfx_clean(void *,const void *address,uint32_t bytes) {sgpu_graphics_hw_clean(address,bytes);}
++static void __attribute__((noinline)) gfx_invalidate(void *,const void *address,uint32_t bytes) {sgpu_graphics_hw_invalidate(address,bytes);}
++static bool __attribute__((noinline)) gfx_prepare(void *,const sgpu_graphics_snapshot *s,uint32_t ns,const sgpu_graphics_command *r,
++    uint32_t nr,const sgpu_graphics_range *ranges,uint32_t count)
++{
++    if (ns>SGPU_GRAPHICS_IBS) return false;
++    memcpy(gfx.snapshots,s,ns*sizeof(*s));gfx.snapshot_count=ns;
++    return sgpu_pm4_prepare(&gfx.policy,s,ns,r,nr,ranges,count);
++}
++static bool __attribute__((noinline)) gfx_validate(void *,const uint32_t *words,uint32_t count,const sgpu_graphics_range *ranges,uint32_t nr)
++{
++    for (uint32_t i=0;i<gfx.snapshot_count;i++) {
++        const sgpu_graphics_snapshot *s=&gfx.snapshots[i];
++        uintptr_t word=(uintptr_t)words,base=(uintptr_t)s->words;
++        if (word>=base && word-base<=s->bytes && count*4<=s->bytes-(word-base)) {
++            sgpu_graphics_command root={s->gpu_va+(uint32_t)(word-base),count*4};
++            return sgpu_pm4_validate(&gfx.policy,gfx.snapshots,gfx.snapshot_count,&root,1,ranges,nr);
++        }
++    }
++    return false;
++}
++static bool __attribute__((noinline)) gfx_publish(void *,const sgpu_graphics_command *c,uint32_t count,uint32_t seq) {return sgpu_graphics_hw_publish(c,count,seq);}
++static void __attribute__((noinline)) gfx_invalidate_fence(void *) {sgpu_graphics_hw_invalidate_fence();}
++static uint32_t __attribute__((noinline)) gfx_fence(void *) {return sgpu_graphics_hw_fence();}
++static bool __attribute__((noinline)) gfx_faulted(void *) {return sgpu_graphics_hw_faulted();}
++static bool __attribute__((noinline)) gfx_idle(void *) {return sgpu_graphics_hw_idle();}
++static uint64_t __attribute__((noinline)) gfx_now(void *) {uint64_t ns;absolutetime_to_nanoseconds(mach_absolute_time(),&ns);return ns/1000;}
++static void __attribute__((noinline)) gfx_wait(void *,uint32_t us) {IOSleep((us+999)/1000);}
++
++} /* closed C callback namespace, easier to audit in the linked kernel */
++
++class SantoniGraphics:public IOService {
++    OSDeclareDefaultStructors(SantoniGraphics);
++public:bool start(IOService *) APPLE_KEXT_OVERRIDE;
++};
++class SantoniGraphicsClient:public IOUserClient {
++    OSDeclareDefaultStructors(SantoniGraphicsClient);
++    task_t fTask;
++    bool fClosed;
++public:
++    bool initWithTask(task_t,void *,UInt32) APPLE_KEXT_OVERRIDE;
++    void free() APPLE_KEXT_OVERRIDE;
++    IOReturn clientClose() APPLE_KEXT_OVERRIDE;
++    IOReturn clientMemoryForType(UInt32,IOOptionBits *,IOMemoryDescriptor **) APPLE_KEXT_OVERRIDE;
++    IOReturn externalMethod(uint32_t,IOExternalMethodArguments *,IOExternalMethodDispatch *,OSObject *,void *) APPLE_KEXT_OVERRIDE;
++};
++OSDefineMetaClassAndStructors(SantoniGraphics,IOService);
++OSDefineMetaClassAndStructors(SantoniGraphicsClient,IOUserClient);
++
++bool SantoniGraphics::start(IOService *provider)
++{
++    int enabled=0,mode=0,render=0,ui=0;
++    PE_parse_boot_argn("santonigpu_graphics",&enabled,sizeof(enabled));
++    if (enabled!=1) return false;
++    PE_parse_boot_argn("santonigpu",&mode,sizeof(mode));PE_parse_boot_argn("santonigpu_render",&render,sizeof(render));
++    PE_parse_boot_argn("santonigpu_ui",&ui,sizeof(ui));
++    if (mode!=3 || render!=1 || ui || !IOService::start(provider)) return false;
++    if (!gfx.lock) gfx.lock=IOLockAlloc();
++    if (!gfx.lock) return false;
++    setProperty(kIOUserClientClassKey,"SantoniGraphicsClient");registerService();
++    IOLog("SANTONI GPU: graphics transport registered; waits for owned VM; shaders not enabled yet\n");
++    return true;
++}
++bool SantoniGraphicsClient::initWithTask(task_t owner,void *security,UInt32 type)
++{
++    fTask=nullptr;fClosed=true;
++    if (!owner || type || clientHasPrivilege(security,kIOClientPrivilegeAdministrator)!=kIOReturnSuccess ||
++        !gfx.lock || !IOUserClient::initWithTask(owner,security,type)) return false;
++    IOLockLock(gfx.lock);bool ok=false;
++    if (!gfx.claimed && santoni_gpu_graphics_worker_ready() && sgpu_graphics_hw_ready()) {
++        gfx.claimed=true;gfx.owner=owner;task_reference(owner);
++        bool pools=gfx_pool_init(&gfx.user,GFX_PUBLIC_PAGES,true) && gfx_pool_init(&gfx.commands,GFX_PRIVATE_PAGES,false);
++        if (pools) for (uint32_t i=0;i<gfx.user.pages;i++) for (uint32_t j=0;j<gfx.commands.pages;j++)
++            if (gfx.user.pa[i]==gfx.commands.pa[j]) pools=false;
++        gfx.pools_ready=pools;
++        if (pools) {
++            sgpu_graphics_ops ops={};ops.fence_pa=sgpu_graphics_hw_fence_pa();
++            ops.ready=gfx_ready;ops.allocate=gfx_allocate;ops.release=gfx_release;ops.page_pa=gfx_page_pa;
++            ops.reserved_pa=gfx_reserved;ops.map=gfx_map;ops.unmap=gfx_unmap;ops.pte=gfx_pte;
++            ops.clean=gfx_clean;ops.invalidate=gfx_invalidate;ops.prepare_ibs=gfx_prepare;ops.validate_ib=gfx_validate;
++            ops.publish=gfx_publish;ops.invalidate_fence=gfx_invalidate_fence;ops.fence=gfx_fence;
++            ops.faulted=gfx_faulted;ops.idle=gfx_idle;ops.now_us=gfx_now;ops.wait_us=gfx_wait;
++            ok=sgpu_graphics_init(&gfx.core,(uint64_t)(uintptr_t)owner,&ops);
++        }
++    }
++    if (ok) {fTask=owner;fClosed=false;}
++    IOLockUnlock(gfx.lock);return ok;
++}
++IOReturn SantoniGraphicsClient::clientClose()
++{
++    if (!gfx.lock || fClosed) return kIOReturnSuccess;
++    IOLockLock(gfx.lock);
++    if (!fClosed) {sgpu_graphics_close(&gfx.core,(uint64_t)(uintptr_t)fTask);fClosed=true;}
++    IOLockUnlock(gfx.lock);return kIOReturnSuccess;
++}
++void SantoniGraphicsClient::free() {clientClose();IOUserClient::free();}
++IOReturn SantoniGraphicsClient::clientMemoryForType(UInt32 handle,IOOptionBits *options,IOMemoryDescriptor **out)
++{
++    if (!options || !out || fClosed || current_task()!=fTask || fTask!=gfx.owner) return kIOReturnNotPermitted;
++    IOLockLock(gfx.lock);IOReturn result=kIOReturnBadArgument;
++    if (fClosed) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
++    sgpu_graphics_range info;
++    if (sgpu_graphics_info(&gfx.core,(uint64_t)(uintptr_t)fTask,handle,&info)) {
++        for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++) {
++            sgpu_graphics_bo *b=&gfx.core.bo[i];if (!b->live || b->handle!=handle || b->private_ib) continue;
++            gfx_lease *l=gfx_lease_for(&b->memory);
++            if (!l || l->pool!=&gfx.user) break;
++            IOMemoryDescriptor *memory=IOSubMemoryDescriptor::withSubRange(l->pool->memory,
++                (uint64_t)l->first*SGPU_PAGE,(uint64_t)l->pages*SGPU_PAGE,kIODirectionInOut);
++            if (memory) {*out=memory;*options=0;result=kIOReturnSuccess;}
++            break;
++        }
++    }
++    IOLockUnlock(gfx.lock);return result;
++}
++IOReturn SantoniGraphicsClient::externalMethod(uint32_t selector,IOExternalMethodArguments *a,
++    IOExternalMethodDispatch *,OSObject *,void *)
++{
++    if (!a || fClosed || current_task()!=fTask || fTask!=gfx.owner) return kIOReturnNotPermitted;
++    uint32_t in=selector==SG_GFX_NEW?2:(selector==SG_GFX_FREE || selector==SG_GFX_BO_INFO ||
++        selector==SG_GFX_WAIT || selector==SG_GFX_CPU_PREP)?1:0;
++    uint32_t out=selector==SG_GFX_INFO?10:selector==SG_GFX_NEW?4:selector==SG_GFX_BO_INFO?3:selector==SG_GFX_SUBMIT?1:0;
++    if (selector>SG_GFX_CLOSE || a->scalarInputCount!=in || a->scalarOutputCount!=out ||
++        (in && !a->scalarInput) || (out && !a->scalarOutput) || a->structureInputDescriptor ||
++        a->structureOutputSize || a->structureOutputDescriptor ||
++        (selector==SG_GFX_SUBMIT?(a->structureInputSize!=sizeof(sgpu_graphics_wire_submit) || !a->structureInput):a->structureInputSize!=0)) return kIOReturnBadArgument;
++    IOLockLock(gfx.lock);IOReturn result=kIOReturnBadArgument;uint64_t output[10]={};
++    if (fClosed) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
++    uint64_t owner=(uint64_t)(uintptr_t)fTask;sgpu_graphics_range info;
++    uint64_t arg=in?a->scalarInput[0]:0;
++    switch (selector) {
++    case SG_GFX_INFO:
++        output[0]=SGPU_GRAPHICS_UAPI_VERSION;output[1]=SGPU_PAGE;output[2]=SGPU_CHIPID;output[3]=SGPU_GMEM_BYTES;
++        output[4]=SGPU_RENDER_VA;output[5]=SGPU_RENDER_MAX_PAGES*SGPU_PAGE;output[6]=SGPU_RENDER_BO_BYTES;
++        output[7]=SGPU_GRAPHICS_IB_BYTES;output[8]=gfx.core.retained_pages*SGPU_PAGE;
++        output[9]=0; /* No GLES capability until the vetted raster-state policy exists. */
++        result=kIOReturnSuccess;break;
++    case SG_GFX_NEW:
++        if (arg && arg<=SGPU_RENDER_BO_BYTES && a->scalarInput[1]<=UINT32_MAX) {
++            uint32_t handle=sgpu_graphics_new(&gfx.core,owner,(uint32_t)arg,(uint32_t)a->scalarInput[1]);
++            if (handle && sgpu_graphics_info(&gfx.core,owner,handle,&info)) {
++                output[0]=handle;output[1]=info.gpu_va;output[2]=info.bytes;output[3]=handle;result=kIOReturnSuccess;
++            } else result=kIOReturnNoMemory;
++        }break;
++    case SG_GFX_FREE:
++        if(arg && arg<=UINT32_MAX)result=sgpu_graphics_free(&gfx.core,owner,(uint32_t)arg)?kIOReturnSuccess:kIOReturnBusy;
++        break;
++    case SG_GFX_BO_INFO:
++        if(arg && arg<=UINT32_MAX && sgpu_graphics_info(&gfx.core,owner,(uint32_t)arg,&info)) {
++            output[0]=info.gpu_va;output[1]=info.bytes;output[2]=info.flags;result=kIOReturnSuccess;
++        }break;
++    case SG_GFX_SUBMIT: {
++        sgpu_graphics_wire_submit request;memcpy(&request,a->structureInput,sizeof(request));
++        bool valid=request.version==SGPU_GRAPHICS_UAPI_VERSION && !request.reserved && request.ibs &&
++            request.ibs<=SGPU_GRAPHICS_UAPI_IBS && request.handles && request.handles<=SGPU_GRAPHICS_UAPI_HANDLES;
++        for(unsigned i=request.ibs;i<SGPU_GRAPHICS_UAPI_IBS && valid;i++)
++            if(request.ib[i].handle || request.ib[i].offset || request.ib[i].bytes)valid=false;
++        for(unsigned i=request.handles;i<SGPU_GRAPHICS_UAPI_HANDLES && valid;i++)if(request.handle[i])valid=false;
++        if(valid) {
++            sgpu_graphics_ib ibs[SGPU_GRAPHICS_IBS];for(unsigned i=0;i<request.ibs;i++)
++                ibs[i]={request.ib[i].handle,request.ib[i].offset,request.ib[i].bytes};
++            uint32_t seq=sgpu_graphics_submit(&gfx.core,owner,ibs,request.ibs,request.handle,request.handles);
++            if(seq) {output[0]=seq;result=kIOReturnSuccess;}else result=kIOReturnNotReady;
++        }break;
++    }
++    case SG_GFX_WAIT:
++        if(arg && arg<=UINT32_MAX)result=sgpu_graphics_wait(&gfx.core,owner,(uint32_t)arg)?kIOReturnSuccess:kIOReturnTimeout;
++        break;
++    case SG_GFX_CPU_PREP:
++        if(arg && arg<=UINT32_MAX && sgpu_graphics_info(&gfx.core,owner,(uint32_t)arg,&info)) {
++            uint8_t *alias=nullptr;
++            bool idle=!gfx.core.active || sgpu_graphics_wait(&gfx.core,owner,gfx.core.active);
++            if(idle && sgpu_graphics_cpu(&gfx.core,owner,(uint32_t)arg,0,info.bytes,&alias))result=kIOReturnSuccess;
++        }break;
++    case SG_GFX_CLOSE:
++        sgpu_graphics_close(&gfx.core,owner);fClosed=true;result=kIOReturnSuccess;break;
++    }
++    if(result==kIOReturnSuccess && out)memcpy(a->scalarOutput,output,out*sizeof(output[0]));
++    IOLockUnlock(gfx.lock);return result;
++}
++#endif
+diff --git a/iokit/KernelConfigTables.cpp b/iokit/KernelConfigTables.cpp
+index 92f3e26..138282e 100644
+--- a/iokit/KernelConfigTables.cpp
++++ b/iokit/KernelConfigTables.cpp
+@@ -82,6 +82,13 @@ const char * gIOKernelConfigTables =
+     "     'IOProviderClass' = IOResources;"
+     "     'IOMatchCategory' = SweetBattery;"
+     "   },"
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    "   {"
++    "     'IOClass'         = SantoniGraphics;"
++    "     'IOProviderClass' = IOResources;"
++    "     'IOMatchCategory' = SantoniGraphics;"
++    "   },"
++#endif
+ #endif
+     "   {"
+     "     'IOClass'         = IOPanicPlatform;"
+diff --git a/iokit/conf/files.arm64 b/iokit/conf/files.arm64
+index cc24c81..5e89ef4 100644
+--- a/iokit/conf/files.arm64
++++ b/iokit/conf/files.arm64
+@@ -17,6 +17,7 @@ iokit/Kernel/arm/SweetKeyStore.cpp                               optional iokitc
+ iokit/Kernel/arm/SweetWatchdog.cpp                               optional iokitcpp
+ iokit/Kernel/arm/SweetSurface.cpp                                optional iokitcpp
+ iokit/Kernel/arm/SweetFramebuffer.cpp                            optional iokitcpp
++iokit/Kernel/arm/SantoniGraphics.cpp                             optional iokitcpp
+ iokit/Kernel/arm/SweetBattery.cpp                                optional iokitcpp
+ iokit/Kernel/arm/hid/SweetHID.cpp                                optional iokitcpp
+ iokit/Kernel/arm/hid/IOHIDEvent.cpp                              optional iokitcpp

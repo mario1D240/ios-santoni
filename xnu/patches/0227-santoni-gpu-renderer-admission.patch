@@ -1,0 +1,220 @@
+diff --git a/bsd/dev/santoni_gpu_graphics_uapi.h b/bsd/dev/santoni_gpu_graphics_uapi.h
+index afe1ddd..405330d 100644
+--- a/bsd/dev/santoni_gpu_graphics_uapi.h
++++ b/bsd/dev/santoni_gpu_graphics_uapi.h
+@@ -5,7 +5,13 @@
+ #define SGPU_GRAPHICS_UAPI_IBS 8u
+ #define SGPU_GRAPHICS_UAPI_HANDLES 56u
+ enum sgpu_graphics_selector { SG_GFX_INFO,SG_GFX_NEW,SG_GFX_FREE,SG_GFX_BO_INFO,
+-    SG_GFX_SUBMIT,SG_GFX_WAIT,SG_GFX_CPU_PREP,SG_GFX_CLOSE };
++    SG_GFX_SUBMIT,SG_GFX_WAIT,SG_GFX_CPU_PREP,SG_GFX_CLOSE,SG_GFX_RENDERER_STATUS };
++/* Explicit connection roles. Legacy/admin role0 keeps its v1 behavior.
++ * Observer role2 exposes five CPU-only status words, no BO or submit calls. */
++#define SGPU_GRAPHICS_CLIENT_ADMIN 0u
++#define SGPU_GRAPHICS_CLIENT_RENDERER 1u
++#define SGPU_GRAPHICS_CLIENT_OBSERVER 2u
++#define SGPU_GRAPHICS_RENDERER_STATUS_WORDS 5u
+ /* Fixed pointer-free transport. Only the requested prefix may be nonzero. */
+ struct sgpu_graphics_wire_ib { uint32_t handle,offset,bytes; };
+ struct sgpu_graphics_wire_submit {
+diff --git a/iokit/Kernel/arm/SantoniGraphics.cpp b/iokit/Kernel/arm/SantoniGraphics.cpp
+index a268f5c..d87778c 100644
+--- a/iokit/Kernel/arm/SantoniGraphics.cpp
++++ b/iokit/Kernel/arm/SantoniGraphics.cpp
+@@ -15,6 +15,8 @@
+ #include <vm/pmap.h>
+ #include <pexpert/pexpert.h>
+ #include <mach/mach_time.h>
++#include <sys/proc.h>
++#include <sys/vnode.h>
+ extern "C" {
+ #include "../../../bsd/dev/santoni_gpu_graphics.h"
+ #include "../../../bsd/dev/santoni_gpu_graphics_hw.h"
+@@ -37,7 +39,7 @@ struct gfx_lease { gfx_pool *pool;uint32_t first,pages;bool live; };
+ static struct {
+     IOLock *lock;
+     task_t owner;
+-    bool claimed,pools_ready,raster_enabled;
++    bool claimed,pools_ready,raster_enabled,gles_enabled,renderer_enabled;
+     gfx_pool user,commands;
+     gfx_lease leases[SGPU_GRAPHICS_BOS];
+     sgpu_graphics core;
+@@ -48,6 +50,32 @@ static struct {
+ } gfx;
+ 
+ extern "C" {
++/* Platform adapter only. XNU8796 proc.h returns the executable vnode with an
++ * iocount; vnode_lookup() likewise requires a matching vnode_put(). Names and
++ * argv are mutable and are not used as renderer authorization. */
++static bool __attribute__((noinline)) gfx_renderer_task(task_t owner)
++{
++    proc_t process=current_proc();
++    if(!owner || owner!=current_task() || !process || proc_task(process)!=owner ||
++        proc_pid(process)<=0 || proc_getuid(process)!=501)return false;
++    vnode_t executable=proc_getexecutablevnode(process),expected=nullptr;
++    if(!executable)return false;
++    vfs_context_t context=vfs_context_kernel();
++    bool allowed=false;
++    struct vnode_attr attributes;
++    VATTR_INIT(&attributes);
++    VATTR_WANTED(&attributes,va_uid);
++    VATTR_WANTED(&attributes,va_mode);
++    if(context && vnode_lookup("/usr/libexec/backboardd",VNODE_LOOKUP_NOFOLLOW,
++            &expected,context)==0 && expected && expected==executable &&
++        vnode_vtype(expected)==VREG && vnode_getattr(expected,&attributes,context)==0 &&
++        VATTR_IS_SUPPORTED(&attributes,va_uid) && VATTR_IS_SUPPORTED(&attributes,va_mode) &&
++        attributes.va_uid==0 && !(attributes.va_mode&0022))allowed=true;
++    if(expected)vnode_put(expected);
++    vnode_put(executable);
++    return allowed;
++}
++
+ static bool __attribute__((noinline)) gfx_ready(void *) { return santoni_gpu_graphics_worker_ready() && gfx.pools_ready && sgpu_graphics_hw_ready(); }
+ static bool __attribute__((noinline)) gfx_pool_init(gfx_pool *p,uint32_t pages,bool user)
+ {
+@@ -145,7 +173,7 @@ public:bool start(IOService *) APPLE_KEXT_OVERRIDE;
+ class SantoniGraphicsClient:public IOUserClient {
+     OSDeclareDefaultStructors(SantoniGraphicsClient);
+     task_t fTask;
+-    bool fClosed;
++    bool fClosed,fObserver,fRenderer;
+ public:
+     bool initWithTask(task_t,void *,UInt32) APPLE_KEXT_OVERRIDE;
+     void free() APPLE_KEXT_OVERRIDE;
+@@ -158,25 +186,36 @@ OSDefineMetaClassAndStructors(SantoniGraphicsClient,IOUserClient);
+ 
+ bool SantoniGraphics::start(IOService *provider)
+ {
+-    int enabled=0,mode=0,render=0,ui=0,raster=0;
++    int enabled=0,mode=0,render=0,ui=0,raster=0,gles=0,renderer=0;
+     PE_parse_boot_argn("santonigpu_graphics",&enabled,sizeof(enabled));
+     if (enabled!=1) return false;
+     PE_parse_boot_argn("santonigpu",&mode,sizeof(mode));PE_parse_boot_argn("santonigpu_render",&render,sizeof(render));
+     PE_parse_boot_argn("santonigpu_ui",&ui,sizeof(ui));
+     PE_parse_boot_argn("santonigpu_raster",&raster,sizeof(raster));
+-    if (mode!=3 || render!=1 || ui || (raster!=0 && raster!=1) || !IOService::start(provider)) return false;
+-    gfx.raster_enabled=raster==1;
++    PE_parse_boot_argn("santonigpu_gles",&gles,sizeof(gles));
++    PE_parse_boot_argn("santonigpu_renderer",&renderer,sizeof(renderer));
++    if (mode!=3 || render!=1 || ui || (raster!=0 && raster!=1) ||
++        (gles!=0 && gles!=1) || (renderer!=0 && renderer!=1) ||
++        (gles==1 && raster!=1) || (renderer==1 && gles!=1) || !IOService::start(provider)) return false;
++    gfx.raster_enabled=raster==1;gfx.gles_enabled=gles==1;gfx.renderer_enabled=renderer==1;
+     if (!gfx.lock) gfx.lock=IOLockAlloc();
+     if (!gfx.lock) return false;
+     setProperty(kIOUserClientClassKey,"SantoniGraphicsClient");registerService();
+-    IOLog("SANTONI GPU: graphics transport registered; waits for owned VM; raster opt-in=%u GLES capability=0\n",gfx.raster_enabled);
++    IOLog("SANTONI GPU: graphics transport registered; waits for owned VM; raster=%u GLES-requested=%u renderer=%u\n",gfx.raster_enabled,gfx.gles_enabled,gfx.renderer_enabled);
+     return true;
+ }
+ bool SantoniGraphicsClient::initWithTask(task_t owner,void *security,UInt32 type)
+ {
+-    fTask=nullptr;fClosed=true;
+-    if (!owner || type || clientHasPrivilege(security,kIOClientPrivilegeAdministrator)!=kIOReturnSuccess ||
+-        !gfx.lock || !IOUserClient::initWithTask(owner,security,type)) return false;
++    fTask=nullptr;fClosed=true;fObserver=fRenderer=false;
++    if (!owner || !gfx.lock || type>SGPU_GRAPHICS_CLIENT_OBSERVER)return false;
++    bool observer=type==SGPU_GRAPHICS_CLIENT_OBSERVER,renderer=type==SGPU_GRAPHICS_CLIENT_RENDERER;
++    if(observer || renderer) {
++        if(!gfx.renderer_enabled || !gfx.gles_enabled || !gfx.raster_enabled ||
++            owner!=current_task() || security!=(void *)owner)return false;
++        if(renderer && !gfx_renderer_task(owner))return false;
++    }else if(clientHasPrivilege(security,kIOClientPrivilegeAdministrator)!=kIOReturnSuccess)return false;
++    if(!IOUserClient::initWithTask(owner,security,type))return false;
++    if(observer) {task_reference(owner);fTask=owner;fObserver=true;fClosed=false;return true;}
+     IOLockLock(gfx.lock);bool ok=false;
+     if (!gfx.claimed && santoni_gpu_graphics_worker_ready() && sgpu_graphics_hw_ready()) {
+         gfx.claimed=true;gfx.owner=owner;task_reference(owner);
+@@ -197,22 +236,36 @@ bool SantoniGraphicsClient::initWithTask(task_t owner,void *security,UInt32 type
+             ok=sgpu_graphics_init(&gfx.core,(uint64_t)(uintptr_t)owner,&ops);
+         }
+     }
+-    if (ok) {fTask=owner;fClosed=false;}
++    if (ok) {fTask=owner;fRenderer=renderer;fClosed=false;}
+     IOLockUnlock(gfx.lock);return ok;
+ }
+ IOReturn SantoniGraphicsClient::clientClose()
+ {
+-    if (!gfx.lock || fClosed) return kIOReturnSuccess;
+-    IOLockLock(gfx.lock);
+-    if (!fClosed) {sgpu_graphics_close(&gfx.core,(uint64_t)(uintptr_t)fTask);fClosed=true;}
+-    IOLockUnlock(gfx.lock);return kIOReturnSuccess;
++    if (!gfx.lock) return kIOReturnSuccess;
++    task_t held=nullptr;IOLockLock(gfx.lock);
++    if (!fClosed) {
++        if(fObserver) {held=fTask;fTask=nullptr;}
++        else sgpu_graphics_close(&gfx.core,(uint64_t)(uintptr_t)fTask);
++        fClosed=true;
++    }
++    IOLockUnlock(gfx.lock);
++    if(held)task_deallocate(held);
++    return kIOReturnSuccess;
+ }
+ void SantoniGraphicsClient::free() {clientClose();IOUserClient::free();}
+ IOReturn SantoniGraphicsClient::clientMemoryForType(UInt32 handle,IOOptionBits *options,IOMemoryDescriptor **out)
+ {
+-    if (!options || !out || fClosed || current_task()!=fTask || fTask!=gfx.owner) return kIOReturnNotPermitted;
++    if (!options || !out || !gfx.lock) return kIOReturnNotPermitted;
++    IOLockLock(gfx.lock);
++    if(fClosed || fObserver || current_task()!=fTask || fTask!=gfx.owner) {
++        IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;
++    }
++    task_t owner_task=fTask;bool renderer=fRenderer;IOLockUnlock(gfx.lock);
++    /* VFS can sleep. The retained renderer owner survives close; do not hold
++     * the graphics lock over lookup, then recheck close before any mapping. */
++    if(renderer && !gfx_renderer_task(owner_task))return kIOReturnNotPermitted;
+     IOLockLock(gfx.lock);IOReturn result=kIOReturnBadArgument;
+-    if (fClosed) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
++    if (fClosed || fTask!=owner_task || gfx.owner!=owner_task) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
+     sgpu_graphics_range info;
+     if (sgpu_graphics_info(&gfx.core,(uint64_t)(uintptr_t)fTask,handle,&info)) {
+         for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++) {
+@@ -230,7 +283,26 @@ IOReturn SantoniGraphicsClient::clientMemoryForType(UInt32 handle,IOOptionBits *
+ IOReturn SantoniGraphicsClient::externalMethod(uint32_t selector,IOExternalMethodArguments *a,
+     IOExternalMethodDispatch *,OSObject *,void *)
+ {
+-    if (!a || fClosed || current_task()!=fTask || fTask!=gfx.owner) return kIOReturnNotPermitted;
++    if (!a || !gfx.lock)return kIOReturnNotPermitted;
++    IOLockLock(gfx.lock);
++    if(fClosed || current_task()!=fTask) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
++    if(fObserver) {
++        if(selector!=SG_GFX_RENDERER_STATUS || a->scalarInputCount || a->scalarOutputCount!=SGPU_GRAPHICS_RENDERER_STATUS_WORDS ||
++            !a->scalarOutput || a->structureInputSize || a->structureOutputSize ||
++            a->structureInputDescriptor || a->structureOutputDescriptor) {
++            IOLockUnlock(gfx.lock);return kIOReturnBadArgument;
++        }
++        a->scalarOutput[0]=SGPU_GRAPHICS_UAPI_VERSION;
++        a->scalarOutput[1]=gfx.renderer_enabled && gfx.gles_enabled && gfx.raster_enabled;
++        a->scalarOutput[2]=santoni_gpu_graphics_worker_ready() && sgpu_graphics_hw_ready() &&
++            sgpu_graphics_hw_vm_profile()==SGPU_GRAPHICS_VM_WIDE;
++        a->scalarOutput[3]=gfx.claimed;
++        a->scalarOutput[4]=gfx.claimed && (gfx.core.closed || gfx.core.quarantined);
++        IOLockUnlock(gfx.lock);return kIOReturnSuccess;
++    }
++    task_t owner_task=fTask;bool renderer=fRenderer,authorized=fTask==gfx.owner;
++    IOLockUnlock(gfx.lock);
++    if(!authorized || (renderer && !gfx_renderer_task(owner_task)))return kIOReturnNotPermitted;
+     uint32_t in=selector==SG_GFX_NEW?2:(selector==SG_GFX_FREE || selector==SG_GFX_BO_INFO ||
+         selector==SG_GFX_WAIT || selector==SG_GFX_CPU_PREP)?1:0;
+     uint32_t out=selector==SG_GFX_INFO?10:selector==SG_GFX_NEW?4:selector==SG_GFX_BO_INFO?3:selector==SG_GFX_SUBMIT?1:0;
+@@ -239,7 +311,7 @@ IOReturn SantoniGraphicsClient::externalMethod(uint32_t selector,IOExternalMetho
+         a->structureOutputSize || a->structureOutputDescriptor ||
+         (selector==SG_GFX_SUBMIT?(a->structureInputSize!=sizeof(sgpu_graphics_wire_submit) || !a->structureInput):a->structureInputSize!=0)) return kIOReturnBadArgument;
+     IOLockLock(gfx.lock);IOReturn result=kIOReturnBadArgument;uint64_t output[10]={};
+-    if (fClosed) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
++    if (fClosed || fTask!=owner_task || gfx.owner!=owner_task) {IOLockUnlock(gfx.lock);return kIOReturnNotPermitted;}
+     uint64_t owner=(uint64_t)(uintptr_t)fTask;sgpu_graphics_range info;
+     uint64_t arg=in?a->scalarInput[0]:0;
+     switch (selector) {
+@@ -247,7 +319,10 @@ IOReturn SantoniGraphicsClient::externalMethod(uint32_t selector,IOExternalMetho
+         output[0]=SGPU_GRAPHICS_UAPI_VERSION;output[1]=SGPU_PAGE;output[2]=SGPU_CHIPID;output[3]=SGPU_GMEM_BYTES;
+         output[4]=gfx.core.va_base;output[5]=gfx.core.va_pages*SGPU_PAGE;output[6]=gfx.core.bo_bytes;
+         output[7]=SGPU_GRAPHICS_IB_BYTES;output[8]=gfx.core.retained_pages*SGPU_PAGE;
+-        output[9]=0; /* No GLES capability until the vetted raster-state policy exists. */
++        output[9]=gfx.gles_enabled && gfx.raster_enabled && gfx.core.initialized &&
++            !gfx.core.closed && !gfx.core.quarantined && gfx.policy.vm_profile==SGPU_GRAPHICS_VM_WIDE;
++        /* This is audited-code availability for the explicit opt-in, never a
++         * shader/pixel/hardware pass. The userspace renderer must self-test. */
+         result=kIOReturnSuccess;break;
+     case SG_GFX_NEW:
+         if (arg && arg<=gfx.core.bo_bytes && a->scalarInput[1]<=UINT32_MAX) {

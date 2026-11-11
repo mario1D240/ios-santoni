@@ -1,0 +1,425 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index 98eddcc..6fdd9d8 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -1,5 +1,5 @@
+ /*
+- * Santoni kernel adapter for the guarded, kernel-only A505 diagnostic.
++ * Santoni kernel adapter for guarded A505 diagnostics and an optional scalar client.
+  * Firmware is carried in the reserved Apple device tree by the local packager,
+  * not committed to git, fetched by CI, or installed into the iOS filesystem.
+  * GPU flag defaults OFF. A separate worker never delays IOFindBSDRoot or HID.
+@@ -7,7 +7,13 @@
+ #if defined(ARM64_BOARD_CONFIG_SANTONI)
+ #include <sys/param.h>
+ #include <sys/systm.h>
++#include <sys/conf.h>
++#include <sys/errno.h>
++#include <sys/ioctl.h>
++#include <sys/kauth.h>
++#include <miscfs/devfs/devfs.h>
+ #include <kern/clock.h>
++#include <kern/task.h>
+ #include <kern/thread.h>
+ #include <kern/sched_prim.h>
+ #include <kern/locks.h>
+@@ -38,6 +44,8 @@ static struct {
+     uint32_t stock_pixels;
+     uint32_t g3;
+     uint32_t session;
++    uint32_t user;
++    uint32_t user_test;
+ } sg;
+
+ static const uint32_t sgpu_block_pa[SG_BLOCKS] = {
+@@ -827,21 +835,228 @@ static bool __attribute__((noinline)) sgpu_session_options(uint32_t mode)
+     return true;
+ }
+
++/* Separate root-only user role; the old kernel producer remains the default. */
++static bool __attribute__((noinline)) sgpu_user_options(uint32_t mode)
++{
++    uint32_t enabled=0;
++    sg.user=0;
++    (void)PE_parse_boot_argn("santonigpu_user",&enabled,sizeof(enabled));
++    if (!enabled) return true;
++    if (enabled!=1 || mode!=3 || sg.session!=1 || sg.g3!=1 ||
++        sg.stock_unsecure!=1 || sg.stock_pixels!=1) return false;
++    sg.user=1;
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_user_test_options(uint32_t mode)
++{
++    uint32_t enabled=0;
++    sg.user_test=0;
++    (void)PE_parse_boot_argn("santonigpu_user_test",&enabled,sizeof(enabled));
++    if (!enabled) return true;
++    if (enabled!=1 || mode!=3 || sg.user!=1 || sg.session!=1 || sg.g3!=1 ||
++        sg.stock_unsecure!=1 || sg.stock_pixels!=1) return false;
++    sg.user_test=1;
++    return true;
++}
++
+ static LCK_GRP_DECLARE(sgpu_session_group, "santoni_gpu_session");
+ static LCK_MTX_DECLARE(sgpu_session_lock, &sgpu_session_group);
+ static struct sgpu_session_queue session_queue;
+ static int session_queue_event;
+ static uint32_t session_idle_count;
++static struct sgpu_client sgpu_user_client;
++static int sgpu_user_major=-1;
++static bool sgpu_user_published;
+ _Static_assert(sizeof(session_queue)+sizeof(session_queue_event)+sizeof(session_idle_count) < 8192,
+     "bounded CPU queue; core separately reserves adapter overhead");
+ _Static_assert(sizeof(sgpu_session_lock)+sizeof(sgpu_session_group)+
+     sizeof(session_queue_event)+sizeof(session_idle_count)<=1024,
+     "adapter lock/events fit the core's reserved control overhead");
+
++/* Root-only userspace WRITE4 bridge. ioctl data is XNU's bounded, copied kernel
++ * buffer. All queue calls hold the queue mutex; reference/wake/namespace calls
++ * occur outside it. No device method calls the GPU core or accesses DMA. */
++_Static_assert(sizeof(sgpu_session_lock)+sizeof(sgpu_session_group)+
++    sizeof(session_queue_event)+sizeof(session_idle_count)+sizeof(sgpu_user_client)+
++    sizeof(sgpu_user_major)+sizeof(sgpu_user_published)<=1024, "user bridge control overhead");
++_Static_assert(_IOWR('G',1,struct sgpu_user_packet)==SGPU_USER_INFO &&
++    _IOWR('G',2,struct sgpu_user_packet)==SGPU_USER_SUBMIT &&
++    _IOWR('G',3,struct sgpu_user_packet)==SGPU_USER_POLL &&
++    _IOWR('G',4,struct sgpu_user_packet)==SGPU_USER_CLOSE, "Darwin ioctl wire encoding");
++
++static int sgpu_user_open(dev_t dev, int flags __unused, int type __unused, struct proc *p __unused)
++{
++    if (minor(dev)!=0 || major(dev)!=sgpu_user_major || sg.user!=1) return ENXIO;
++    if (sg.user_test) return EBUSY; /* preflight reserves the one owner internally */
++    if (!kauth_cred_issuser(kauth_cred_get())) return EACCES;
++    task_t owner=current_task();
++    if (!owner) return EACCES;
++    task_reference(owner);
++    lck_mtx_lock(&sgpu_session_lock);
++    bool opened=sgpu_user_published && sgpu_client_open(&sgpu_user_client,&session_queue,
++        (uint64_t)(uintptr_t)owner,true,sg.user==1);
++    lck_mtx_unlock(&sgpu_session_lock);
++    if (!opened) { task_deallocate(owner); return EBUSY; }
++    /* Retain exactly one task identity through close/exit until reboot. This
++     * avoids PID reuse and forbids transferring admission to a different task.
++     * The task's transitive footprint is outside the static control cap. */
++    return 0;
++}
++
++static int sgpu_user_close(dev_t dev, int flags __unused, int type __unused, struct proc *p __unused)
++{
++    if (minor(dev)!=0 || major(dev)!=sgpu_user_major || sg.user!=1) return ENXIO;
++    /* Last-fd close may execute during exit or in a receiving task. It always
++     * requests cancellation of this one session; it never reopens/rebinds it. */
++    lck_mtx_lock(&sgpu_session_lock);
++    sgpu_client_close(&sgpu_user_client,&session_queue);
++    lck_mtx_unlock(&sgpu_session_lock);
++    thread_wakeup(&session_queue_event);
++    return 0;
++}
++
++static int sgpu_user_ioctl(dev_t dev, u_long command, caddr_t data,
++    int flags __unused, struct proc *p __unused)
++{
++    if (minor(dev)!=0 || major(dev)!=sgpu_user_major || sg.user!=1) return ENXIO;
++    if (!data || (command!=SGPU_USER_INFO && command!=SGPU_USER_SUBMIT &&
++                 command!=SGPU_USER_POLL && command!=SGPU_USER_CLOSE)) return EINVAL;
++    task_t owner=current_task();
++    lck_mtx_lock(&sgpu_session_lock);
++    uint32_t result=sgpu_client_call(&sgpu_user_client,&session_queue,(uint64_t)(uintptr_t)owner,
++        (uint32_t)command,(struct sgpu_user_packet *)(void *)data,session_idle_count);
++    lck_mtx_unlock(&sgpu_session_lock);
++    if (result==SG_CLIENT_DENIED) return EACCES;
++    if (result==SG_CLIENT_BAD_PACKET) return EINVAL;
++    if (result!=SG_CLIENT_OK) return ENXIO;
++    if (command==SGPU_USER_SUBMIT || command==SGPU_USER_CLOSE) thread_wakeup(&session_queue_event);
++    return 0;
++}
++
++static const struct cdevsw sgpu_user_cdevsw={
++    .d_open=sgpu_user_open,.d_close=sgpu_user_close,.d_read=eno_rdwrt,.d_write=eno_rdwrt,
++    .d_ioctl=sgpu_user_ioctl,.d_stop=eno_stop,.d_reset=eno_reset,.d_ttys=NULL,
++    .d_select=eno_select,.d_mmap=eno_mmap,.d_strategy=eno_strat,
++    .d_reserved_1=eno_getc,.d_reserved_2=eno_putc,.d_type=0
++};
++
++static bool __attribute__((noinline)) sgpu_user_publish(void)
++{
++    if (sg.user!=1 || sgpu_user_major>=0) return false;
++    int number=cdevsw_add(-1,&sgpu_user_cdevsw);
++    if (number<0) return false;
++    sgpu_user_major=number; /* one registered switch retained until reboot */
++    if (!devfs_make_node(makedev(number,0),DEVFS_CHAR,UID_ROOT,0,0600,"santonigpu")) return false;
++    lck_mtx_lock(&sgpu_session_lock);
++    sgpu_user_published=true;
++    lck_mtx_unlock(&sgpu_session_lock);
++    printf("SANTONI GPU: USER ready /dev/santonigpu; root, one task, WRITE4; no user DMA maps; NO UI\n");
++    return true;
++}
++
++/* Boot-image-driven KERNEL caller of the scalar interface. It does not cross
++ * copyin/copyout or prove an application syscall/privilege boundary. Manual
++ * user mode keeps this explicit second opt-in off and has no automatic work. */
++static bool __attribute__((noinline)) sgpu_user_preflight_time(uint64_t start,
++    uint64_t *last)
++{
++    uint64_t now=now_us(NULL);
++    if (now<*last || now-start>=100000000u) return false;
++    *last=now;
++    return true; /* bounds returning calls only, not scheduler progress */
++}
++
++static void __attribute__((noinline)) sgpu_user_preflight(void)
++{
++    if (sg.user!=1 || sg.user_test!=1) return;
++    task_t owner=current_task();
++    bool opened=false;
++    if (owner) {
++        task_reference(owner);
++        lck_mtx_lock(&sgpu_session_lock);
++        opened=sgpu_user_published && sgpu_client_open(&sgpu_user_client,&session_queue,
++            (uint64_t)(uintptr_t)owner,true,true);
++        lck_mtx_unlock(&sgpu_session_lock);
++        if (!opened) task_deallocate(owner);
++    }
++    if (!opened) {
++        lck_mtx_lock(&sgpu_session_lock);
++        (void)sgpu_session_close(&session_queue,SGPU_SESSION_OWNER);
++        lck_mtx_unlock(&sgpu_session_lock);
++        thread_wakeup(&session_queue_event);
++        printf("SANTONI GPU: USER API PREFLIGHT pass=0 sent=0 verified=0; owner unavailable; KERNEL CALLER; NO UI\n");
++        return;
++    }
++    unsigned sent=0,verified=0;
++    uint32_t wave_idle=0;
++    uint64_t start=now_us(NULL);
++    uint64_t last=start;
++    bool passed=false;
++    for (unsigned attempt=0;attempt<10000;attempt++) {
++        if (!sgpu_user_preflight_time(start,&last)) break;
++        struct sgpu_user_packet state={.version=SGPU_USER_VERSION,.bytes=sizeof(state)};
++        if (sgpu_user_ioctl(makedev(sgpu_user_major,0),SGPU_USER_INFO,(caddr_t)(void *)&state,0,NULL)) break;
++        if (!sgpu_user_preflight_time(start,&last)) break;
++        if (state.error || state.failed || state.cancelled) break;
++        while (verified<state.completed && verified<32) {
++            struct sgpu_user_packet result={.version=SGPU_USER_VERSION,.bytes=sizeof(result),.id=verified+1};
++            if (sgpu_user_ioctl(makedev(sgpu_user_major,0),SGPU_USER_POLL,(caddr_t)(void *)&result,0,NULL) ||
++                result.rc || result.result_state!=SG_REQUEST_COMPLETE || result.result_seq!=verified+3 ||
++                result.result_wptr!=170+11*(verified+1) || result.result_writes!=4 ||
++                result.result_error || !result.publish_attempted ||
++                !sgpu_user_preflight_time(start,&last)) goto done;
++            verified++;
++        }
++        if (state.state==SG_SESSION_CLOSED || state.state==SG_SESSION_FAULTED) {
++            passed=state.state==SG_SESSION_CLOSED && state.reason==SG_SESSION_QUOTA && sent==32 && verified==32 &&
++                state.admitted==32 && state.committed==32 && state.submitted==32 && state.completed==32 &&
++                !state.active && !state.outstanding && state.writes==128 && state.last_seq==34 &&
++                state.wptr==522 && state.idle>=2;
++            break;
++        }
++        bool second_wave=sent>=16 && (verified<16 || state.idle<=wave_idle);
++        if (state.idle && !second_wave && sent<32) {
++            struct sgpu_user_packet request={.version=SGPU_USER_VERSION,.bytes=sizeof(request)};
++            for (unsigned i=0;i<4;i++) request.value[i]=0xa5070000u^((sent+1)<<8)^i;
++            if (sgpu_user_ioctl(makedev(sgpu_user_major,0),SGPU_USER_SUBMIT,(caddr_t)(void *)&request,0,NULL)) break;
++            if (request.rc==SG_SESSION_OK) {
++                if (request.id!=sent+1) break;
++                sent++;
++                /* The SUBMIT reply copies idle under the admission mutex.
++                 * An older INFO snapshot can precede another worker idle. */
++                if (sent==16) wave_idle=request.idle;
++            } else if (request.rc!=SG_SESSION_FULL && request.rc!=SG_SESSION_AT_QUOTA) break;
++        }
++        if (!sgpu_user_preflight_time(start,&last)) break;
++        sgpu_kernel_wait_us(NULL,10000);
++    }
++done:
++    {
++    /* CLOSE is CPU-only and preserves terminal quota/failure results. It does
++     * not reset/free the engine or imply that the worker has already drained. */
++    struct sgpu_user_packet close={.version=SGPU_USER_VERSION,.bytes=sizeof(close)};
++    (void)sgpu_user_ioctl(makedev(sgpu_user_major,0),SGPU_USER_CLOSE,(caddr_t)(void *)&close,0,NULL);
++    printf("SANTONI GPU: USER API PREFLIGHT pass=%u sent=%u verified=%u; KERNEL CALLER; userspace boundary unproven; NO UI\n",
++        passed?1u:0u,sent,verified);
++    }
++}
++
+ /* A separate kernel-only producer proves that startup stack lifetime and a
+  * worker idle/wakeup are real. It never reads/writes GPU or shared DMA pages. */
+ static void sgpu_session_producer(void *arg __unused, wait_result_t result __unused)
+ {
++    if (sg.user==1) {
++        if (!sgpu_user_publish()) {
++            lck_mtx_lock(&sgpu_session_lock);
++            (void)sgpu_session_close(&session_queue,SGPU_SESSION_OWNER);
++            lck_mtx_unlock(&sgpu_session_lock);
++            thread_wakeup(&session_queue_event);
++            printf("SANTONI GPU: USER publication failed; close requested; no retry\n");
++        } else if (sg.user_test==1) sgpu_user_preflight();
++        thread_terminate_self();
++        return; /* user mode never runs the automatic kernel workload */
++    }
+     unsigned sent=0;
+     uint32_t wave_idle=0;
+     uint64_t start=now_us(NULL);
+@@ -985,6 +1200,16 @@ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused
+         thread_terminate_self();
+         return;
+     }
++    if (!sgpu_user_options(sg.mode)) {
++        printf("SANTONI GPU: invalid user opt-in; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
++    if (!sgpu_user_test_options(sg.mode)) {
++        printf("SANTONI GPU: invalid user preflight opt-in; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
+     if (sgpu_pas_cache_preflight(sg.mode)) {
+         thread_terminate_self();
+         return;
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+index c25c1d8..d0032fa 100644
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -1899,4 +1899,71 @@ failed:
+     *out=session_core.result;
+     return false;
+ }
++
++/* Scalar user bridge: CPU-only admission/snapshots under the adapter mutex.
++ * No user packet can choose an owner, GPU VA, register, IB or physical page. */
++bool sgpu_client_open(struct sgpu_client *client, const struct sgpu_session_queue *q,
++    uint64_t owner, bool privileged, bool enabled)
++{
++    if (!client || !q || !owner || !privileged || !enabled || !q->initialized ||
++        q->status.state!=SG_SESSION_READY || q->status.admitted || q->status.outstanding ||
++        q->status.active || client->attempted || client->closed || client->owner) return false;
++    client->owner=owner; client->attempted=true;
++    return true; /* task lifetime is retained by the adapter until reboot */
++}
++
++void sgpu_client_close(struct sgpu_client *client, struct sgpu_session_queue *q)
++{
++    if (!client || !q || !client->attempted || client->closed) return;
++    client->closed=true;
++    (void)sgpu_session_close(q,SGPU_SESSION_OWNER);
++}
++
++static bool __attribute__((noinline)) sgpu_client_packet_valid(uint32_t command,
++    const struct sgpu_user_packet *packet)
++{
++    if (!packet || packet->version!=SGPU_USER_VERSION || packet->bytes!=sizeof(*packet) ||
++        (command!=SGPU_USER_INFO && command!=SGPU_USER_SUBMIT &&
++         command!=SGPU_USER_POLL && command!=SGPU_USER_CLOSE)) return false;
++    if (command==SGPU_USER_POLL) {
++        if (!packet->id || packet->id>SGPU_SESSION_LIMIT) return false;
++    } else if (packet->id) return false;
++    const uint8_t *bytes=(const uint8_t *)(const void *)packet;
++    for (unsigned i=12;i<sizeof(*packet);i++)
++        if (!(command==SGPU_USER_SUBMIT && i>=16 && i<32) && bytes[i]) return false;
++    return true;
++}
++
++uint32_t sgpu_client_call(struct sgpu_client *client, struct sgpu_session_queue *q,
++    uint64_t owner, uint32_t command, struct sgpu_user_packet *packet, uint32_t idle)
++{
++    if (!client || !client->attempted || !owner || owner!=client->owner) return SG_CLIENT_DENIED;
++    if (!q || !q->initialized) return SG_CLIENT_INACTIVE;
++    if (!sgpu_client_packet_valid(command,packet)) return SG_CLIENT_BAD_PACKET;
++    struct sgpu_user_packet reply={.version=SGPU_USER_VERSION,.bytes=sizeof(reply),.id=packet->id};
++    if (command==SGPU_USER_SUBMIT) {
++        reply.rc=client->closed ? SG_SESSION_IS_CLOSED :
++            sgpu_session_enqueue(q,SGPU_SESSION_OWNER,SGPU_SESSION_WRITE4,packet->value,&reply.id);
++    } else if (command==SGPU_USER_CLOSE) sgpu_client_close(client,q);
++    else if (command==SGPU_USER_POLL) {
++        struct sgpu_session_result result={0};
++        if (!sgpu_session_get(q,SGPU_SESSION_OWNER,packet->id,&result)) reply.rc=SG_SESSION_NOT_READY;
++        else {
++            reply.result_state=result.state; reply.result_seq=result.sequence;
++            reply.result_wptr=result.wptr; reply.result_writes=result.writes;
++            reply.result_error=result.error; reply.result_phase=result.phase;
++            reply.publish_attempted=result.publish_attempted ? 1u : 0u;
++        }
++        /* Raw failure old/written/got values may contain kernel/physical
++         * addresses. They deliberately have no field in this public ABI. */
++    }
++    const struct sgpu_session_status *s=&q->status;
++    reply.state=s->state; reply.reason=s->reason; reply.admitted=s->admitted;
++    reply.outstanding=s->outstanding; reply.active=s->active; reply.committed=s->committed;
++    reply.submitted=s->submitted; reply.completed=s->completed; reply.cancelled=s->cancelled;
++    reply.failed=s->failed; reply.writes=s->writes; reply.last_seq=s->last_sequence;
++    reply.wptr=s->wptr; reply.error=s->error; reply.failed_id=s->first_failed_id; reply.idle=idle;
++    *packet=reply; /* zeroed, by-value reply; never a pointer into live state */
++    return SG_CLIENT_OK;
++}
+ #endif
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+index d302f91..8aed93f 100644
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -1,9 +1,10 @@
+-/* Santoni A505 diagnostic interface. No user submissions or display ownership. */
++/* Santoni A505 diagnostics. No raw user command buffers or display ownership. */
+ #ifndef SANTONI_GPU_CORE_H
+ #define SANTONI_GPU_CORE_H
+ #include <stdint.h>
+ #include <stddef.h>
+ #include <stdbool.h>
++#include "santoni_gpu_uapi.h"
+
+ #define SGPU_PAGE 4096u
+ #define SGPU_POOL_PAGES 24u
+@@ -88,7 +89,7 @@ bool sgpu_probe(const struct sgpu_ops *, uint32_t, const uint8_t *, size_t,
+
+ /* Private kernel-only session. Queue functions require the adapter mutex.
+  * Hardware functions have exactly one worker; no producer may call them.
+- * No user pointers, user submissions, live mappings or reclamation. */
++ * No user pointers, raw command buffers, live mappings or reclamation. */
+ #define SGPU_SESSION_LIMIT 32u
+ #define SGPU_SESSION_DEPTH 4u
+ #define SGPU_SESSION_OWNER 1u
+@@ -132,6 +133,14 @@ bool sgpu_session_finish(struct sgpu_session_queue *, uint32_t, const struct sgp
+ void sgpu_session_fault_pending(struct sgpu_session_queue *, const struct sgpu_session_result *);
+ uint32_t sgpu_session_close(struct sgpu_session_queue *, uint32_t);
+ bool sgpu_session_get(const struct sgpu_session_queue *, uint32_t, uint32_t, struct sgpu_session_result *);
++/* Caller holds the same queue mutex. The adapter retains the owner's task;
++ * owner is an opaque kernel identity, never supplied in the wire packet. */
++struct sgpu_client { uint64_t owner; bool attempted, closed; };
++enum sgpu_client_error { SG_CLIENT_OK, SG_CLIENT_DENIED, SG_CLIENT_BAD_PACKET, SG_CLIENT_INACTIVE };
++bool sgpu_client_open(struct sgpu_client *, const struct sgpu_session_queue *, uint64_t, bool, bool);
++void sgpu_client_close(struct sgpu_client *, struct sgpu_session_queue *);
++uint32_t sgpu_client_call(struct sgpu_client *, struct sgpu_session_queue *, uint64_t,
++    uint32_t, struct sgpu_user_packet *, uint32_t);
+ bool sgpu_session_start(const struct sgpu_ops *, uint32_t, const uint8_t *, size_t, struct sgpu_report *);
+ bool sgpu_session_prepare(void);
+ bool sgpu_session_execute(const uint32_t[4], struct sgpu_session_result *);
+diff --git a/bsd/dev/santoni_gpu_uapi.h b/bsd/dev/santoni_gpu_uapi.h
+new file mode 100644
+index 0000000..4b15c77
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_uapi.h
+@@ -0,0 +1,23 @@
++/* Versioned scalar-only Santoni GPU diagnostic ABI. No pointers or BO maps. */
++#ifndef SANTONI_GPU_UAPI_H
++#define SANTONI_GPU_UAPI_H
++#include <stdint.h>
++
++#define SGPU_USER_VERSION 1u
++#define SGPU_USER_BYTES 128u
++/* Darwin _IOWR('G', N, struct sgpu_user_packet), checked again in the adapter. */
++#define SGPU_USER_INFO   0xc0804701u
++#define SGPU_USER_SUBMIT 0xc0804702u
++#define SGPU_USER_POLL   0xc0804703u
++#define SGPU_USER_CLOSE  0xc0804704u
++
++struct sgpu_user_packet {
++    uint32_t version, bytes, id, rc;
++    uint32_t value[4];
++    uint32_t state, reason, admitted, outstanding, active, committed, submitted, completed;
++    uint32_t cancelled, failed, writes, last_seq, wptr, error, failed_id, idle;
++    uint32_t result_state, result_seq, result_wptr, result_writes;
++    uint32_t result_error, result_phase, publish_attempted, reserved;
++};
++_Static_assert(sizeof(struct sgpu_user_packet)==SGPU_USER_BYTES, "fixed pointer-free GPU ABI");
++#endif

@@ -1,0 +1,80 @@
+Subject: [PATCH 0170] santoni: report the PM8937 power key independently
+
+PM8937 PON RT_STS bit 0 is KPDPWR, bit 1 is RESIN/volume down.
+Reference: Linux pm8941-pwrkey.c/pm8937.dtsi and ios-sailfish 0089.
+Keep Santoni register bases and its real volume-down usage (no Home
+alias). Failed reads preserve both PMIC key states. Log why an
+explicit HID test stops on physical input for the next device trace.
+
+diff --git a/bsd/dev/santoni_sdhci.c b/bsd/dev/santoni_sdhci.c
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -4395,6 +4395,7 @@
+ 
+ /* Linux pm8941-pwrkey.c: PM8937 SID 0 PON + RT_STS, bit 1 = RESIN pressed. */
+ #define SANTONI_PON_RT_STS       0x0810u
++#define SANTONI_PON_POWER        (1u << 0)
+ #define SANTONI_PON_RESIN        (1u << 1)
+ 
+ struct santoni_key_state {
+@@ -4413,23 +4414,24 @@
+ 	}
+ 	if (key->stable == 3 && down != key->down) {
+ 		key->down = down;
+-		printf("SANTONI KEYS: Vol%s %s\n", code == 1 ? "Up" : "Down",
++		printf("SANTONI KEYS: %s %s\n", code == 0 ? "Power" : code == 1 ? "VolUp" : "VolDown",
+ 		    down ? "PRESSED" : "RELEASED");
+ 		sweet_hid_key(code, down ? 1 : 0);
+ 	}
+ }
+ 
+ static void
+-santoni_volume_poll(vm_offset_t tlmm, struct santoni_key_state *up,
+-    struct santoni_key_state *down)
++santoni_buttons_poll(vm_offset_t tlmm, struct santoni_key_state *power,
++    struct santoni_key_state *up, struct santoni_key_state *down)
+ {
+ 	santoni_key_sample(up, 1, tlmm_gpio_get(tlmm, PIN_VOL_UP) == 0);
+ 	uint8_t status;
+ 	if (santoni_spmi_read(SANTONI_PON_RT_STS, &status)) {
++		santoni_key_sample(power, 0, (status & SANTONI_PON_POWER) != 0);
+ 		santoni_key_sample(down, 2, (status & SANTONI_PON_RESIN) != 0);
+ 	} else {
+ 		/* An unreadable PMIC is not a release. Require fresh stable samples. */
+-		down->stable = 0;
++		power->stable = down->stable = 0;
+ 	}
+ }
+ 
+@@ -4505,12 +4507,12 @@
+ 	bool active[10] = {false};
+ 	int last_x[10] = {0};
+ 	int last_y[10] = {0};
+-	struct santoni_key_state volup = {0}, voldown = {0};
++	struct santoni_key_state power = {0}, volup = {0}, voldown = {0};
+ 	unsigned int tick = 0, nack = 0, bad = 0, reports = 0;
+ 
+ 	for (;;) {
+-		/* Independent volume keys; neither key is an alias for Home. */
+-		santoni_volume_poll(tlmm, &volup, &voldown);
++		/* Independent power/volume keys, with no Home alias. */
++		santoni_buttons_poll(tlmm, &power, &volup, &voldown);
+ 
+ 		/* One-line status every 2 s: a single photo of the boot
+ 		 * console shows exactly where the touch bring-up stands. */
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -421,9 +421,11 @@
+ 	 * whichever app the user opened. Display keep-awake is handled by the
+ 	 * framebuffer's sweetfb_stayon, not synthetic keyboard events.
+ 	 */
+-	if (__atomic_load_n(&gSweetPhysicalInput, __ATOMIC_ACQUIRE) || self->fTestCount >= 4) {
++	if (__atomic_load_n(&gSweetPhysicalInput, __ATOMIC_ACQUIRE)) {
++		IOLog("SWEET HID: test stopped after physical input\n");
+ 		return;
+ 	}
++	if (self->fTestCount >= 4) return;
+ 	if (!gSweetTouch || !gSweetTouch->hasClients()) {
+ 		sender->setTimeoutMS(self->fTestSecs * 1000);
+ 		return;

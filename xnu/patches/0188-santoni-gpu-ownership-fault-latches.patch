@@ -1,0 +1,96 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -43,7 +43,7 @@
+     struct sgpu_memory memory;
+     struct saved_reg saved[32];
+     uint32_t saved_count;
+-    bool gpu_live, smmu_live, dma_exposed, restoring, gpu_owned, gx_touched;
++    bool gpu_live, smmu_live, dma_exposed, restoring, gpu_owned, gx_touched, commands_started;
+ };
+ 
+ static uint32_t little32(const uint8_t *p)
+@@ -383,18 +383,22 @@
+ static void faults(struct probe *p)
+ {
+     p->report->status = read32(p, SG_GPU, SG_STATUS);
+-    p->report->interrupt_status = read32(p, SG_GPU, SG_INT_STATUS);
++    p->report->interrupt_status |= read32(p, SG_GPU, SG_INT_STATUS);
+     if (!p->smmu_live) {
++        if (!p->report->error && (p->report->interrupt_status & SG_ERROR_IRQ_MASK))
++            p->report->error = SG_FAULT;
+         trace(p, "GPU status/IRQ; SMMU layout not verified", p->report->status,
+             p->report->interrupt_status, 0);
+         return;
+     }
+-    p->report->smmu_fsr = read32(p, SG_SMMU, SG_CB_FSR);
+-    p->report->smmu_global_fsr = read32(p, SG_SMMU, 0x48);
++    p->report->smmu_fsr |= read32(p, SG_SMMU, SG_CB_FSR);
++    p->report->smmu_global_fsr |= read32(p, SG_SMMU, 0x48);
+     trace(p, "CP status/IRQ/CB fault", p->report->status,
+         p->report->interrupt_status, p->report->smmu_fsr);
+     trace(p, "SMMU global/FAR low/high", p->report->smmu_global_fsr,
+         read32(p, SG_SMMU, SG_CB_FAR), read32(p, SG_SMMU, SG_CB_FAR + 4));
++    if (!p->report->error && ((p->report->interrupt_status & SG_ERROR_IRQ_MASK) ||
++        p->report->smmu_fsr || p->report->smmu_global_fsr)) p->report->error = SG_FAULT;
+ }
+ 
+ static bool has_fault(const struct sgpu_report *r)
+@@ -610,6 +614,7 @@
+     write32(p, SG_GPU, SG_PFP_BASE, SGPU_PFP_VA);
+     write32(p, SG_GPU, SG_PFP_BASE + 4, 0);
+     p->dma_exposed = true; /* ME may fetch immediately; never free after this */
++    p->commands_started = true;
+     if (!checked_write32(p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, 0)) return false;
+     if (!consume(p, 9)) return false;
+     *wptr = 9;
+@@ -753,13 +758,23 @@
+     report->stage = SG_TRANSLATION;
+     trace(&p, "before powered SMMU read/setup", 0x01c40000, 0x10000, 0);
+     if (!ops->map(ops->ctx, SG_SMMU, 0x01c40000, 0x10000)) { report->error = SG_NO_MAP; goto done; }
++    /* The logging pause and IRQ-mask handoff are not an ownership lock. */
++    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++        report->error = SG_BUSY; goto done;
++    }
+     if (!checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
+         report->error = SG_FAULT; goto done;
+     }
+-    p.gpu_owned = true; /* only an idle engine with verified IRQ masking is reset */
++    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++        report->error = SG_BUSY; goto done;
++    }
+     if (!checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT)) {
+         report->error = SG_FAULT; goto done;
+     }
++    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++        report->error = SG_BUSY; goto done;
++    }
++    p.gpu_owned = true; /* reset only after the immediate idle/halt handoff checks */
+     write32(&p, SG_GPU, SG_RESET, 1);
+     (void)read32(&p, SG_GPU, SG_RESET);
+     wait_us(&p, 2);
+@@ -810,7 +825,7 @@
+         stopped = checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) &&
+             poll(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT, 10000) &&
+             poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
+-        if (!stopped) {
++        if (!stopped && p.commands_started) {
+             /* A soft reset is vendor-supported on A505, not the A530v1 exception. */
+             write32(&p, SG_GPU, SG_RESET, 1);
+             (void)read32(&p, SG_GPU, SG_RESET);
+@@ -832,6 +847,7 @@
+         if (!stopped) sgpu_failure(&p, SG_FAIL_GUARD, SG_CC, CC_GX,
+             BIT(31) | 1u, 1, gx, 0, gx, 0, 0);
+     }
++    if (p.gpu_live) faults(&p); /* post-idle faults must also invalidate success */
+     report->gpu_quiescent = p.gpu_live && stopped;
+     /* An uncertain engine keeps its contained translations and power. */
+     if (stopped && smmu.changed) report->smmu_restored = smmu_restore(&p, &smmu);
+@@ -845,6 +861,6 @@
+         if (!report->error) report->error = SG_ROLLBACK_FAILED;
+         passed = false;
+     }
+-    return passed;
++    return passed && report->error == SG_OK;
+ }
+ #endif

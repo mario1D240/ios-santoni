@@ -1,0 +1,41 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -223,7 +223,7 @@
+     /* Journal OPERATIONS, not distinct registers. GFX3D retention is changed
+      * before GX enable, and its branch is enabled later. Merging those masks
+      * caused reverse cleanup to collapse GX before restoring that branch.
+-     * There are 14 power changes, bounded by the existing 32-entry journal. */
++     * There are 13 power changes, bounded by the existing 32-entry journal. */
+     p->saved[p->saved_count++] = (struct saved_reg){b, off, mask, old};
+     write32(p, b, off, written);
+     uint32_t got = read32(p, b, off);
+@@ -238,7 +238,7 @@
+     return poll(p, SG_CC, CC_CMD, 1, 0, 10000);
+ }
+ 
+-static bool power(struct probe *p)
++static bool __attribute__((noinline)) sgpu_power(struct probe *p)
+ {
+     static const uint32_t branches[] = {0x20, 0x28, 0x30, 0x34, 0x40, 0x4c};
+     uint32_t cx = read32(p, SG_CC, CC_CX), gx = read32(p, SG_CC, CC_GX);
+@@ -278,7 +278,9 @@
+         if (!change(p, SG_CC, branches[i], 1, 1) ||
+             !poll(p, SG_CC, branches[i], BIT(31), 0, 10000)) return false;
+     }
+-    if (!change(p, SG_CC, 0x24, 1, 1)) return false; /* GMEM is a delay-only gate */
++    /* MSM8937's six GPU clocks exclude the shared 8952 OXILI_GMEM_CBCR.
++     * Its GFX3D CBCR already owns memory/peripheral retention. Do not access
++     * the unused 0x24 gate or require a readback bit this target does not set. */
+     wait_us(p, 50);
+     trace(p, "XO power/clocks ready", read32(p, SG_CC, CC_CX),
+         read32(p, SG_CC, CC_GX), read32(p, SG_VOTE, CC_VOTE));
+@@ -624,7 +626,7 @@
+         if (!ops->map(ops->ctx, (enum sgpu_block)i, pa[i], 0x1000)) {
+             report->error = SG_NO_MAP; goto done;
+         }
+-    if (!power(&p)) { report->error = SG_POWER_TIMEOUT; goto done; }
++    if (!sgpu_power(&p)) { report->error = SG_POWER_TIMEOUT; goto done; }
+     /* Do not touch an unpowered GPU/SMMU, including on an earlier failure. */
+     report->stage = SG_REGISTERS;
+     trace(&p, "before powered GPU read", 0x01c00000, 0x40000, mode);

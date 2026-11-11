@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "success": true,
+  "hardware_verified": false,
+  "runs": [
+    {
+      "label": "O0",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "mutant_rejected": false,
+      "case_count": 41
+    },
+    {
+      "label": "O2",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "mutant_rejected": false,
+      "case_count": 41
+    },
+    {
+      "label": "UBSan",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "mutant_rejected": false,
+      "case_count": 41
+    },
+    {
+      "label": "O0-baseline",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "mutant_rejected": false,
+      "case_count": 41
+    },
+    {
+      "label": "O2-baseline",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "mutant_rejected": false,
+      "case_count": 41
+    },
+    {
+      "label": "UBSan-baseline",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "mutant_rejected": false,
+      "case_count": 41
+    },
+    {
+      "label": "mutant-mode",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-enabled",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-options",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-worker",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-mount",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-prefix",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-pause",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    },
+    {
+      "label": "mutant-print",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "mutant_rejected": true,
+      "case_count": null
+    }
+  ],
+  "source_sha256": "9f68e76e9f76fdae6a733e3f6d041422393ac7fdce0851a27e1be9ab923fe2a5",
+  "synthetic_schedule_only": true,
+  "probe_source_unchanged": true,
+  "baseline_readiness_us": 106000000,
+  "new_readiness_us": 40000000,
+  "inputs_sha256": {
+    "xnu/patches/0219-santoni-gpu-el0-readiness-trace.patch": "d1ffef4b5d89a650de842f76820f5775be14ba371bcad916a4cd19d7778bf292",
+    "tests/test_santoni_gpu_readiness.c": "3b0fe473052994b5b833980c355bb2846deab0f8a8d19fc238f3a656fe42f4ba",
+    "tests/verify_santoni_gpu_readiness.py": "0f0ea8ff52021a4f12b2b0cf8ef5be311b0860285334fba730f6b6d873f27608",
+    "tests/test_santoni_gpu_user_probe.c": "e0b5ce8b266d5c482bda57c481a96f1781e17abd8561fc11241a5178a627170a",
+    "tools/santoni_gpu_user_probe.c": "ddc0ab4f40c34b87e149e0e0fff715b95c1c9b503cd022c949f88547ae1f1e3b",
+    "tests/verify_santoni_gpu_launcher.py": "b923c18bb85970c93175591c472ed59742b4a13b5d78e83ec9287f1202c2ba4e",
+    "tests/reconstruct_santoni_touch.py": "c249ccf32a2114774ca7ce9e0ef5ba19bc1196d2c6ce795f59ddcc6f5b29ae48"
+  },
+  "baseline_inputs_sha256": {
+    "xnu/patches/0181-santoni-gpu-smmu-fault-encoding.patch": "e543f8e83c2683371ba9d66958a290cdb7a7d060008e52d581ee9c93d60408a9",
+    "xnu/patches/0183-santoni-gpu-darwin-asm-separators.patch": "0002a424709035645354cc5f58d83857d8e39d4b56b79dc1d9163e67131af7d4",
+    "xnu/patches/0189-santoni-gpu-gfx3d-ownership-guard.patch": "cc5530a96ad3fab7742bd9a9bd1ff6a475641fbe1a367b52fa6cc8443b225353",
+    "xnu/patches/0191-santoni-gpu-translation-audit-boundaries.patch": "820499fd0d3b7424cccffadf3cac334e2dc3a03e0ed683f2a159e6164094f2e1",
+    "xnu/patches/0201-santoni-gpu-scm-capability-probe.patch": "b1049d05e9bd39206828326181d50a1fff9834e7a0b0ce27ecf8ca2a915384cc",
+    "xnu/patches/0207-santoni-gpu-scalar-user-client.patch": "ccb4897f124ba2c493b2777a940ca7a46e66bc8ebb165abeceb39a12c1c2c7b9",
+    "xnu/patches/0208-santoni-gpu-boot-el0-launcher.patch": "c86e28c4774bc056507be1fe7da53c8ad173659da9ac03bf48c2286d4a938ee8",
+    "xnu/patches/0209-santoni-gpu-launcher-pmap-declaration.patch": "211b951bae78e88d64618a0b635dd7490bcc0efa582fc6415faaca39d5cb7d77",
+    "xnu/patches/0214-santoni-gpu-trace-path-diagnostics.patch": "1d17025785494b9eaffbcf9a784ea96831c0c8a58df3097c99bd557040cc776c",
+    "xnu/patches/0193-santoni-gpu-a50x-resume-boundaries.patch": "7ff1bf64d62c36bc8fb9940b98da1a438041817e0c866c02f14fc45155f9cce4",
+    "xnu/patches/0194-santoni-gpu-vendor-sp-clock-release.patch": "787413263bae7279b0ac843ec2cb42e17ddce770314643138a7f5a90ba944ca0",
+    "xnu/patches/0197-santoni-gpu-smmu-4k-level-select.patch": "0605cf4505c24bc25a912c37bf29494561e2551e127a867b6e37261c3f33cd47",
+    "xnu/patches/0204-santoni-gpu-stock-pixel-test.patch": "115bd775866245b9568ffb8df217a53ed889a7e9dfca5fcffc95979b0ae79538",
+    "xnu/patches/0211-santoni-gpu-el0-outcome-trace.patch": "a8fd878661af0abee50d856aa4dee623c8bde34309219ea7f0866d21397d0c79",
+    "xnu/patches/0213-santoni-gpu-late-launch-observation.patch": "9cf4d1dbce743af01a71503f1707c1430fcefd6ff9fdf8dc1f4897c08288d3c3",
+    "xnu/patches/0186-santoni-gpu-target-clock-list.patch": "26a68b990cd70648bd4b25db8f3d20286e13dff506c1c278c776aed3d26b44c3",
+    "xnu/patches/0192-santoni-gpu-a505-paired-stop.patch": "7da81758f11ce511d7651d34657e6101a31dff66cd623ab9b9671d72bec4e31d",
+    "xnu/patches/0198-santoni-gpu-fsr-fault-mask.patch": "ca8596e12d4c43c56e5feb5b6b73ca348eef03caeee42ff22aed0cfada0d04d1",
+    "xnu/patches/0199-santoni-gpu-pas-allocation-preflight.patch": "cd99b7d01d515c80845108da0465a4a3c2c97f46faa3a6ca8e285f53049a1475",
+    "xnu/patches/0200-santoni-gpu-pas-auditable-boundaries.patch": "d9f33972460620b17bceade3037db710e36d2059e885420e95535d5db4d3edf1",
+    "xnu/patches/0202-santoni-gpu-pas-cache-preflight.patch": "b6e1ac76498b15f3ac19df962401d9bb863a82644dd1f846954629800689b25d",
+    "xnu/patches/0203-santoni-gpu-stock-unsecure-transition.patch": "f6d59a289a4b1419879a854a20d6051cb963b0a30409ad34f08b05d51ef847e4",
+    "xnu/patches/0205-santoni-gpu-bounded-ib-proof.patch": "61af368dff3c979ec5b24e24c313e74661614981b08bb0ae83c80746e775c5db",
+    "xnu/patches/0206-santoni-gpu-persistent-session.patch": "18edb0ceb4b2431b253ae08fea76db225b46db6338d195a6cfb105d12ec489c4",
+    "xnu/patches/0180-santoni-gpu-kernel-proof.patch": "bcb1a71675bf963ddc54e95edcd2c7486a5e4dfd4d10d40849e383b493444ed9",
+    "xnu/patches/0182-santoni-gpu-xnu-adapter-api.patch": "0c5ab83fa1dd0ead0fd0f07da589904b85b7c330600aa1a9550daa125d3144d1",
+    "xnu/patches/0184-santoni-gpu-startup-visibility.patch": "66bb1890d57fd721348377e1881336113bb9226708e5ed4ffa9b81d6ac1c7751",
+    "xnu/patches/0185-santoni-gpu-power-failure-record.patch": "7af1b0eea9759fa31d41125f44956ee2e69b008075ad36c91604402b681c3319",
+    "xnu/patches/0187-santoni-gpu-audit-safety-gates.patch": "e9736451d1ceb02f03486cb1ef0daccc982f107ed45330cb29078e0640db660a",
+    "xnu/patches/0188-santoni-gpu-ownership-fault-latches.patch": "686a021dd1a52fbd0d280d1404fab13a70970bc7b4c87b3224d7417b50079b79",
+    "xnu/patches/0190-santoni-gpu-clock-completion-checks.patch": "c7a38aad8388c27cbff57e1218a2d054a7f7c7b3fb91cec97f63a1d5aef08d96",
+    "xnu/patches/0195-santoni-gpu-hold-partial-resume-power.patch": "a963199d0d2eec49a975697582d344a9edb886434494bfa654671f51acc13f7a",
+    "xnu/patches/0196-santoni-gpu-accepted-idle-mask.patch": "1cfe344859d3075ba71de7ce6b19de128e68ec7416d6ffc5a6fe7fe0499cafa5"
+  }
+}

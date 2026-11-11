@@ -1,0 +1,15 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index aea6767..95e3ef5 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1282,7 +1282,9 @@ extern bool santoni_gpu_user_launch_worker_ready(uint32_t);
+  */
+ static uint32_t santoni_gpu_user_fault_reported;
+
+-static void __attribute__((noinline))
++/* Retain the four-argument private ABI and bound disassembly to this helper's
++ * executable section. Avoid mixed padding from adjacent outlined functions. */
++static void __attribute__((noinline, used, section("__TEXT_EXEC,__sgpu_fault")))
+ santoni_gpu_user_fault(arm_saved_state_t *state, exception_type_t exc,
+     mach_exception_data_type_t code, mach_exception_data_type_t address)
+ {

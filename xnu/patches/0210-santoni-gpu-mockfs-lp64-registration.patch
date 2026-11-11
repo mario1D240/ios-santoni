@@ -1,0 +1,17 @@
+diff --git a/bsd/vfs/vfs_conf.c b/bsd/vfs/vfs_conf.c
+index bae70cd..d2753a3 100644
+--- a/bsd/vfs/vfs_conf.c
++++ b/bsd/vfs/vfs_conf.c
+@@ -206,7 +206,12 @@ static struct vfstable vfstbllist[] = {
+ 		.vfc_next = NULL,
+ 		.vfc_reserved1 = 0,
+ 		.vfc_reserved2 = 0,
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++		/* PID1 kernel_mount uses the LP64 VFS_MOUNT guard in kpi_vfs.c. */
++		.vfc_vfsflags = VFC_VFSGENERICARGS | VFC_VFS64BITREADY,
++#else
+ 		.vfc_vfsflags = VFC_VFSGENERICARGS,
++#endif
+ 		.vfc_descptr = NULL,
+ 		.vfc_descsize = 0,
+ 		.vfc_sysctl = NULL

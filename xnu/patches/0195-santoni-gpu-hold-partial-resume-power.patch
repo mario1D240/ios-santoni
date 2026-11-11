@@ -1,0 +1,38 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -44,7 +44,7 @@
+     struct saved_reg saved[32];
+     uint32_t saved_count;
+     bool gpu_live, smmu_live, dma_exposed, restoring, gpu_owned, gx_touched, commands_started;
+-    bool gpu_resumed;
++    bool gpu_resumed, gpu_resume_touched;
+ };
+ 
+ static uint32_t little32(const uint8_t *p)
+@@ -583,6 +583,7 @@
+ static bool __attribute__((noinline)) sgpu_a505_resume(struct probe *p)
+ {
+     p->gpu_resumed = false;
++    p->gpu_resume_touched = true;
+     /* A50x regulator path: halt SP input before changing HWCG, then release it. */
+     if (!checked_write32(p, SG_GPU, SG_CLOCK_CNTL, ~0u, 0x55)) return false;
+     /* A50x (ONE SP) HWCG values, not the A530 multi-SP table. */
+@@ -913,7 +914,16 @@
+     } else if (p.gpu_live) {
+         /* A register-only probe or inherited busy engine is not ours to reset.
+          * If it stays busy, leave every clock/domain prerequisite intact. */
+-        stopped = poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
++        if (p.gpu_resume_touched && !p.gpu_resumed) {
++            /* Idle status alone cannot verify a partially changed A50x resume.
++             * Do not collapse its prerequisites after a failed internal-clock
++             * echo, even before CP ownership/DMA. Keep them until reboot. */
++            stopped = false;
++            trace(&p, "partial A50x resume; power held until reboot", report->stage,
++                report->failure.offset, p.saved_count);
++        } else {
++            stopped = poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
++        }
+     } else if (p.gx_touched) {
+         /* A late power/map failure cannot safely read the GPU yet. Only a
+          * confirmed collapsed GX permits teardown without an engine idle read. */

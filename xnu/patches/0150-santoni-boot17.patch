@@ -1,0 +1,88 @@
+diff -u a/bsd/kern/sweet_amfi.c b/bsd/kern/sweet_amfi.c
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -326,7 +326,7 @@
+ static int
+ sweet_sandbox_priv_grant(kauth_cred_t cred __unused, int priv)
+ {
+-	if (priv == PRIV_WORK_INTERVAL) {
++	if (priv == PRIV_WORK_INTERVAL || priv == PRIV_GLOBAL_PROC_INFO) {
+ 		return 0;
+ 	}
+ 	char name[20];
+diff -u a/pexpert/arm/pe_serial.c b/pexpert/arm/pe_serial.c
+--- a/pexpert/arm/pe_serial.c
++++ b/pexpert/arm/pe_serial.c
+@@ -831,6 +831,13 @@
+ static void
+ santoni_early_serial_tx_data(uint8_t c)
+ {
++#if defined(ARM64_BOARD_CONFIG_SWEET)
++	extern int sweet_console_muted;
++	extern unsigned panic_active(void);
++	if (sweet_console_muted && !panic_active()) {
++		return;
++	}
++#endif
+ 	sweet_early_putc((char)c);
+ }
+ 
+diff -u a/iokit/Kernel/arm/SweetKeyStore.cpp b/iokit/Kernel/arm/SweetKeyStore.cpp
+--- a/iokit/Kernel/arm/SweetKeyStore.cpp
++++ b/iokit/Kernel/arm/SweetKeyStore.cpp
+@@ -163,6 +163,8 @@
+ 	return sweet_aks_struct_out(args, buf, n);
+ }
+ 
++static uint64_t gSweetAksNotifyState = 0;
++
+ static uint32_t
+ sweet_aks_struct_out_size(IOExternalMethodArguments *args)
+ {
+@@ -194,7 +196,10 @@
+ 	case kAKSAssertDrop:
+ 	case kAKSAssertConsume:
+ 	case kAKSUnloadSessionBags:
++		args->scalarOutputCount = 0;
++		break;
+ 	case kAKSNotifyStateSet:
++		gSweetAksNotifyState = in_scalars > 0 ? args->scalarInput[0] : 1;
+ 		args->scalarOutputCount = 0;
+ 		break;
+ 	case kAKSGetSystem:
+@@ -214,12 +219,11 @@
+ 		args->scalarOutputCount = 1;
+ 		break;
+ 	case kAKSNotifyStateIsSet:
+-		/* Nothing was ever set: answer "not set". */
+ 		if (out_scalars < 1) {
+ 			ret = kIOReturnBadArgument;
+ 			break;
+ 		}
+-		args->scalarOutput[0] = 0;
++		args->scalarOutput[0] = gSweetAksNotifyState;
+ 		args->scalarOutputCount = 1;
+ 		break;
+ 	case kAKSGetDeviceState:
+@@ -232,10 +236,17 @@
+ 		break;
+ 	}
+ 
+-	char name[32];
+-	proc_selfname(name, sizeof(name));
+-	IOLog("SWEET AKS: %s sel %u arg0 %llu in %u/%u out %u/%u -> 0x%x\n", name, selector,
+-	    arg0, in_scalars, in_struct, out_scalars, out_struct, ret);
++	static int aks_log_all = -1;
++	if (aks_log_all < 0) {
++		aks_log_all = 0;
++		PE_parse_boot_argn("sweetakslog", &aks_log_all, sizeof(aks_log_all));
++	}
++	if (aks_log_all || (selector != kAKSGetDeviceState && selector != kAKSGetExtDeviceState) || ret != kIOReturnSuccess) {
++		char name[32];
++		proc_selfname(name, sizeof(name));
++		IOLog("SWEET AKS: %s sel %u arg0 %llu in %u/%u out %u/%u -> 0x%x\n", name, selector,
++		    arg0, in_scalars, in_struct, out_scalars, out_struct, ret);
++	}
+ 	return ret;
+ }
+ #endif /* SWEET */

@@ -1,0 +1,41 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+index 81602ac..cd9bdc8 100644
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -897,7 +897,7 @@ done:
+         /* Failed post-reset resume must not grant further CP access/teardown. */
+         stopped = p.gpu_resumed && sgpu_a505_halt(&p, 3) &&
+             poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000) &&
+-            poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
++            poll(&p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000);
+         if (!stopped && p.commands_started) {
+             /* A soft reset is vendor-supported on A505, not the A530v1 exception. */
+             p.gpu_resumed = false;
+@@ -908,7 +908,7 @@ done:
+             stopped = sgpu_a505_resume(&p) &&
+                 checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0) &&
+                 sgpu_a505_halt(&p, 4) &&
+-                poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000) &&
++                poll(&p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000) &&
+                 poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000);
+         }
+     } else if (p.gpu_live) {
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+index fdab0ec..428eb0e 100644
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -100,6 +100,14 @@ bool sgpu_probe(const struct sgpu_ops *, uint32_t, const uint8_t *, size_t,
+ /* A50x regulator_enable releases SP input clocks with a low-byte RMW. */
+ #define SG_SP_INPUT_CLOCK_MASK 0xffu
+ #define SG_BUSY_MASK 0xfffffffeu
++/* Post-command teardown accepts the A505 residual that only clears on GFX
++ * power-collapse (this diagnostic never collapses GPMU): HI_BUSY(0), CP_BUSY(6),
++ * CP_BUSY_IGN_HYST(7), GPU_BUSY_IGN_AHB_HYST(8), GPU_BUSY_IGN_AHB(31).
++ * Vendor adreno_hw_isidle reaches "idle" via an empty ringbuffer + no pending
++ * IRQ, never by requiring those bits to read 0; they stay set after a correct
++ * ME+PFP halt. All real render-pipe bits (RB/VSC/SP/UCHE/VFD/RAS/TSE/LRZ/PC/
++ * TESS/GPMU/COM/DCOM/VBIF) remain required-0. Observed residual 0x800001c1. */
++#define SG_IDLE_MASK 0x7ffffe3eu
+ /* A5xx error IRQs: RBBM 1..7, CP_HW_ERROR 9, ATB/hang/UCHE 22..25.
+  * Idle, CP software/completion/timestamp and debug interrupts are not errors. */
+ #define SG_ERROR_IRQ_MASK 0x03c002feu

@@ -1,0 +1,30 @@
+{
+  "success": true,
+  "cases": {
+    "O0": 28,
+    "O2": 28,
+    "UBSan": 28
+  },
+  "baseline_cases": {
+    "O0": 2,
+    "O2": 2,
+    "UBSan": 2
+  },
+  "compiled_mutants_rejected": 11,
+  "mechanical_apply_and_bytes_verified": true,
+  "GPU_MMIO_PAS_lifetimes_unchanged": true,
+  "hardware_verified": false,
+  "kernel_certified": false,
+  "sha256": {
+    "tests/santoni_gpu_trace_dispatch_stubs.h": "0d13aed9b5425256a3275e56eb8724a6a8d38bbfe3913edfe20806782147152d",
+    "tests/test_santoni_gpu_trace_dispatch.c": "c96d72db4479976d51d8df053b8089a371b61e480c00b80a75dc52bab5cc91e3",
+    "tests/verify_santoni_gpu_el0_trace.py": "c2118058ec6d781513531b41df0fa9a2e401ffce1e0bb5c94d56afa4313cfbc6",
+    "tests/verify_santoni_gpu_launcher.py": "b923c18bb85970c93175591c472ed59742b4a13b5d78e83ec9287f1202c2ba4e",
+    "tests/verify_santoni_gpu_trace_dispatch.py": "404ec7a0f970849ecaa8232f68bdda1d2d5d6d3998b30039b84c7942d1681cad",
+    "xnu/patches/0215-santoni-gpu-trace-vnode-dispatch.patch": "5c56884f88c8538822001c787e28cf7344ccbe03b578a150693dc87cc24c7252"
+  },
+  "origin": {
+    "native": "out/verify0215-20261102T172220882412Z/native-annotated-complete/result.json",
+    "mechanical": "out/verify0215-20261102T172220882412Z/mechanical-final.json"
+  }
+}

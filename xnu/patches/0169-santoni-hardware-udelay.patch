@@ -1,0 +1,250 @@
+Subject: [PATCH 0169] santoni: busy-wait microsecond hardware edges and polls
+
+Ordinary XNU delay() may schedule when cpu_idle_latency is zero. Use
+a counter/YIELD wait for the existing 1-20 us SDHCI, GPIO-I2C and SPMI
+polls. Preserve the duration and sleepability of all millisecond waits.
+This corrects delay semantics; physical regression verification remains
+required. No changes to GPIO wiring, report parsing or rail programming.
+
+diff --git a/bsd/dev/santoni_sdhci.c b/bsd/dev/santoni_sdhci.c
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -45,6 +45,7 @@
+ #include <sys/proc.h>
+ #include <sys/uio.h>
+ #include <mach/vm_param.h>
++#include <mach/mach_time.h>
+ #include <libkern/copyio.h>
+ #include <miscfs/devfs/devfs.h>
+ #include <kern/locks.h>
+@@ -68,6 +69,24 @@
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+ extern vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++
++/*
++ * Hardware pulse/poll delay: never enter the scheduler and never use WFE.
++ * SweetCPU supplies no powergate_latency, so ml_delay_should_spin() is false
++ * on this port and ordinary delay(1..20) can block once per register/bit.
++ * ARM machine_delay_until() also uses WFE, which depends on an event stream.
++ * A counter deadline plus YIELD gives the GPIO bus a real short busy wait.
++ * Millisecond reset/rail waits and the polling thread's sleep stay sleepable.
++ */
++static void
++santoni_udelay(uint32_t usecs)
++{
++	uint64_t deadline;
++	clock_interval_to_deadline(usecs, NSEC_PER_USEC, &deadline);
++	while (mach_absolute_time() < deadline) {
++		__builtin_arm_yield();
++	}
++}
+ 
+ /* ------------------------------------------------- SDHCI standard registers */
+ #define SDHCI_BLOCK_SIZE        0x04
+@@ -418,7 +437,7 @@
+ 		if (mach_absolute_time() > deadline) {
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 	return 0;
+ }
+@@ -507,7 +526,7 @@
+ 			    (unsigned long long)se.last_cmd_ns);
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ }
+ 
+@@ -533,7 +552,7 @@
+ 		if (mach_absolute_time() > deadline) {
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ }
+ 
+@@ -558,7 +577,7 @@
+ 		if (mach_absolute_time() > deadline) {
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ }
+ 
+@@ -586,7 +605,7 @@
+ 			    hc_rd8(SDHCI_SOFTWARE_RESET));
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 	hc_wr(SDHCI_INT_STATUS, hc_rd(SDHCI_INT_STATUS));
+ 	return 0;
+@@ -1019,7 +1038,7 @@
+ 			if (pending) {
+ 				break;
+ 			}
+-			delay(1);
++			santoni_udelay(1);
+ 		} while (mach_absolute_time() <= deadline);
+ 	} else {
+ 		pending = core_rd(CORE_PWRCTL_STATUS) & CORE_PWRCTL_INT_MASK;
+@@ -1051,7 +1070,7 @@
+ 		}
+ 		core_wr(CORE_PWRCTL_CLEAR, pending);
+ 		core_wr(CORE_PWRCTL_CTL, ack);
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 	printf("SANTONI SDHCI: PWRCTL %s did not clear (STATUS 0x%08x): "
+ 	    "power handshake failed\n", what, core_rd(CORE_PWRCTL_STATUS));
+@@ -1115,7 +1134,7 @@
+ 			    "dead\n", clk);
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 
+ 	/* Read-modify-write: INT_STABLE is a status bit, never written back. */
+@@ -1158,7 +1177,7 @@
+ 	}
+ 
+ 	hc_wr16(SDHCI_CLOCK_CONTROL, 0);
+-	delay(1);
++	santoni_udelay(1);
+ 
+ 	cmd = gcc_rd(GCC_SDCC1_APPS_CMD_RCGR);
+ 	cfg = gcc_rd(GCC_SDCC1_APPS_CFG_RCGR);
+@@ -1193,7 +1212,7 @@
+ 			    gcc_rd(GCC_SDCC1_APPS_CMD_RCGR));
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 
+ 	printf("SANTONI SDHCI: GCC sdcc1_apps now: CMD 0x%08x CFG 0x%08x "
+@@ -1332,7 +1351,7 @@
+ 			    hc_rd8(SDHCI_SOFTWARE_RESET));
+ 			return ETIMEDOUT;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 	/* RESET_ALL turns off bus power; acknowledge the BUS_OFF request */
+ 	(void)sdhci_pwrctl_ack("BUS_OFF", true);
+@@ -3022,7 +3041,7 @@
+ 		if (tlmm_gpio_get(tlmm, PIN_SCL)) {
+ 			return true;
+ 		}
+-		if (i < 40) delay(1);
++		if (i < 40) santoni_udelay(1);
+ 	}
+ 	santoni_i2c_diag.error = "SCL timeout";
+ 	return false;
+@@ -3033,15 +3052,15 @@
+ {
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	if (!santoni_i2c_scl_high(tlmm)) return false;
+-	delay(20);
++	santoni_udelay(20);
+ 	if (!tlmm_gpio_get(tlmm, PIN_SDA)) {
+ 		santoni_i2c_diag.error = "SDA stuck low";
+ 		return false;
+ 	}
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+-	delay(5);
++	santoni_udelay(5);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+-	delay(5);
++	santoni_udelay(5);
+ 	return true;
+ }
+ 
+@@ -3049,11 +3068,11 @@
+ santoni_i2c_stop(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+-	delay(5);
++	santoni_udelay(5);
+ 	bool ok = santoni_i2c_scl_high(tlmm);
+-	delay(5);
++	santoni_udelay(5);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	delay(5);
++	santoni_udelay(5);
+ 	return ok;
+ }
+ 
+@@ -3067,21 +3086,21 @@
+ 			tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 		}
+ 		/* Preserve the existing 15 us setup/high/low intervals. */
+-		delay(15);
++		santoni_udelay(15);
+ 		if (!santoni_i2c_scl_high(tlmm)) return false;
+ 		/* tHIGH >= 4 us; sample after the bus has settled. */
+-		delay(15);
++		santoni_udelay(15);
+ 		tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 		/* tLOW >= 4.7 us */
+-		delay(15);
++		santoni_udelay(15);
+ 	}
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	delay(15);
++	santoni_udelay(15);
+ 	if (!santoni_i2c_scl_high(tlmm)) return false;
+-	delay(15);
++	santoni_udelay(15);
+ 	bool ack = (tlmm_gpio_get(tlmm, PIN_SDA) == 0);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+-	delay(15);
++	santoni_udelay(15);
+ 	if (!ack) santoni_i2c_diag.error = "NACK";
+ 	return ack;
+ }
+@@ -3092,9 +3111,9 @@
+ 	uint8_t byte = 0;
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	for (int i = 7; i >= 0; i--) {
+-		delay(15);
++		santoni_udelay(15);
+ 		if (!santoni_i2c_scl_high(tlmm)) return false;
+-		delay(15);
++		santoni_udelay(15);
+ 		if (tlmm_gpio_get(tlmm, PIN_SDA)) {
+ 			byte |= (1U << i);
+ 		}
+@@ -3105,11 +3124,11 @@
+ 	} else {
+ 		tlmm_gpio_in(tlmm, PIN_SDA);
+ 	}
+-	delay(15);
++	santoni_udelay(15);
+ 	if (!santoni_i2c_scl_high(tlmm)) return false;
+-	delay(15);
++	santoni_udelay(15);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+-	delay(15);
++	santoni_udelay(15);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	*out = byte;
+ 	return true;
+@@ -3208,7 +3227,7 @@
+ 			    0xffU);
+ 			return true;
+ 		}
+-		delay(1);
++		santoni_udelay(1);
+ 	}
+ 	return false;
+ }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the minimal Apple Device Tree that the SANTONI xnu needs to boot.
 
-Only what the early boot path actually reads (see NOTES.md); every MMIO
+Only what the early boot path actually reads; every MMIO
 address comes from the santoni (Redmi 4X, MSM8937) live FDT.
 Usage:  mkadt.py OUT.adt [--dump] [--qemu] [--native]
 """

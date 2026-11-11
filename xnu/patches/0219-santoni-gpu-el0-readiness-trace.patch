@@ -1,0 +1,35 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index 9b56709..f3d8969 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -185,13 +185,27 @@ static void __attribute__((noinline)) sgpu_cache_invalidate(void *ctx, const voi
+     __asm__ volatile("dsb sy" : : : "memory");
+ }
+
++/* Six diagnostic pauses add 66 seconds before USER readiness. Preserve the
++ * 40-second input/storage startup delay and all hardware waits. Only an exact,
++ * prepared EL0 launcher role skips these log-flush pauses; log writes remain. */
++static bool __attribute__((noinline)) sgpu_trace_pause_required(uint32_t mode)
++{
++    uint32_t enabled = 0;
++    (void)PE_parse_boot_argn("santonigpu_user_exec", &enabled, sizeof(enabled));
++    return mode != 3 || enabled != 1 ||
++        !santoni_gpu_user_launch_options_ok(mode) ||
++        !santoni_gpu_user_launch_worker_ready(mode) ||
++        !santoni_gpu_user_launch_mount_published();
++}
++
+ static void trace(void *ctx, const char *message, uint32_t a, uint32_t b, uint32_t c)
+ {
+     (void)ctx;
+     printf("SANTONI GPU: %s [%08x %08x %08x]\n", message, a, b, c);
+-    /* The existing log ring flushes asynchronously. Bracket new risky stages
+-     * so its last completed stage survives a fabric hang/firmware reset. */
+-    if (strncmp(message, "before ", 7) == 0) sgpu_kernel_wait_us(NULL, 11000000u);
++    /* Persistent logging remains asynchronous. Keep diagnostic pauses for
++     * other roles; the validated EL0 probe has a bounded startup budget. */
++    if (strncmp(message, "before ", 7) == 0 && sgpu_trace_pause_required(sg.mode))
++        sgpu_kernel_wait_us(NULL, 11000000u);
+ }
+
+ /* PAS preparation only: no SCM calls and no secure-mode packets in this patch.

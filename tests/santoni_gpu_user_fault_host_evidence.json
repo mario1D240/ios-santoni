@@ -1,0 +1,154 @@
+{
+  "schema": 1,
+  "success": true,
+  "hardware_verified": false,
+  "source_sha256": "986f7566c537c870717fe2ed3a2bbfbe32e1577b8402b3575ee7afe2d7603be6",
+  "inputs_sha256": {
+    "xnu/patches/0216-santoni-gpu-user-fault-observation.patch": "b023f010a1c758aa64736bd2eb9279c78c3d6c666bdbf675bb0dd61113915c88",
+    "xnu/patches/0217-santoni-gpu-user-fault-osfmk-declarations.patch": "aed1c970aed5f1f1e73b1b85fd9cbe6ae3e3be6f5a5af0006bc4699411e3803d",
+    "xnu/patches/0218-santoni-gpu-user-fault-code-boundary.patch": "2e10d7dcae0cab606c44bc331b100b3024389626533bfed583689b0a89ecafe2",
+    "tests/test_santoni_gpu_user_fault.c": "41e446bfd38369e1983449404c3f6ce2372057a8120e5ef2e4489f8c70dcc834",
+    "tests/verify_santoni_gpu_user_fault.py": "bcca650becbc4142d7c26fa87173bf7dd2bbc3d3b605e5550075fd2f5e523a92"
+  },
+  "baseline_applied": [
+    {
+      "patch": "0004-sweet-machine-config.patch",
+      "sha256": "b18a77a0b994871937a0b4138906f9f1693153c61eca6e598018271360ad5432"
+    },
+    {
+      "patch": "0017-santoni-gicv2-rtclock.patch",
+      "sha256": "3c4bbb6e49c20865595a0cd35aa902bc8d939679d919608a5de2237e807f8b02"
+    },
+    {
+      "patch": "0081-topaz-armv8.0-no-lse-no-pan.patch",
+      "sha256": "f061ab38c8e43d7f518df8d1638f8f2fca49e40fd5319dfe5e33f5a6e6ebdc81"
+    },
+    {
+      "patch": "0167-santoni-smp-irq.patch",
+      "sha256": "d0229db052a2d422e41447d356acb7a688e5dbb95d8104e7249aa277ccc396a4"
+    }
+  ],
+  "original_source_outside_helper_and_three_calls_identical": true,
+  "origin": "out/mode3-initproc-20261103T113740571496Z/bounded-helper0218/native-exception-abi/result.json",
+  "runs": [
+    {
+      "label": "O0",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "case_count": 24,
+      "mutant_rejected": false
+    },
+    {
+      "label": "O0-other-board",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "case_count": 3,
+      "mutant_rejected": false
+    },
+    {
+      "label": "O2",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "case_count": 24,
+      "mutant_rejected": false
+    },
+    {
+      "label": "O2-other-board",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "case_count": 3,
+      "mutant_rejected": false
+    },
+    {
+      "label": "UBSan",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "case_count": 24,
+      "mutant_rejected": false
+    },
+    {
+      "label": "UBSan-other-board",
+      "compile_exit": 0,
+      "run_exit": 0,
+      "case_count": 3,
+      "mutant_rejected": false
+    },
+    {
+      "label": "mutant-kernel",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 1,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-other-process",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 2,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-mode1",
+      "compile_exit": 0,
+      "run_exit": -6,
+      "case_count": 0,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-disabled",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 9,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-unmounted",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 11,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-unready",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 12,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-repeat",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 14,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-swapped-pc",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 14,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-swapped-esr",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 14,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-frame-write",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 14,
+      "mutant_rejected": true
+    },
+    {
+      "label": "mutant-successful-fault",
+      "compile_exit": 0,
+      "run_exit": 1,
+      "case_count": 19,
+      "mutant_rejected": true
+    }
+  ]
+}

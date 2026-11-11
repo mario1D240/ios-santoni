@@ -1,0 +1,596 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -60,6 +60,10 @@
+ #include <os/atomic_private.h>
+ 
+ static void santoni_log_start(void);
++static void santoni_keys_start(void);
++
++extern void sweet_hid_key(int key, int down);
++extern void sweet_hid_touch(int finger, int down, int x, int y);
+ 
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+@@ -2776,6 +2780,7 @@
+ 
+ 	/* Private console log area on SYSTEM, if the partition is there. */
+ 	santoni_log_start();
++	santoni_keys_start();
+ 	return 0;
+ }
+ 
+@@ -2903,6 +2908,476 @@
+ }
+ 
+ /*
++ * SANTONI physical buttons and touchscreen handler.
++ *
++ * Volume Up is TLMM GPIO 91 (active low, register 0x0105b004).
++ * The touch controller is an EDT M06-class FocalTech part ("edt,edt-ft5406"
++ * in the santoni device tree) on blsp1_i2c3: GPIO 10 SDA, GPIO 11 SCL,
++ * GPIO 64 reset (active low), GPIO 65 INT (active low), address 0x38.
++ * VCC is PM8937 L10 (2.8 V) and IOVCC is L5 (1.8 V); L5 is already on as
++ * the eMMC I/O rail, L10 is RPM-managed and only read back here for
++ * diagnosis -- this driver never writes to the PMIC.
++ *
++ * M06 command 0xf9 returns the whole report in one read:
++ *   aa aa 1a | 2 bytes | 5 * {event/xhi, xlo, id/yhi, ylo} | xor crc
++ * Event 0 (down) carries bogus coordinates and is skipped, 1 is up and
++ * 2 is contact/move (Linux edt-ft5x06.c, EDT_M06).
++ */
++#define TLMM_BASE_PHYS          0x01000000UL
++#define TLMM_MAP_SIZE           0x00060000UL
++#define PIN_SDA                 10
++#define PIN_SCL                 11
++#define PIN_TOUCH_RST           64
++#define PIN_TOUCH_INT           65
++#define PIN_VOL_UP              91
++
++#define TLMM_PULL_UP            0x03u
++#define TLMM_DRV_8MA            (3u << 6)
++#define TLMM_OE                 (1u << 9)
++
++#define FT5435_ADDR_W           0x70
++#define FT5435_ADDR_R           0x71
++#define FT5435_CMD_REPORT       0xf9
++#define FT5435_REPORT_LEN       26
++#define FT5435_MAX_POINTS       5
++#define FT5435_EVENT_UP         1
++#define FT5435_EVENT_CONTACT    2
++#define FT5435_EVENT_RESERVED   3
++
++#define SPMI_CORE_PHYS          0x0200f000UL
++#define SPMI_OBS_PHYS           0x02c00000UL
++#define SPMI_APID_MAX           256
++#define SPMI_CMD_EXT_READL      (1U << 27)
++#define SPMI_STATUS_DONE        (1U << 0)
++#define SPMI_STATUS_ERROR       (0x0eU)
++
++static inline uint32_t
++tlmm_cfg_read(vm_offset_t tlmm, uint32_t pin)
++{
++	return *(volatile uint32_t *)(tlmm + pin * 0x1000UL);
++}
++
++static inline uint32_t
++tlmm_io_read(vm_offset_t tlmm, uint32_t pin)
++{
++	return *(volatile uint32_t *)(tlmm + pin * 0x1000UL + 0x04);
++}
++
++static inline void
++tlmm_gpio_in_cfg(vm_offset_t tlmm, uint32_t pin, uint32_t cfg)
++{
++	*(volatile uint32_t *)(tlmm + pin * 0x1000UL) = cfg;
++	__asm__ volatile("dmb ish" ::: "memory");
++}
++
++static inline void
++tlmm_gpio_in(vm_offset_t tlmm, uint32_t pin)
++{
++	tlmm_gpio_in_cfg(tlmm, pin, TLMM_PULL_UP);
++}
++
++static inline void
++tlmm_gpio_out_cfg(vm_offset_t tlmm, uint32_t pin, int high, uint32_t cfg)
++{
++	vm_offset_t reg = tlmm + pin * 0x1000UL;
++	*(volatile uint32_t *)(reg + 0x04) = high ? 1U : 0U;
++	__asm__ volatile("dmb ish" ::: "memory");
++	*(volatile uint32_t *)reg = cfg;
++	__asm__ volatile("dmb ish" ::: "memory");
++}
++
++static inline void
++tlmm_gpio_out_low(vm_offset_t tlmm, uint32_t pin)
++{
++	tlmm_gpio_out_cfg(tlmm, pin, 0, TLMM_OE);
++}
++
++static inline int
++tlmm_gpio_get(vm_offset_t tlmm, uint32_t pin)
++{
++	return (int)(tlmm_io_read(tlmm, pin) & 1U);
++}
++
++static void
++santoni_i2c_start(vm_offset_t tlmm)
++{
++	tlmm_gpio_in(tlmm, PIN_SDA);
++	tlmm_gpio_in(tlmm, PIN_SCL);
++	delay(5);
++	tlmm_gpio_out_low(tlmm, PIN_SDA);
++	delay(5);
++	tlmm_gpio_out_low(tlmm, PIN_SCL);
++	delay(5);
++}
++
++static void
++santoni_i2c_stop(vm_offset_t tlmm)
++{
++	tlmm_gpio_out_low(tlmm, PIN_SDA);
++	delay(5);
++	tlmm_gpio_in(tlmm, PIN_SCL);
++	delay(5);
++	tlmm_gpio_in(tlmm, PIN_SDA);
++	delay(5);
++}
++
++static bool
++santoni_i2c_write(vm_offset_t tlmm, uint8_t byte)
++{
++	for (int i = 7; i >= 0; i--) {
++		if ((byte >> i) & 1) {
++			tlmm_gpio_in(tlmm, PIN_SDA);
++		} else {
++			tlmm_gpio_out_low(tlmm, PIN_SDA);
++		}
++		delay(3);
++		tlmm_gpio_in(tlmm, PIN_SCL);
++		delay(3);
++		tlmm_gpio_out_low(tlmm, PIN_SCL);
++		delay(3);
++	}
++	tlmm_gpio_in(tlmm, PIN_SDA);
++	delay(3);
++	tlmm_gpio_in(tlmm, PIN_SCL);
++	delay(3);
++	bool ack = (tlmm_gpio_get(tlmm, PIN_SDA) == 0);
++	tlmm_gpio_out_low(tlmm, PIN_SCL);
++	delay(3);
++	return ack;
++}
++
++static uint8_t
++santoni_i2c_read(vm_offset_t tlmm, bool ack)
++{
++	uint8_t byte = 0;
++	tlmm_gpio_in(tlmm, PIN_SDA);
++	for (int i = 7; i >= 0; i--) {
++		delay(3);
++		tlmm_gpio_in(tlmm, PIN_SCL);
++		delay(3);
++		if (tlmm_gpio_get(tlmm, PIN_SDA)) {
++			byte |= (1U << i);
++		}
++		tlmm_gpio_out_low(tlmm, PIN_SCL);
++	}
++	if (ack) {
++		tlmm_gpio_out_low(tlmm, PIN_SDA);
++	} else {
++		tlmm_gpio_in(tlmm, PIN_SDA);
++	}
++	delay(3);
++	tlmm_gpio_in(tlmm, PIN_SCL);
++	delay(3);
++	tlmm_gpio_out_low(tlmm, PIN_SCL);
++	delay(3);
++	tlmm_gpio_in(tlmm, PIN_SDA);
++	return byte;
++}
++
++static bool
++santoni_ft5435_read(vm_offset_t tlmm, uint8_t reg, uint8_t *buf, size_t len)
++{
++	santoni_i2c_start(tlmm);
++	if (!santoni_i2c_write(tlmm, FT5435_ADDR_W)) {
++		santoni_i2c_stop(tlmm);
++		return false;
++	}
++	if (!santoni_i2c_write(tlmm, reg)) {
++		santoni_i2c_stop(tlmm);
++		return false;
++	}
++	santoni_i2c_start(tlmm); /* repeated start */
++	if (!santoni_i2c_write(tlmm, FT5435_ADDR_R)) {
++		santoni_i2c_stop(tlmm);
++		return false;
++	}
++	for (size_t i = 0; i < len; i++) {
++		buf[i] = santoni_i2c_read(tlmm, i + 1 < len);
++	}
++	santoni_i2c_stop(tlmm);
++	return true;
++}
++
++/*
++ * Read one PMIC register through the SPMI arbiter, observer channel.
++ * Read-only: the RPM owns the PM8937 regulators, and a direct write has
++ * been observed to reset Qualcomm phones of this generation.
++ */
++static bool
++santoni_spmi_read(uint16_t addr, uint8_t *out)
++{
++	static vm_offset_t core, obs;
++	static int obs_apid = -1;
++	uint16_t ppid = (addr >> 8) & 0xfffU;
++	int apid = -1;
++
++	if (!core) {
++		core = ml_io_map(SPMI_CORE_PHYS, 0x1000);
++		if (!core) {
++			return false;
++		}
++	}
++	for (int i = 0; i < SPMI_APID_MAX; i++) {
++		uint32_t map = *(volatile uint32_t *)(core + 0x800 + 4 * i);
++		if (map && ((map >> 8) & 0xfffU) == ppid) {
++			apid = i;
++			break;
++		}
++	}
++	if (apid < 0) {
++		return false;
++	}
++	if (apid != obs_apid) {
++		obs = ml_io_map(SPMI_OBS_PHYS + 0x8000UL * (uint32_t)apid, 0x1000);
++		obs_apid = obs ? apid : -1;
++		if (!obs) {
++			return false;
++		}
++	}
++	*(volatile uint32_t *)(obs + 0x00) =
++	    SPMI_CMD_EXT_READL | ((uint32_t)(addr & 0xffU) << 4);
++	__asm__ volatile("dsb sy" ::: "memory");
++	for (int i = 0; i < 1000; i++) {
++		uint32_t status = *(volatile uint32_t *)(obs + 0x08);
++		if (status & SPMI_STATUS_DONE) {
++			if (status & SPMI_STATUS_ERROR) {
++				return false;
++			}
++			*out = (uint8_t)(*(volatile uint32_t *)(obs + 0x18) &
++			    0xffU);
++			return true;
++		}
++		delay(1);
++	}
++	return false;
++}
++
++static void
++santoni_pmic_report(void)
++{
++	static const struct {
++		const char *name;
++		uint16_t base;
++	} rails[] = {
++		{ "L5",  0x4400 },
++		{ "L10", 0x4900 },
++	};
++
++	for (unsigned i = 0; i < sizeof(rails) / sizeof(rails[0]); i++) {
++		uint8_t en = 0, range = 0, vset = 0;
++		bool ok = santoni_spmi_read(rails[i].base | 0x46, &en) &&
++		    santoni_spmi_read(rails[i].base | 0x40, &range) &&
++		    santoni_spmi_read(rails[i].base | 0x41, &vset);
++		if (ok) {
++			printf("SANTONI PMIC: %s en=%#x (%s) range=%#x "
++			    "vset=%#x\n", rails[i].name, en,
++			    (en & 0x80) ? "on" : "off", range, vset);
++		} else {
++			printf("SANTONI PMIC: %s read failed (SPMI)\n",
++			    rails[i].name);
++		}
++	}
++}
++
++/*
++ * 0: header and CRC good, 1: header good but CRC bad (still parsed),
++ * -1: no I2C ACK, -2: no M06 response header.
++ */
++static int
++santoni_ft5435_report(vm_offset_t tlmm, uint8_t *report)
++{
++	if (!santoni_ft5435_read(tlmm, FT5435_CMD_REPORT, report,
++	    FT5435_REPORT_LEN)) {
++		return -1;
++	}
++	if (report[0] != 0xaa || report[1] != 0xaa ||
++	    report[2] != FT5435_REPORT_LEN) {
++		return -2;
++	}
++	uint8_t crc = 0;
++	for (int i = 0; i < FT5435_REPORT_LEN - 1; i++) {
++		crc ^= report[i];
++	}
++	return (crc == report[FT5435_REPORT_LEN - 1]) ? 0 : 1;
++}
++
++static void
++santoni_pin_log(vm_offset_t tlmm, const char *name, uint32_t pin)
++{
++	printf("SANTONI KEYS: %s gpio%u cfg=%#x in=%u\n", name, pin,
++	    tlmm_cfg_read(tlmm, pin), (unsigned)tlmm_gpio_get(tlmm, pin));
++}
++
++static void
++santoni_keys_thread(__unused void *param, __unused wait_result_t wr)
++{
++	vm_offset_t tlmm = ml_io_map(TLMM_BASE_PHYS, TLMM_MAP_SIZE);
++	if (!tlmm) {
++		printf("SANTONI KEYS: failed to map TLMM MMIO\n");
++		return;
++	}
++
++	santoni_pin_log(tlmm, "VolUp", PIN_VOL_UP);
++	santoni_pin_log(tlmm, "touch-reset", PIN_TOUCH_RST);
++	santoni_pin_log(tlmm, "touch-int", PIN_TOUCH_INT);
++	santoni_pin_log(tlmm, "touch-sda", PIN_SDA);
++	santoni_pin_log(tlmm, "touch-scl", PIN_SCL);
++
++	/* Device-tree pin states: GPIO, pull-up, 2 mA for keys/I2C, 8 mA
++	 * for the touch reset and interrupt lines. */
++	tlmm_gpio_in_cfg(tlmm, PIN_VOL_UP, TLMM_PULL_UP);
++	tlmm_gpio_in_cfg(tlmm, PIN_TOUCH_INT, TLMM_PULL_UP | TLMM_DRV_8MA);
++	tlmm_gpio_in(tlmm, PIN_SDA);
++	tlmm_gpio_in(tlmm, PIN_SCL);
++
++	/* Reset is active low: assert 20 ms, release, then give the M06
++	 * firmware 300 ms to boot before the first I2C access. */
++	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 0,
++	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
++	delay(20 * 1000);
++	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 1,
++	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
++	delay(300 * 1000);
++	printf("SANTONI KEYS: touch out of reset (64 cfg=%#x out=%u, "
++	    "int=%u)\n", tlmm_cfg_read(tlmm, PIN_TOUCH_RST),
++	    (unsigned)tlmm_gpio_get(tlmm, PIN_TOUCH_RST),
++	    (unsigned)tlmm_gpio_get(tlmm, PIN_TOUCH_INT));
++
++	santoni_pmic_report();
++
++	uint8_t probe[FT5435_REPORT_LEN];
++	int prc = santoni_ft5435_report(tlmm, probe);
++	if (prc == 0 || prc == 1) {
++		printf("SANTONI TOUCH: probe hdr=%02x %02x %02x crc=%s "
++		    "raw=%02x %02x %02x %02x\n", probe[0], probe[1], probe[2],
++		    prc ? "bad" : "ok", probe[5], probe[6], probe[7], probe[8]);
++	} else {
++		printf("SANTONI TOUCH: probe failed (%s)\n",
++		    prc == -1 ? "I2C NACK at 0x38" : "no aa aa 1a header");
++	}
++
++	bool active[10] = {false};
++	int last_x[10] = {0};
++	int last_y[10] = {0};
++	bool volup_raw = (tlmm_gpio_get(tlmm, PIN_VOL_UP) == 0);
++	bool volup_last = volup_raw;
++	int volup_stable = 0;
++	unsigned int tick = 0, nack = 0, bad = 0, crc_bad = 0, reports = 0;
++
++	for (;;) {
++		/* Volume Up with a three-sample debounce (loop is 100 Hz). */
++		bool now = (tlmm_gpio_get(tlmm, PIN_VOL_UP) == 0);
++		if (now == volup_raw) {
++			if (volup_stable < 3) {
++				volup_stable++;
++			}
++		} else {
++			volup_raw = now;
++			volup_stable = 0;
++		}
++		if (volup_stable >= 3 && now != volup_last) {
++			volup_last = now;
++			printf("SANTONI KEYS: VolUp %s (91 in=%u)\n",
++			    now ? "PRESSED" : "RELEASED",
++			    (unsigned)tlmm_gpio_get(tlmm, PIN_VOL_UP));
++			sweet_hid_key(1, now ? 1 : 0);
++			sweet_hid_key(3, now ? 1 : 0);
++		}
++
++		/* INT is active low; also poll once a second so a dead INT
++		 * line cannot hide a responsive controller. */
++		tick++;
++		if (tlmm_gpio_get(tlmm, PIN_TOUCH_INT) == 0 ||
++		    (tick % 100) == 0) {
++			uint8_t report[FT5435_REPORT_LEN];
++			int rc = santoni_ft5435_report(tlmm, report);
++			if (rc == 0 || rc == 1) {
++				reports++;
++				if (reports <= 3) {
++					printf("SANTONI TOUCH: report %u hdr="
++					    "%02x %02x %02x crc=%s raw=%02x "
++					    "%02x %02x %02x\n", reports,
++					    report[0], report[1], report[2],
++					    rc ? "bad" : "ok", report[5],
++					    report[6], report[7], report[8]);
++				} else if (rc == 1 && (++crc_bad % 100) == 1) {
++					printf("SANTONI TOUCH: CRC error "
++					    "(total %u)\n", crc_bad);
++				}
++				bool seen[10] = {false};
++				for (int i = 0; i < FT5435_MAX_POINTS; i++) {
++					const uint8_t *p = &report[5 + i * 4];
++					int event = p[0] >> 6;
++					int id = (p[2] >> 4) & 0x0f;
++					int x = ((p[0] & 0x0f) << 8) | p[1];
++					int y = ((p[2] & 0x0f) << 8) | p[3];
++					if (event == 0 ||
++					    event == FT5435_EVENT_RESERVED) {
++						continue;
++					}
++					if (id >= 10) {
++						continue;
++					}
++					seen[id] = true;
++					bool down = (event != FT5435_EVENT_UP);
++					if (down) {
++						last_x[id] = x;
++						last_y[id] = y;
++					}
++					if (down != active[id]) {
++						active[id] = down;
++						if (reports <= 20) {
++							printf("SANTONI TOUCH: "
++							    "id=%d %s x=%d "
++							    "y=%d\n", id,
++							    down ? "down" : "up",
++							    down ? x : last_x[id],
++							    down ? y : last_y[id]);
++						}
++						sweet_hid_touch(id, down ? 1 : 0,
++						    down ? x : last_x[id],
++						    down ? y : last_y[id]);
++					} else if (down) {
++						sweet_hid_touch(id, 1, x, y);
++					}
++				}
++				for (int id = 0; id < 10; id++) {
++					if (active[id] && !seen[id]) {
++						active[id] = false;
++						sweet_hid_touch(id, 0,
++						    last_x[id], last_y[id]);
++					}
++				}
++			} else if (rc == -1) {
++				nack++;
++				if (nack <= 5 || (nack % 500) == 0) {
++					printf("SANTONI TOUCH: I2C NACK at "
++					    "0x38 (total %u)\n", nack);
++				}
++			} else {
++				bad++;
++				if (bad <= 5 || (bad % 100) == 0) {
++					printf("SANTONI TOUCH: bad header "
++					    "%02x %02x %02x (total %u)\n",
++					    report[0], report[1], report[2], bad);
++				}
++			}
++		}
++
++		delay_for_interval(10, NSEC_PER_MSEC);
++	}
++}
++
++static void
++santoni_keys_start(void)
++{
++	thread_t thread;
++	if (kernel_thread_start(santoni_keys_thread, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	}
++}
++
++/*
+  * Idempotent, non-fatal probe. IOKitBSDInit calls this on every boot before
+  * IOFindBSDRoot: a missing or unhappy eMMC must not panic a RAM-disk boot.
+  * The first attempt is remembered, so rd=emmcroot0 cannot initialise twice.
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -415,14 +415,37 @@
+ 	SweetHIDButtons *self = (SweetHIDButtons *)owner;
+ 
+ 	/*
+-	 * Home (Menu) press, then the release 100 ms later; Setup's "Hello"
+-	 * screen waits for it. Even counts press, odd counts release.
++	 * Home (Menu) press, then the release 150 ms later.
++	 * Even counts press, odd counts release.
+ 	 */
+ 	bool press = (self->fTestCount & 1) == 0;
+ 	self->key(kHIDUsage_Csmr_Menu, press);
+-	if (++self->fTestCount < 60) {
+-		sender->setTimeoutMS(press ? 100 : self->fTestSecs * 1000);
+-	}
++
++	/*
++	 * Simulate the upward home-indicator swipe that unlocks iPhone X.
++	 * Only the first three presses do this: once SpringBoard is on the
++	 * Home Screen, y = 1220 sits on the Safari dock icon and an endless
++	 * stream of swipes keeps launching Safari.  Start at y = 1270 (the
++	 * dock background, still inside the 48 px edge-tip zone) so even a
++	 * late swipe cannot hit an icon.
++	 */
++	if (press && gSweetTouch && self->fTestCount < 6) {
++		int cx = 360;
++		gSweetTouch->touch(0, true, cx, 1270);
++		for (int cy = 1050; cy >= 450; cy -= 200) {
++			delay_for_interval(10, NSEC_PER_MSEC);
++			gSweetTouch->touch(0, true, cx, cy);
++		}
++		delay_for_interval(10, NSEC_PER_MSEC);
++		gSweetTouch->touch(0, false, cx, 450);
++	}
++
++	self->fTestCount++;
++	if (self->fTestCount >= 6) {
++		IOLog("SWEET HID: unlock sequence complete, synthetic input idle\n");
++		return;		/* sweetfb_stayon keeps the panel lit */
++	}
++	sender->setTimeoutMS(press ? 150 : self->fTestSecs * 1000);
+ }
+ 
+ bool
+@@ -432,12 +455,19 @@
+ 	if (!fLock || !IOHIDEventService::start(provider)) {
+ 		return false;
+ 	}
++#if defined(ARM64_BOARD_CONFIG_SANTONI) || defined(SANTONI)
++	fLogicalW = 720;
++	fLogicalH = 1280;
++	fOffX = 0;
++	fOffY = 0;
++#else
+ 	int native = 0;
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
+ 	fLogicalW = native ? 1080 : 1125;
+ 	fLogicalH = native ? 2400 : 2436;
+ 	fOffX = ((fLogicalW - 1080) / 2) & ~3;           /* as SweetFramebuffer.cpp */
+ 	fOffY = (fLogicalH - 2400) / 2;
++#endif
+ 	/* The digitizer covers the main display (backboardd maps it 1:1). */
+ 	setProperty("DisplayIntegrated", kOSBooleanTrue);
+ 	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
+@@ -458,12 +488,17 @@
+ 	if (finger < 0 || finger >= SWEET_TOUCH_FINGERS) {
+ 		return;
+ 	}
++#if defined(ARM64_BOARD_CONFIG_SANTONI) || defined(SANTONI)
++	x = x < 0 ? 0 : (x > 719 ? 719 : x);
++	y = y < 0 ? 0 : (y > 1279 ? 1279 : y);
++#else
+ 	x = x < 0 ? 0 : (x > 1079 ? 1079 : x);
+ 	y = y < 0 ? 0 : (y > 2399 ? 2399 : y);
++#endif
+ 
+ 	IOLockLock(fLock);
+ 	bool was = fDown[finger];
+-	/* Panel pixels -> the presented 1125x2436 display (SweetFramebuffer.cpp). */
++	/* Panel pixels -> the presented display coordinates. */
+ 	IOFixed nx = (IOFixed)(((int64_t)(x + fOffX) << 16) / fLogicalW);
+ 	IOFixed ny = (IOFixed)(((int64_t)(y + fOffY) << 16) / fLogicalH);
+ 	bool moved = down && (nx != fX[finger] || ny != fY[finger]);
+@@ -472,8 +507,13 @@
+ 		return;
+ 	}
+ 	if (!was && down) {
++#if defined(ARM64_BOARD_CONFIG_SANTONI) || defined(SANTONI)
++		fEdge[finger] = x < SWEET_TOUCH_EDGE_PX || x > 719 - SWEET_TOUCH_EDGE_PX ||
++		    y < SWEET_TOUCH_EDGE_PX || y > 1279 - SWEET_TOUCH_EDGE_PX;
++#else
+ 		fEdge[finger] = x < SWEET_TOUCH_EDGE_PX || x > 1079 - SWEET_TOUCH_EDGE_PX ||
+ 		    y < SWEET_TOUCH_EDGE_PX || y > 2399 - SWEET_TOUCH_EDGE_PX;
++#endif
+ 	}
+ 
+ 	collection = IOHIDEvent::digitizerEvent(now, 0, kIOHIDDigitizerTransducerTypeHand, false, 0, 0, 0);

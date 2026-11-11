@@ -1,0 +1,1125 @@
+Subject: [PATCH] santoni: honor physical touch and RPM wire contracts
+
+Apply after 0164. Propagate every bitbang clock timeout and retain the
+first failing stage. Identify firmware before choosing its report format;
+read all five generic FT slots, including UP after count/INT deassertion.
+Validate SMEM allocations and Linux partition layout, consume partial SMD
+packets header-first, and accept only complete matching RPM FIFO replies.
+Auxiliary SMEM bases must match an explicit mapped bank and stay within it.
+Message-RAM dumps are diagnostic, not fresh ACKs; the unestablished GLINK
+experiment is no longer called by the SMD voting path. Retry both supplies.
+
+Host contract checks are not physical rail, touch, or kernel verification.
+The working HID auto-swipe and unrelated storage/boot/display code are unchanged.
+
+diff --git a/bsd/dev/santoni_sdhci.c b/bsd/dev/santoni_sdhci.c
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -2911,16 +2911,19 @@
+  * SANTONI physical buttons and touchscreen handler.
+  *
+  * Volume Up is TLMM GPIO 91 (active low, register 0x0105b004).
+- * The touch controller is an EDT M06-class FocalTech part ("edt,edt-ft5406"
+- * in the santoni device tree) on blsp1_i2c3: GPIO 10 SDA, GPIO 11 SCL,
++ * The FocalTech controller ("edt,edt-ft5406" in the device tree) is on
++ * blsp1_i2c3: GPIO 10 SDA, GPIO 11 SCL,
+  * GPIO 64 reset (active low), GPIO 65 INT (active low), address 0x38.
+- * VCC is PM8937 L10 (2.85 V) and IOVCC is L5 (1.8 V).  Nothing in the
+- * boot chain votes L10, so after a fastboot boot the controller sits
+- * unpowered and never ACKs; santoni_rpm_ldo() asks the RPM to enable it
++ * VCC is PM8937 L10 (2.85 V) and IOVCC is L5 (1.8 V). Their boot-time
++ * electrical state is not established by an I2C NACK or GPIO input.
++ * santoni_rpm_ldo() asks the RPM to enable both supplies
+  * over the rpm_requests SMD channel (mainline qcom_smd-regulator does the
+  * same).  This driver still never writes a PMIC register directly.
+  *
+- * M06 command 0xf9 returns the whole report in one read:
++ * Firmware identification, not the DT compatible, selects the format.
++ * Generic FT reports are 33 bytes at 0x00, with five 6-byte slots (UP
++ * slots are present even when the active count is zero). M06 command
++ * 0xf9 returns the whole report in one read:
+  *   aa aa 1a | 2 bytes | 5 * {event/xhi, xlo, id/yhi, ylo} | xor crc
+  * Event 0 (down) carries bogus coordinates and is skipped, 1 is up and
+  * 2 is contact/move (Linux edt-ft5x06.c, EDT_M06).
+@@ -2946,6 +2949,12 @@
+ #define FT5435_EVENT_CONTACT    2
+ #define FT5435_EVENT_RESERVED   3
+ 
++static struct {
++	const char *stage, *error;
++	uint8_t reg;
++	size_t byte;
++} santoni_i2c_diag;
++
+ #define SPMI_CORE_PHYS          0x0200f000UL
+ #define SPMI_OBS_PHYS           0x02c00000UL
+ #define SPMI_APID_MAX           256
+@@ -3001,46 +3010,51 @@
+ }
+ 
+ /*
+- * Release SCL and wait until it really reads high: the TLMM pull-up is
+- * weak (~30 uA) so edges are slow, and the controller may stretch the
+- * clock.  Proceed anyway after ~40 us so a stuck line cannot hang boot.
++ * Open-drain SCL: wait at most 40 us for a high input. A timeout aborts
++ * the transaction; SDA low without a clock is not an ACK. Keep the
++ * existing conservative timings; analogue rise times are unmeasured.
+  */
+ static bool
+ santoni_i2c_scl_high(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_in_cfg(tlmm, PIN_SCL, TLMM_PULL_UP);
+-	for (int i = 0; i < 40; i++) {
++	for (int i = 0; i <= 40; i++) {
+ 		if (tlmm_gpio_get(tlmm, PIN_SCL)) {
+ 			return true;
+ 		}
+-		delay(1);
+-	}
++		if (i < 40) delay(1);
++	}
++	santoni_i2c_diag.error = "SCL timeout";
+ 	return false;
+ }
+ 
+-static void
++static bool
+ santoni_i2c_start(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	santoni_i2c_scl_high(tlmm);
+-	/* tBUF/tSU;STA >= 4.7 us; hold 20 us so the weak 30 uA pull-up
+-	 * fully charges the bus before we pull SDA low. */
++	if (!santoni_i2c_scl_high(tlmm)) return false;
+ 	delay(20);
++	if (!tlmm_gpio_get(tlmm, PIN_SDA)) {
++		santoni_i2c_diag.error = "SDA stuck low";
++		return false;
++	}
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 	delay(5);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 	delay(5);
+-}
+-
+-static void
++	return true;
++}
++
++static bool
+ santoni_i2c_stop(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 	delay(5);
+-	santoni_i2c_scl_high(tlmm);
++	bool ok = santoni_i2c_scl_high(tlmm);
+ 	delay(5);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	delay(5);
++	return ok;
+ }
+ 
+ static bool
+@@ -3052,11 +3066,9 @@
+ 		} else {
+ 			tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 		}
+-		/* tSU;DAT >= 250 ns; give 15 us so SDA settles before SCL
+-		 * rises.  At 47 kohm pull-up and 100 pF: tau ~= 5 us,
+-		 * 15 us covers 3 tau = 95% of VDD = 1.71 V > VIH 1.26 V. */
++		/* Preserve the existing 15 us setup/high/low intervals. */
+ 		delay(15);
+-		santoni_i2c_scl_high(tlmm);
++		if (!santoni_i2c_scl_high(tlmm)) return false;
+ 		/* tHIGH >= 4 us; sample after the bus has settled. */
+ 		delay(15);
+ 		tlmm_gpio_out_low(tlmm, PIN_SCL);
+@@ -3065,22 +3077,23 @@
+ 	}
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	delay(15);
+-	santoni_i2c_scl_high(tlmm);
++	if (!santoni_i2c_scl_high(tlmm)) return false;
+ 	delay(15);
+ 	bool ack = (tlmm_gpio_get(tlmm, PIN_SDA) == 0);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 	delay(15);
++	if (!ack) santoni_i2c_diag.error = "NACK";
+ 	return ack;
+ }
+ 
+-static uint8_t
+-santoni_i2c_read(vm_offset_t tlmm, bool ack)
++static bool
++santoni_i2c_read(vm_offset_t tlmm, uint8_t *out, bool ack)
+ {
+ 	uint8_t byte = 0;
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	for (int i = 7; i >= 0; i--) {
+ 		delay(15);
+-		santoni_i2c_scl_high(tlmm);
++		if (!santoni_i2c_scl_high(tlmm)) return false;
+ 		delay(15);
+ 		if (tlmm_gpio_get(tlmm, PIN_SDA)) {
+ 			byte |= (1U << i);
+@@ -3093,36 +3106,50 @@
+ 		tlmm_gpio_in(tlmm, PIN_SDA);
+ 	}
+ 	delay(15);
+-	santoni_i2c_scl_high(tlmm);
++	if (!santoni_i2c_scl_high(tlmm)) return false;
+ 	delay(15);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 	delay(15);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	return byte;
++	*out = byte;
++	return true;
+ }
+ 
+ static bool
+ santoni_ft5435_read(vm_offset_t tlmm, uint8_t reg, uint8_t *buf, size_t len)
+ {
+-	santoni_i2c_start(tlmm);
+-	if (!santoni_i2c_write(tlmm, FT5435_ADDR_W)) {
+-		santoni_i2c_stop(tlmm);
++	santoni_i2c_diag.reg = reg;
++	santoni_i2c_diag.byte = 0;
++	santoni_i2c_diag.error = "none";
++	santoni_i2c_diag.stage = "start";
++	if (!buf || !len) {
++		santoni_i2c_diag.error = "invalid buffer/length";
+ 		return false;
+ 	}
+-	if (!santoni_i2c_write(tlmm, reg)) {
+-		santoni_i2c_stop(tlmm);
+-		return false;
+-	}
+-	santoni_i2c_start(tlmm); /* repeated start */
+-	if (!santoni_i2c_write(tlmm, FT5435_ADDR_R)) {
+-		santoni_i2c_stop(tlmm);
+-		return false;
+-	}
++	if (!santoni_i2c_start(tlmm)) goto failed;
++	santoni_i2c_diag.stage = "write-address";
++	if (!santoni_i2c_write(tlmm, FT5435_ADDR_W)) goto failed;
++	santoni_i2c_diag.stage = "command";
++	if (!santoni_i2c_write(tlmm, reg)) goto failed;
++	santoni_i2c_diag.stage = "repeated-start";
++	if (!santoni_i2c_start(tlmm)) goto failed;
++	santoni_i2c_diag.stage = "read-address";
++	if (!santoni_i2c_write(tlmm, FT5435_ADDR_R)) goto failed;
++	santoni_i2c_diag.stage = "data";
+ 	for (size_t i = 0; i < len; i++) {
+-		buf[i] = santoni_i2c_read(tlmm, i + 1 < len);
+-	}
+-	santoni_i2c_stop(tlmm);
++		santoni_i2c_diag.byte = i;
++		if (!santoni_i2c_read(tlmm, &buf[i], i + 1 < len)) goto failed;
++	}
++	santoni_i2c_diag.stage = "stop";
++	if (!santoni_i2c_stop(tlmm)) return false;
+ 	return true;
++failed: {
++	/* Best-effort STOP, always release both lines, preserve first error. */
++	const char *error = santoni_i2c_diag.error;
++	(void)santoni_i2c_stop(tlmm);
++	santoni_i2c_diag.error = error;
++	return false;
++}
+ }
+ 
+ /*
+@@ -3250,7 +3277,7 @@
+ #define SMEM_PTABLE_OFFSET      (SMEM_MAP_SIZE - 0x1000u)
+ #define SMEM_PTABLE_MAGIC       0x434f5424u     /* "$TOC" */
+ #define SMEM_PTABLE_HDR         32u
+-#define SMEM_PENTRY_SIZE        40u
++#define SMEM_PENTRY_SIZE        48u /* 20-byte fields + reserved[7] */
+ #define SMEM_PART_HDR_SIZE      32u
+ #define SMEM_PART_MAGIC         0x54525024u     /* "$PRT" */
+ #define SMEM_GLOBAL_HOST        0xfffeu
+@@ -3296,11 +3323,13 @@
+ 
+ /*
+  * GLINK-RPM native transport (ported from ios-sailfish bsd/dev/sweet_rpm.c,
+- * silicon-proven on msm8996): if the second msg-ram bank ends with a "grt0"
++ * silicon-proven on msm8996, NOT on santoni): if the second msg-ram bank ends with a "grt0"
+  * TOC, this RPM firmware speaks glink for data and the SMD channel state
+  * machine is just a facade -- discover the ap2r/r2ap FIFOs from the TOC and
+  * run the VERSION/OPEN/TX_DATA handshake on them.  Only used after the SMD
+  * data path stays silent; the doorbell is the same APCS1 IPC bit 0.
++ * Historical experiment only: no call from the Santoni voting path. Its
++ * DT declares SMD, and neither a GLINK TOC nor handshake is established.
+  */
+ #define GLINK_TOC_MAGIC         0x67727430u     /* "grt0" */
+ #define GLINK_FIFO_AP2R         0x61703272u
+@@ -3315,7 +3344,7 @@
+ 
+ struct santoni_smd {
+ 	vm_offset_t smem, ipc, msgram;
+-	bool mapped, word, open;
++	bool mapped, word, open, global_partition;
+ 	uint32_t fifo_aux, fifo_off;   /* raw toc entry of the fifo item */
+ 	bool alt_tried;
+ 	/* glink (see the GLINK_ block above) */
+@@ -3330,6 +3359,8 @@
+ 	uint8_t resp[128];
+ 	uint32_t resp_len;
+ 	bool resp_ready;
++	uint32_t rx_remaining, rx_received;
++	bool rx_discard;
+ };
+ 
+ static struct santoni_smd santoni_smd;
+@@ -3375,7 +3406,8 @@
+ static vm_offset_t
+ santoni_smem_item_legacy(uint32_t item, size_t *size)
+ {
+-	if (item >= SMEM_ITEM_COUNT) {
++	if (size) *size = 0;
++	if (!size || !santoni_smd.smem || item >= SMEM_ITEM_COUNT) {
+ 		return 0;
+ 	}
+ 	volatile uint32_t *toc = (volatile uint32_t *)(santoni_smd.smem +
+@@ -3390,11 +3422,11 @@
+ 	if (base == 0 || base == (uint32_t)SMEM_PHYS) {
+ 		region = santoni_smd.smem;
+ 		region_size = SMEM_MAP_SIZE;
+-	} else if (base >= (uint32_t)RPM_MSGRAM_PHYS &&
+-	    base < (uint32_t)RPM_MSGRAM_PHYS + RPM_MSGRAM_SIZE &&
++	} else if ((base == (uint32_t)RPM_MSGRAM_PHYS ||
++	    base == (uint32_t)RPM_MSGRAM_PHYS + 0x8000u) &&
+ 	    santoni_smd.msgram) {
+ 		region = santoni_smd.msgram + (base - (uint32_t)RPM_MSGRAM_PHYS);
+-		region_size = RPM_MSGRAM_SIZE - (base - (uint32_t)RPM_MSGRAM_PHYS);
++		region_size = 0x8000u; /* explicit auxiliary banks, not arbitrary aliases */
+ 	} else {
+ 		printf("SANTONI RPM: smem item %u in unmapped region %#x\n",
+ 		    item, base);
+@@ -3410,34 +3442,41 @@
+ static vm_offset_t santoni_smem_item_partition(uint32_t item, size_t *size);
+ 
+ /*
+- * Find an item: legacy toc[] first (it is the live directory and points
+- * the channel info/fifo at the RPM message ram), the "$TOC" global
+- * partition only as a fallback. Logs what it saw once, so one photo
+- * shows the real SMEM layout of this phone.
++ * qcom_smem_get(HOST_ANY): use the global partition when present;
++ * otherwise use the legacy heap, including its explicit auxiliary base.
++ * Never fall back to a stale legacy allocation after a partition error.
+  */
+ static vm_offset_t
+ santoni_smem_item(uint32_t item, size_t *size)
+ {
+-	vm_offset_t p = santoni_smem_item_legacy(item, size);
+-	if (p) {
++	vm_offset_t p = santoni_smem_item_partition(item, size);
++	if (p || santoni_smd.global_partition) {
+ 		return p;
+ 	}
+-	return santoni_smem_item_partition(item, size);
+-}
+-
+-/* "$TOC" global-partition path (fallback). */
++	return santoni_smem_item_legacy(item, size);
++}
++
++/* Linux smem.c: uncached headers precede data; cached headers follow it. */
+ static vm_offset_t
+ santoni_smem_item_partition(uint32_t item, size_t *size)
+ {
+ 	static bool logged;
+ 	vm_offset_t sm = santoni_smd.smem;
++	if (size) *size = 0;
++	santoni_smd.global_partition = false;
++	if (!sm || !size || item >= SMEM_ITEM_COUNT) return 0;
+ 	vm_offset_t pt = sm + SMEM_PTABLE_OFFSET;
+ 	vm_offset_t part = 0;
+-	uint32_t psize = 0;
++	uint32_t psize = 0, cacheline = 0;
+ 	uint32_t magic = *(volatile uint32_t *)pt;
+ 	uint32_t n = *(volatile uint32_t *)(pt + 8);
+ 
+-	if (magic == SMEM_PTABLE_MAGIC && n <= 32u) {
++	if (magic == SMEM_PTABLE_MAGIC) {
++		if (*(volatile uint32_t *)(pt + 4) != 1u ||
++		    n > (0x1000u - SMEM_PTABLE_HDR) / SMEM_PENTRY_SIZE) {
++			santoni_smd.global_partition = true; /* malformed topology */
++			return 0;
++		}
+ 		for (uint32_t i = 0; i < n; i++) {
+ 			vm_offset_t e = pt + SMEM_PTABLE_HDR + SMEM_PENTRY_SIZE * i;
+ 			uint32_t off = *(volatile uint32_t *)e;
+@@ -3448,10 +3487,14 @@
+ 				printf("SANTONI SMEM: pentry%u off=%#x sz=%#x "
+ 				    "h0=%hx h1=%hx\n", i, off, sz, h0, h1);
+ 			}
+-			if (off && sz && (uint64_t)off + sz <= SMEM_MAP_SIZE &&
+-			    h0 == SMEM_GLOBAL_HOST && h1 == SMEM_GLOBAL_HOST) {
++			if (h0 == SMEM_GLOBAL_HOST && h1 == SMEM_GLOBAL_HOST) {
++				santoni_smd.global_partition = true;
++				if (part || !off || (off & 3u) || (sz & 3u) ||
++				    sz < SMEM_PART_HDR_SIZE || off >= SMEM_PTABLE_OFFSET ||
++				    sz > SMEM_PTABLE_OFFSET - off) return 0;
+ 				part = sm + off;
+ 				psize = sz;
++				cacheline = *(volatile uint32_t *)(e + 16);
+ 			}
+ 		}
+ 	}
+@@ -3462,44 +3505,60 @@
+ 		uint16_t ph1 = *(volatile uint16_t *)(part + 6);
+ 		uint32_t psz = *(volatile uint32_t *)(part + 8);
+ 		uint32_t fre = *(volatile uint32_t *)(part + 12);
++		uint32_t cached = *(volatile uint32_t *)(part + 16);
++		__asm__ volatile("dmb ish" ::: "memory");
+ 		if (!logged) {
+ 			printf("SANTONI SMEM: part=%#x sz=%#x free=%#x "
+ 			    "magic=%#x h=%hx,%hx\n", (unsigned)(part - sm),
+ 			    psz, fre, pm, ph0, ph1);
+ 		}
+-		if (pm == SMEM_PART_MAGIC && ph0 == SMEM_GLOBAL_HOST &&
+-		    ph1 == SMEM_GLOBAL_HOST && psz == psize && fre <= psz) {
+-			uint32_t limit = fre ? fre : psz;
+-			uint32_t off = SMEM_PART_HDR_SIZE;
+-			while (off + SMEM_PRIV_ENTRY_SIZE <= limit &&
+-			    off + SMEM_PRIV_ENTRY_SIZE <= psz) {
+-				vm_offset_t e = part + off;
+-				uint16_t canary = *(volatile uint16_t *)e;
+-				uint16_t it = *(volatile uint16_t *)(e + 2);
+-				uint32_t sz = *(volatile uint32_t *)(e + 4);
+-				uint16_t pdata = *(volatile uint16_t *)(e + 8);
+-				uint16_t phdr = *(volatile uint16_t *)(e + 10);
+-				if (canary != SMEM_PRIV_CANARY) {
+-					break;
+-				}
+-				if (it == item) {
+-					uint32_t d = off + SMEM_PRIV_ENTRY_SIZE +
+-					    phdr;
+-					if (sz >= pdata && d + sz <= psz) {
+-						if (!logged) {
+-							printf("SANTONI SMEM: "
+-							    "item %u in part "
+-							    "@%#x sz=%u\n",
+-							    item, d, sz);
+-						}
+-						logged = true;
+-						*size = sz - pdata;
+-						return part + d;
+-					}
+-					break;
+-				}
+-				off += SMEM_PRIV_ENTRY_SIZE + phdr + sz;
++		if (pm != SMEM_PART_MAGIC || ph0 != SMEM_GLOBAL_HOST ||
++		    ph1 != SMEM_GLOBAL_HOST || psz != psize ||
++		    fre < SMEM_PART_HDR_SIZE || fre > cached || cached > psz ||
++		    (fre & 3u) || (cached & 3u) || !cacheline ||
++		    (cacheline & (cacheline - 1u)) || cacheline > psz) return 0;
++		uint32_t off = SMEM_PART_HDR_SIZE;
++		while (off < fre) {
++			if ((off & 3u) || fre - off < SMEM_PRIV_ENTRY_SIZE) return 0;
++			vm_offset_t e = part + off;
++			uint16_t canary = *(volatile uint16_t *)e;
++			uint16_t it = *(volatile uint16_t *)(e + 2);
++			uint32_t sz = *(volatile uint32_t *)(e + 4);
++			uint16_t pdata = *(volatile uint16_t *)(e + 8);
++			uint16_t phdr = *(volatile uint16_t *)(e + 10);
++			uint32_t d = off + SMEM_PRIV_ENTRY_SIZE;
++			if (canary != SMEM_PRIV_CANARY || pdata > sz ||
++			    phdr > fre - d) return 0;
++			d += phdr;
++			if (sz > fre - d) return 0; /* allocated, not merely mapped */
++			if (it == item) {
++				*size = sz - pdata;
++				logged = true;
++				return part + d;
+ 			}
++			off = d + sz;
++		}
++		uint32_t hsize = (SMEM_PRIV_ENTRY_SIZE + cacheline - 1u) &
++		    ~(cacheline - 1u);
++		if (hsize > psz) return 0;
++		off = psz - hsize;
++		while (off > cached) {
++			if ((off & 3u) || psz - off < SMEM_PRIV_ENTRY_SIZE) return 0;
++			vm_offset_t e = part + off;
++			uint16_t canary = *(volatile uint16_t *)e;
++			uint16_t it = *(volatile uint16_t *)(e + 2);
++			uint32_t sz = *(volatile uint32_t *)(e + 4);
++			uint16_t pdata = *(volatile uint16_t *)(e + 8);
++			if (canary != SMEM_PRIV_CANARY || pdata > sz ||
++			    sz > off - cached) return 0;
++			uint32_t d = off - sz;
++			if (it == item) {
++				*size = sz - pdata;
++				logged = true;
++				return part + d;
++			}
++			if (d < hsize || d - hsize <= cached) break;
++			off = d - hsize;
+ 		}
+ 	}
+ 
+@@ -3529,7 +3588,9 @@
+ 		if (!a) {
+ 			continue;
+ 		}
+-		for (uint32_t i = 0; i < SMD_ALLOC_TBL_SIZE; i++) {
++		if (a & 3u) continue;
++		for (uint32_t i = 0; i < SMD_ALLOC_TBL_SIZE &&
++		    i < asz / SMD_ALLOC_ENTRY_SIZE; i++) {
+ 			vm_offset_t e = a + SMD_ALLOC_ENTRY_SIZE * i;
+ 			static const char want[13] = "rpm_requests";
+ 			char name[21];
+@@ -3549,20 +3610,26 @@
+ 				continue;
+ 			}
+ 			uint32_t cid = *(volatile uint32_t *)(e + 20);
++			if (cid >= SMD_ALLOC_TBL_SIZE) continue;
+ 			size_t isz = 0, fsz = 0;
+ 			vm_offset_t info = santoni_smem_item(tbl[t].info + cid, &isz);
+ 			vm_offset_t fifo = santoni_smem_item(tbl[t].fifo + cid, &fsz);
+ 			bool word = isz == 2u * 44u;
+-			if (!info || !fifo || (!word && isz != 2u * 20u)) {
++			uint32_t half = word ? 44u : 20u;
++			uint32_t fhalf = (uint32_t)(fsz / 2u);
++			if (!info || !fifo || (info & 3u) || (fifo & 3u) ||
++			    isz != 2u * half || (fsz & 1u) ||
++			    fsz > 2u * 8192u || fhalf <= SMD_PACKET_HDR_LEN ||
++			    (fhalf & (fhalf - 1u))) {
+ 				printf("SANTONI RPM: bad info/fifo items for "
+ 				    "cid %u (info %u fifo %u)\n", cid,
+ 				    (unsigned)isz, (unsigned)fsz);
+-				return false;
++				continue;
+ 			}
+ 			santoni_smd.word = word;
+ 			santoni_smd.txinfo = info;
+ 			santoni_smd.rxinfo = info + INFO_HALF;
+-			santoni_smd.fifo_size = (uint32_t)fsz / 2u;
++			santoni_smd.fifo_size = fhalf;
+ 			santoni_smd.txfifo = fifo;
+ 			santoni_smd.rxfifo = fifo + santoni_smd.fifo_size;
+ 			/* Remember the raw toc entry: if the vote gets no
+@@ -3573,14 +3640,6 @@
+ 			    16u * (tbl[t].fifo + cid));
+ 			santoni_smd.fifo_aux = ftoc[3] & ~3u;
+ 			santoni_smd.fifo_off = ftoc[1];
+-			if (santoni_smd.fifo_size == 0 ||
+-			    (santoni_smd.fifo_size & (santoni_smd.fifo_size - 1u)) ||
+-			    santoni_smd.fifo_size > 8192u) {
+-				printf("SANTONI RPM: fifo size %u not usable "
+-				    "(power of two, <= 8192)\n",
+-				    santoni_smd.fifo_size);
+-				return false;
+-			}
+ 			printf("SANTONI RPM: channel found (tbl %u cid %u, "
+ 			    "%s, fifo %u aux=%#x off=%#x)\n", t, cid,
+ 			    word ? "word" : "byte", santoni_smd.fifo_size,
+@@ -3651,51 +3710,80 @@
+ 	}
+ }
+ 
+-/* Consume one complete rx packet, if any (Linux qcom_smd_channel_intr). */
++/* Consume the header first, publishing tail space even for a partial packet.
++ * Linux qcom_smd_channel_intr retains pkt_size while awaiting the payload.
++ * Accumulate bounded replies; drain oversize packets without accepting a prefix. */
+ static bool
+ santoni_smd_rx_drain(void)
+ {
++	if (!santoni_smd.rxinfo || !santoni_smd.rxfifo ||
++	    santoni_smd.fifo_size <= SMD_PACKET_HDR_LEN) return false;
+ 	uint32_t mask = santoni_smd.fifo_size - 1u;
+ 	uint32_t head = smd_read32(santoni_smd.rxinfo, INFO_HEAD);
+ 	uint32_t tail = smd_read32(santoni_smd.rxinfo, INFO_TAIL);
++	if (head > mask || tail > mask ||
++	    (santoni_smd.word && ((head | tail) & 3u))) return false;
+ 	uint32_t avail = (head - tail) & mask;
+ 
+ 	if (smd_read_flag(santoni_smd.rxinfo, FLAG_FSTATE)) {
+ 		smd_write_flag(santoni_smd.rxinfo, FLAG_FSTATE, 0);
+ 	}
+-	if (avail < SMD_PACKET_HDR_LEN) {
+-		return false;
+-	}
+-	uint32_t pktlen = 0;
+-	santoni_smd_fifo_read(tail, &pktlen, 4);
+-	if (pktlen > 512u || avail < SMD_PACKET_HDR_LEN + pktlen) {
+-		return false;
+-	}
+-	tail = (tail + SMD_PACKET_HDR_LEN) & mask;
+-	smd_write_flag(santoni_smd.rxinfo, FLAG_FHEAD, 0);
+-	uint32_t take = pktlen;
+-	if (take > sizeof(santoni_smd.resp)) {
+-		take = sizeof(santoni_smd.resp);
+-	}
+-	santoni_smd_fifo_read(tail, santoni_smd.resp, take);
+-	santoni_smd.resp_len = take;
+-	santoni_smd.resp_ready = true;
+-	tail = (tail + pktlen) & mask;
++	if (!santoni_smd.rx_remaining) {
++		if (avail < SMD_PACKET_HDR_LEN) return false;
++		uint32_t pktlen = 0;
++		santoni_smd_fifo_read(tail, &pktlen, 4);
++		tail = (tail + SMD_PACKET_HDR_LEN) & mask;
++		smd_write_flag(santoni_smd.rxinfo, FLAG_FHEAD, 0);
++		smd_write32(santoni_smd.rxinfo, INFO_TAIL, tail);
++		smd_write_flag(santoni_smd.rxinfo, FLAG_FTAIL, 1);
++		if (!smd_read_flag(santoni_smd.rxinfo, FLAG_FBLOCKREADINTR))
++			santoni_smd_kick();
++		if (santoni_smd.word && (pktlen & 3u)) {
++			santoni_smd.open = false; /* invalid word-mode wire length */
++			return false;
++		}
++		santoni_smd.rx_remaining = pktlen;
++		santoni_smd.rx_received = 0;
++		santoni_smd.rx_discard = pktlen > sizeof(santoni_smd.resp);
++		santoni_smd.resp_len = 0;
++		santoni_smd.resp_ready = false;
++		if (!pktlen) return false;
++		avail -= SMD_PACKET_HDR_LEN;
++	}
++	uint32_t take = avail < santoni_smd.rx_remaining ?
++	    avail : santoni_smd.rx_remaining;
++	if (santoni_smd.word) take &= ~3u;
++	if (!take) return false;
++	if (!santoni_smd.rx_discard)
++		santoni_smd_fifo_read(tail, santoni_smd.resp +
++		    santoni_smd.rx_received, take);
++	santoni_smd.rx_received += take;
++	santoni_smd.rx_remaining -= take;
++	tail = (tail + take) & mask;
+ 	smd_write32(santoni_smd.rxinfo, INFO_TAIL, tail);
+ 	smd_write_flag(santoni_smd.rxinfo, FLAG_FTAIL, 1);
+ 	if (!smd_read_flag(santoni_smd.rxinfo, FLAG_FBLOCKREADINTR)) {
+ 		santoni_smd_kick();
+ 	}
++	if (santoni_smd.rx_remaining || santoni_smd.rx_discard) return false;
++	santoni_smd.resp_len = santoni_smd.rx_received;
++	santoni_smd.resp_ready = true;
+ 	return true;
+ }
+ 
+ static bool
+ santoni_smd_send(const void *data, uint32_t len)
+ {
++	if (!data || !len || !santoni_smd.txinfo || !santoni_smd.txfifo ||
++	    santoni_smd.fifo_size <= SMD_PACKET_HDR_LEN ||
++	    len >= santoni_smd.fifo_size - SMD_PACKET_HDR_LEN ||
++	    (santoni_smd.word && (len & 3u))) return false;
+ 	uint32_t mask = santoni_smd.fifo_size - 1u;
+ 	uint32_t tlen = SMD_PACKET_HDR_LEN + len;
+ 	uint32_t head = smd_read32(santoni_smd.txinfo, INFO_HEAD);
+ 	uint32_t tail = smd_read32(santoni_smd.txinfo, INFO_TAIL);
++	if (head > mask || tail > mask ||
++	    (santoni_smd.word && ((head | tail) & 3u))) return false;
+ 	uint32_t avail = mask - ((head - tail) & mask);
+ 	if (tlen >= santoni_smd.fifo_size || avail < tlen) {
+ 		printf("SANTONI RPM: tx fifo full (head %u tail %u)\n", head, tail);
+@@ -3748,6 +3836,8 @@
+ 	}
+ 
+ 	/* Linux qcom_smd_channel_reset + qcom_smd_channel_open, polled. */
++	santoni_smd.rx_remaining = santoni_smd.rx_received = 0;
++	santoni_smd.resp_ready = false;
+ 	smd_write32(santoni_smd.txinfo, INFO_STATE, SMD_CLOSED);
+ 	for (uint32_t f = 0; f < 8u; f++) {
+ 		smd_write_flag(santoni_smd.txinfo, f, 0);
+@@ -3798,42 +3888,43 @@
+ static bool
+ santoni_rpm_parse_reply(unsigned ldo, uint32_t id)
+ {
+-	bool acked = false, err = false;
+-	if (santoni_smd.resp_len < 8u) {
++	bool acked = false, err = false, seen_id = false;
++	if (santoni_smd.resp_len < 8u ||
++	    santoni_smd.resp_len > sizeof(santoni_smd.resp)) {
+ 		printf("SANTONI RPM: L%u uV vote: FAILED (short %u)\n", ldo,
+ 		    santoni_smd.resp_len);
+ 		return false;
+ 	}
+-	uint32_t hdr_len = 0;
++	uint32_t service = 0, hdr_len = 0;
++	memcpy(&service, santoni_smd.resp, sizeof(service));
+ 	memcpy(&hdr_len, santoni_smd.resp + 4, sizeof(hdr_len));
+-	uint32_t total = 8u + hdr_len;
+-	if (total > santoni_smd.resp_len) {
+-		total = santoni_smd.resp_len;
+-	}
+-	uint32_t words = total / 4u;
+-	uint32_t end = words;
+-	for (uint32_t i = 2u; i + 2u <= end;) {
++	if (service != RPM_MSG_REQ || hdr_len != santoni_smd.resp_len - 8u)
++		return false;
++	uint32_t end = santoni_smd.resp_len;
++	for (uint32_t i = 8u; i < end;) {
++		if (end - i < 8u) return false;
+ 		uint32_t type = 0, len = 0;
+-		memcpy(&type, santoni_smd.resp + 4u * i, sizeof(type));
+-		memcpy(&len, santoni_smd.resp + 4u * (i + 1u), sizeof(len));
+-		if (len > 512u || i + 2u + (len + 3u) / 4u > end) {
+-			break;
+-		}
+-		if (type == RPM_MSG_MSG_ID && len >= 4u) {
++		memcpy(&type, santoni_smd.resp + i, sizeof(type));
++		memcpy(&len, santoni_smd.resp + i + 4u, sizeof(len));
++		i += 8u;
++		if (len > end - i) return false;
++		uint32_t padded = (len + 3u) & ~3u;
++		if (padded > end - i) return false;
++		if (type == RPM_MSG_MSG_ID) {
++			if (len != 4u || seen_id) return false;
++			seen_id = true;
+ 			uint32_t rid = 0;
+-			memcpy(&rid, santoni_smd.resp + 4u * (i + 2u), sizeof(rid));
+-			if (rid == id) {
+-				acked = true;
+-			}
++			memcpy(&rid, santoni_smd.resp + i, sizeof(rid));
++			acked = rid == id;
+ 		} else if (type == RPM_MSG_ERR) {
+ 			uint32_t take = len > 63u ? 63u : len;
+ 			char text[64];
+-			memcpy(text, santoni_smd.resp + 4u * (i + 2u), take);
++			memcpy(text, santoni_smd.resp + i, take);
+ 			text[take] = 0;
+ 			printf("SANTONI RPM: L%u: error '%s'\n", ldo, text);
+ 			err = true;
+ 		}
+-		i += 2u + (len + 3u) / 4u;
++		i += padded;
+ 	}
+ 	printf("SANTONI RPM: L%u uV vote: %s\n", ldo,
+ 	    acked && !err ? "ok" : "FAILED");
+@@ -4075,7 +4166,7 @@
+ }
+ 
+ /* Same vote as the SMD path, carried by TX_DATA. */
+-static bool
++static bool __unused
+ santoni_glink_vote(unsigned ldo, uint32_t uv)
+ {
+ 	if (!santoni_glink_open()) {
+@@ -4112,42 +4203,8 @@
+ 	return santoni_rpm_parse_reply(ldo, id);
+ }
+ 
+-/*
+- * The RPM's work buffer is msg-ram offset 0: it stages a copy of our
+- * request there (Boot 27 pre/post dumps) and then writes the reply
+- * records ("msg#" with our id, "err" text) over it (Boot 26 scan).
+- * Poll up to 3 s - 700 ms was too short - and let the parser require
+- * the id match so the request copy alone never false-acks.
+- */
+-static bool
+-santoni_rpm_poll_region(unsigned ldo, uint32_t id)
+-{
+-	volatile uint32_t *r = (volatile uint32_t *)santoni_smd.msgram;
+-	if (r[0] != RPM_MSG_REQ) {
+-		return false;
+-	}
+-	uint8_t tmp[128];
+-	for (uint32_t i = 0; i < sizeof(tmp); i++) {
+-		tmp[i] = *(volatile uint8_t *)(santoni_smd.msgram + i);
+-	}
+-	uint32_t saved_len = santoni_smd.resp_len;
+-	bool saved_ready = santoni_smd.resp_ready;
+-	uint8_t saved_resp[128];
+-	if (saved_len > sizeof(saved_resp)) saved_len = sizeof(saved_resp);
+-	memcpy(saved_resp, santoni_smd.resp, saved_len);
+-	memcpy(santoni_smd.resp, tmp, sizeof(tmp));
+-	santoni_smd.resp_len = sizeof(tmp);
+-	bool ok = santoni_rpm_parse_reply(ldo, id);
+-	if (!ok) {
+-		memcpy(santoni_smd.resp, saved_resp, saved_len);
+-		santoni_smd.resp_len = saved_len;
+-		santoni_smd.resp_ready = saved_ready;
+-	} else {
+-		santoni_smd.resp_ready = true;
+-	}
+-	return ok;
+-}
+-
++/* Raw message RAM has no Linux-defined reply mailbox or freshness token.
++ * Snapshots remain diagnostics only: a reused msg# cannot acknowledge a vote. */
+ static void
+ santoni_rpm_dump_region(const char *tag)
+ {
+@@ -4159,8 +4216,7 @@
+ /*
+  * Vote PM8937 LDOn on at uv in the active set, exactly like Linux
+  * qcom_smd_regulator with SWEN + UV keys.  rsc "ldoa", id = n.
+- * On silence: dump where the msg ram holds reply magic, try the fifo
+- * rebased to the msg-ram base once, then send again.
++ * Only a complete reply received on the discovered SMD RX FIFO can ACK.
+  */
+ static bool
+ santoni_rpm_ldo(unsigned ldo, uint32_t uv)
+@@ -4176,14 +4232,13 @@
+ 		RPM_KEY_UV, 4u, uv,
+ 	};
+ 
+-	/*
+-	 * Single attempt, long poll: the RPM stages a copy of our request
+-	 * at msg-ram offset 0 and then writes the reply records ("msg#"
+-	 * with our id) over it (Boot 26/27 videos).  700 ms was too short,
+-	 * and the old fifo rebase wrote our retries straight into that
+-	 * work buffer - gone.  The parser requires the id match, so the
+-	 * request copy alone never false-acks.
+-	 */
++	/* Discard replies already queued before this request was sent. */
++	for (unsigned pending = 0; pending < SMD_ALLOC_TBL_SIZE; pending++) {
++		(void)santoni_smd_rx_drain();
++		if (!santoni_smd.resp_ready) break;
++		santoni_smd.resp_ready = false;
++	}
++	if (santoni_smd.rx_remaining) return false;
+ 	santoni_rpm_dump_region("pre ");
+ 	santoni_smd.resp_ready = false;
+ 	if (!santoni_smd_send(msg, sizeof(msg))) {
+@@ -4196,12 +4251,8 @@
+ 				santoni_rpm_dump_region("ack fifo");
+ 				return true;
+ 			}
+-			/* FIFO had data but not our id; keep polling msg-ram too. */
++			/* Unrelated or invalid packet: await a complete matching reply. */
+ 			santoni_smd.resp_ready = false;
+-		}
+-		if (santoni_rpm_poll_region(ldo, id)) {
+-			santoni_rpm_dump_region("ack msgram");
+-			return true;
+ 		}
+ 		delay(10000);
+ 	}
+@@ -4210,8 +4261,7 @@
+ 		return santoni_rpm_parse_reply(ldo, id);
+ 	}
+ 	printf("SANTONI RPM: L%u: no answer in 3 s\n", ldo);
+-	/* glink is dead on this RPM (no grt0) but costs one register read. */
+-	return santoni_glink_vote(ldo, uv);
++	return false;
+ }
+ 
+ struct santoni_touch_point {
+@@ -4220,88 +4270,101 @@
+ 	bool down;
+ };
+ 
+-/*
+- * Reads touch points from the FocalTech FT5435.
+- * Supports both standard FocalTech register 0x00 protocol (santoni native)
+- * and EDT M06 encapsulation as fallback.
++enum santoni_ft_version {
++	SANTONI_FT_UNKNOWN, SANTONI_FT_GENERIC, SANTONI_FT_M06,
++	SANTONI_FT_M09, SANTONI_FT_M12, SANTONI_FT_EV
++};
++static enum santoni_ft_version santoni_ft_version;
++
++static bool
++santoni_ft_ep0(const uint8_t *p)
++{
++	return (p[0] | 0x20u) == 'e' && (p[1] | 0x20u) == 'p' && p[2] == '0';
++}
++
++/* edt_ft5x06_ts_identify(): M06 marker at +1, M12 at +0;
++ * otherwise A6 firmware + A8 model, with Evervision's swapped axes. */
++static bool
++santoni_ft5435_identify(vm_offset_t tlmm)
++{
++	uint8_t name[22], fw[2] = {0}, model = 0;
++	enum santoni_ft_version version;
++	const char *label;
++	if (!santoni_ft5435_read(tlmm, 0xbb, name, sizeof(name))) return false;
++	if (santoni_ft_ep0(name + 1)) {
++		version = SANTONI_FT_M06;
++		label = "EDT M06";
++	} else if (santoni_ft_ep0(name)) {
++		version = SANTONI_FT_M12;
++		label = "EDT M12";
++	} else {
++		if (!santoni_ft5435_read(tlmm, 0xa6, fw, sizeof(fw)) ||
++		    !santoni_ft5435_read(tlmm, 0xa8, &model, 1)) return false;
++		version = SANTONI_FT_GENERIC;
++		label = "generic FT";
++		switch (model) {
++		case 0x11: case 0x35: case 0x43: case 0x50:
++		case 0x57: case 0x70: case 0xa1:
++			version = SANTONI_FT_M09;
++			label = "EDT M09";
++			break;
++		case 0x59:
++			if (!santoni_ft5435_read(tlmm, 0x53, fw, 1)) return false;
++			version = SANTONI_FT_EV;
++			label = "Evervision FT";
++			break;
++		default:
++			break;
++		}
++	}
++	santoni_ft_version = version;
++	printf("SANTONI TOUCH: firmware %s model=%02x fw=%02x,%02x\n",
++	    label, model, fw[0], fw[1]);
++	return true;
++}
++
++/*
++ * Reads the identified firmware's report; no protocol guess on a NACK.
+  * Returns:
+  *   >= 0: number of touch points read (0 if no fingers touching)
+- *   -1  : I2C NACK at 0x38
++ *   -1  : I2C failure (stage/error recorded in santoni_i2c_diag)
+  *   -2  : invalid / unparseable packet
+  */
+ static int
+ santoni_ft5435_read_points(vm_offset_t tlmm, struct santoni_touch_point *pts, int max_pts)
+ {
+-	uint8_t buf[32];
+-
+-	/* Primary: generic FT reg 0x00 (32 bytes, 6-byte points). */
+-	if (santoni_ft5435_read(tlmm, 0x00, buf, sizeof(buf))) {
+-		/* M06 encapsulated inside reg 0x00? Check header aa aa 1a. */
+-		if (buf[0] == 0xaa && buf[1] == 0xaa && buf[2] == 26) {
+-			uint8_t crc = 0;
+-			for (int i = 0; i < 25; i++) crc ^= buf[i];
+-			if (crc != buf[25]) return -2;
+-			int n = 0;
+-			for (int i = 0; i < 5 && n < max_pts; i++) {
+-				const uint8_t *p = &buf[5 + i * 4];
+-				int ev = p[0] >> 6;
+-				if (ev == 3) continue;
+-				if (ev == 0) continue; /* M06 DOWN has bogus coords */
+-				int id = (p[2] >> 4) & 0x0f;
+-				if (id >= 10) continue;
+-				pts[n].id = id;
+-				pts[n].x = ((p[0] & 0x0f) << 8) | p[1];
+-				pts[n].y = ((p[2] & 0x0f) << 8) | p[3];
+-				pts[n].down = (ev != 1);
+-				n++;
+-			}
+-			return n;
+-		}
+-		uint8_t count = buf[2] & 0x0f;
+-		if (count > 5) return -2;
+-		if (count == 0) return 0;
+-		int n = 0;
+-		for (int i = 0; i < (int)count && n < max_pts; i++) {
+-			const uint8_t *p = &buf[3 + i * 6];
+-			int ev = (p[0] >> 6) & 3;
+-			if (ev == 3) continue;
+-			int id = (p[2] >> 4) & 0x0f;
+-			if (id >= 10) continue;
+-			pts[n].id = id;
+-			pts[n].x = ((p[0] & 0x0f) << 8) | p[1];
+-			pts[n].y = ((p[2] & 0x0f) << 8) | p[3];
+-			pts[n].down = (ev == 0 || ev == 2);
+-			n++;
+-		}
+-		return n;
+-	}
+-
+-	/* Fallback: EDT M06 command 0xf9 (26 bytes) */
+-	if (santoni_ft5435_read(tlmm, 0xf9, buf, 26)) {
+-		if (buf[0] == 0xaa && buf[1] == 0xaa && buf[2] == 26) {
+-			uint8_t crc = 0;
+-			for (int i = 0; i < 25; i++) crc ^= buf[i];
+-			if (crc != buf[25]) return -2;
+-			int n = 0;
+-			for (int i = 0; i < 5 && n < max_pts; i++) {
+-				const uint8_t *p = &buf[5 + i * 4];
+-				int ev = p[0] >> 6;
+-				if (ev == 3) continue;
+-				if (ev == 0) continue;
+-				int id = (p[2] >> 4) & 0x0f;
+-				if (id >= 10) continue;
+-				pts[n].id = id;
+-				pts[n].x = ((p[0] & 0x0f) << 8) | p[1];
+-				pts[n].y = ((p[2] & 0x0f) << 8) | p[3];
+-				pts[n].down = (ev != 1);
+-				n++;
+-			}
+-			return n;
+-		}
++	uint8_t buf[33]; /* 3 + 5*6: include the entire fifth generic slot */
++	if (!pts || max_pts < 0) return -2;
++	if (santoni_ft_version == SANTONI_FT_UNKNOWN &&
++	    !santoni_ft5435_identify(tlmm)) return -1;
++	bool m06 = santoni_ft_version == SANTONI_FT_M06;
++	if (!santoni_ft5435_read(tlmm, m06 ? FT5435_CMD_REPORT : 0x00,
++	    buf, m06 ? FT5435_REPORT_LEN : sizeof(buf))) return -1;
++	if (m06) {
++		if (buf[0] != 0xaa || buf[1] != 0xaa ||
++		    buf[2] != FT5435_REPORT_LEN) return -2;
++		uint8_t crc = 0;
++		for (int i = 0; i < FT5435_REPORT_LEN - 1; i++) crc ^= buf[i];
++		if (crc != buf[FT5435_REPORT_LEN - 1]) return -2;
++	} else if ((buf[2] & 0x0f) > FT5435_MAX_POINTS) {
+ 		return -2;
+ 	}
+-
+-	return -1; /* I2C NACK */
++	int n = 0;
++	for (int i = 0; i < FT5435_MAX_POINTS && n < max_pts; i++) {
++		const uint8_t *p = buf + (m06 ? 5 + i * 4 : 3 + i * 6);
++		int ev = p[0] >> 6;
++		if (ev == FT5435_EVENT_RESERVED || (m06 && ev == 0)) continue;
++		int id = p[2] >> 4;
++		if (id >= FT5435_MAX_POINTS) continue;
++		int x = ((p[0] & 0x0f) << 8) | p[1];
++		int y = ((p[2] & 0x0f) << 8) | p[3];
++		pts[n].id = id;
++		pts[n].x = santoni_ft_version == SANTONI_FT_EV ? y : x;
++		pts[n].y = santoni_ft_version == SANTONI_FT_EV ? x : y;
++		pts[n].down = ev != FT5435_EVENT_UP;
++		n++;
++	}
++	return n;
+ }
+ 
+ static void
+@@ -4331,12 +4394,12 @@
+ 	tlmm_gpio_in_cfg(tlmm, PIN_VOL_UP, TLMM_PULL_UP);
+ 	tlmm_gpio_in_cfg(tlmm, PIN_TOUCH_INT, TLMM_PULL_UP | TLMM_DRV_8MA);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	santoni_i2c_scl_high(tlmm);
+-
+-	/* Power first, then release reset: hold the controller in reset
+-	 * while the rails come up.  fastboot boot clears RPM rail votes so
+-	 * PM8937 L10 (2.8 V touch VCC) is off; santonirpm=1 (default) asks
+-	 * the RPM to enable it.  Pass santonirpm=0 to skip (diagnosis). */
++	if (!santoni_i2c_scl_high(tlmm))
++		printf("SANTONI TOUCH: SCL low before reset\n");
++
++	/* Request both DT supplies while reset is asserted. Their actual
++	 * voltage/enable state still requires PMIC readback or measurement.
++	 * santonirpm=0 skips voting for diagnosis, not proof rails are on. */
+ 	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 0,
+ 	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
+ 
+@@ -4348,7 +4411,7 @@
+ 		bool l5 = santoni_rpm_ldo(5, 1800000);
+ 		santoni_diag.l10 = l10 ? 1 : -1;
+ 		santoni_diag.l5 = l5 ? 1 : -1;
+-		rails_ok = l10;
++		rails_ok = l10 && l5;
+ 		printf("SANTONI RPM: touch rails L10 %s, L5 %s\n",
+ 		    l10 ? "ok" : "FAILED", l5 ? "ok" : "FAILED");
+ 	} else {
+@@ -4359,10 +4422,8 @@
+ 	delay(20 * 1000);
+ 	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 1,
+ 	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
+-	/* FT5435 datasheet: 200 ms min from reset release to I2C ready.
+-	 * Use 300 ms to cover L10 rail stabilisation after the RPM vote.
+-	 * (0162 used 100 ms: INT going high proved digital logic is alive
+-	 * but 100 ms is too short when the rail just powered on cold.) */
++	/* Preserve the existing 300 ms reset recovery wait. INT high alone
++	 * does not establish controller power or bus readiness. */
+ 	delay(300 * 1000);
+ 	printf("SANTONI KEYS: touch out of reset (64 cfg=%#x out=%u, "
+ 	    "int=%u)\n", tlmm_cfg_read(tlmm, PIN_TOUCH_RST),
+@@ -4374,8 +4435,11 @@
+ 	if (prc >= 0) {
+ 		printf("SANTONI TOUCH: probe ok (I2C ACK at 0x38, points=%d)\n", prc);
+ 	} else {
+-		printf("SANTONI TOUCH: probe failed (%s)\n",
+-		    prc == -1 ? "I2C NACK at 0x38" : "unexpected data");
++		if (prc == -1)
++			printf("SANTONI TOUCH: probe I2C %s stage=%s reg=%#x byte=%u\n",
++			    santoni_i2c_diag.error, santoni_i2c_diag.stage,
++			    santoni_i2c_diag.reg, (unsigned)santoni_i2c_diag.byte);
++		else printf("SANTONI TOUCH: probe failed (unexpected data)\n");
+ 	}
+ 	int last_rc = prc;
+ 
+@@ -4385,7 +4449,7 @@
+ 	bool volup_raw = (tlmm_gpio_get(tlmm, PIN_VOL_UP) == 0);
+ 	bool volup_last = volup_raw;
+ 	int volup_stable = 0;
+-	unsigned int tick = 0, nack = 0, bad = 0, crc_bad = 0, reports = 0;
++	unsigned int tick = 0, nack = 0, bad = 0, reports = 0;
+ 
+ 	for (;;) {
+ 		/* Volume Up with a three-sample debounce (loop is 100 Hz). */
+@@ -4428,19 +4492,24 @@
+ 
+ 		/* Retry the rail votes every 10 s until they stick: the RPM
+ 		 * may not have the channel ready a few seconds into boot.
+-		 * Whenever L10 finally lands, re-read the PMIC and pulse
+-		 * the touch reset again (power-cycle order). */
++		 * Only stop retrying after BOTH votes ACK; update both statuses. */
+ 		if (rpm_on && !rails_ok && (tick % 1000) == 0 &&
+-		    tick < 30000u) {
++		    tick != 0 && tick < 30000u) {
+ 			printf("SANTONI RPM: retrying touch rails\n");
+ 			bool l10r = santoni_rpm_ldo(10, 2850000);
+-			(void)santoni_rpm_ldo(5, 1800000);
++			bool l5r = santoni_rpm_ldo(5, 1800000);
+ 			santoni_diag.l10 = l10r ? 1 : -1;
+-			if (l10r) {
++			santoni_diag.l5 = l5r ? 1 : -1;
++			if (l10r && l5r) {
+ 				rails_ok = true;
+ 				santoni_pmic_report();
+-				printf("SANTONI RPM: rails up on retry, "
++				printf("SANTONI RPM: both votes ACK on retry, "
+ 				    "re-pulsing touch reset\n");
++				for (int id = 0; id < 10; id++) {
++					if (active[id]) sweet_hid_touch(id, 0, last_x[id], last_y[id]);
++					active[id] = false;
++				}
++				santoni_ft_version = SANTONI_FT_UNKNOWN;
+ 				tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 0,
+ 				    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
+ 				delay(20 * 1000);
+@@ -4450,11 +4519,14 @@
+ 			}
+ 		}
+ 
+-		/* INT is active low; also poll once a second so a dead INT
+-		 * line cannot hide a responsive controller. */
++		/* DT specifies a falling-edge INT: its pulse may end before the
++		 * thread samples it. Poll at 50 ms idle and every tick while a
++		 * contact is active, including its final UP after INT deasserts. */
++		bool touching = false;
++		for (int id = 0; id < 10; id++) touching |= active[id];
+ 		tick++;
+-		if (tlmm_gpio_get(tlmm, PIN_TOUCH_INT) == 0 ||
+-		    (tick % 100) == 0) {
++		if (tlmm_gpio_get(tlmm, PIN_TOUCH_INT) == 0 || touching ||
++		    (tick % 5) == 0) {
+ 			struct santoni_touch_point pts[10];
+ 			int npts = santoni_ft5435_read_points(tlmm, pts, 10);
+ 			last_rc = npts;
+@@ -4463,7 +4535,7 @@
+ 				bool seen[10] = {false};
+ 				for (int i = 0; i < npts; i++) {
+ 					int id = pts[i].id;
+-					if (id >= 10) continue;
++					if (id < 0 || id >= 10) continue;
+ 					seen[id] = true;
+ 					bool down = pts[i].down;
+ 					if (down) {
+@@ -4488,7 +4560,8 @@
+ 					}
+ 				}
+ 				for (int id = 0; id < 10; id++) {
+-					if (active[id] && !seen[id]) {
++					if (santoni_ft_version != SANTONI_FT_M06 &&
++					    active[id] && !seen[id]) {
+ 						active[id] = false;
+ 						sweet_hid_touch(id, 0,
+ 						    last_x[id], last_y[id]);
+@@ -4497,8 +4570,10 @@
+ 			} else if (npts == -1) {
+ 				nack++;
+ 				if (nack <= 5 || (nack % 500) == 0) {
+-					printf("SANTONI TOUCH: I2C NACK at "
+-					    "0x38 (total %u)\n", nack);
++					printf("SANTONI TOUCH: I2C %s stage=%s reg=%#x "
++					    "byte=%u (total %u)\n", santoni_i2c_diag.error,
++					    santoni_i2c_diag.stage, santoni_i2c_diag.reg,
++					    (unsigned)santoni_i2c_diag.byte, nack);
+ 				}
+ 			} else {
+ 				bad++;

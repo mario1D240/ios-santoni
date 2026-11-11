@@ -1,0 +1,101 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -54,23 +54,23 @@
+     return sg.maps[block] + off;
+ }
+ 
+-static uint32_t __attribute__((noinline)) io_read32(void *ctx, enum sgpu_block block, uint32_t off)
++static uint32_t __attribute__((noinline)) sgpu_io_read32(void *ctx, enum sgpu_block block, uint32_t off)
+ {
+     (void)ctx;
+     vm_offset_t addr = address(block, off, 4);
+     if (!addr) return ~0u;
+     uint32_t value;
+-    __asm__ volatile("ldr %w0, [%1]; dmb sy" : "=r"(value) : "r"(addr) : "memory");
++    __asm__ volatile("ldr %w0, [%1]\n\tdmb sy" : "=r"(value) : "r"(addr) : "memory");
+     return value;
+ }
+ 
+-static uint64_t __attribute__((noinline)) io_read64(void *ctx, enum sgpu_block block, uint32_t off)
++static uint64_t __attribute__((noinline)) sgpu_io_read64(void *ctx, enum sgpu_block block, uint32_t off)
+ {
+     (void)ctx;
+     vm_offset_t addr = address(block, off, 8);
+     if (!addr) return ~0ull;
+     uint64_t value;
+-    __asm__ volatile("ldr %0, [%1]; dmb sy" : "=r"(value) : "r"(addr) : "memory");
++    __asm__ volatile("ldr %0, [%1]\n\tdmb sy" : "=r"(value) : "r"(addr) : "memory");
+     return value;
+ }
+ 
+@@ -80,7 +80,7 @@
+     (void)ctx;
+     vm_offset_t addr = address(block, off, 4);
+     if (!addr || (block == SG_GPU && off >= 0x3c000u)) return; /* SECVID never written */
+-    __asm__ volatile("dmb sy; str %w0, [%1]; dsb sy" : : "r"(value), "r"(addr) : "memory");
++    __asm__ volatile("dmb sy\n\tstr %w0, [%1]\n\tdsb sy" : : "r"(value), "r"(addr) : "memory");
+ }
+ 
+ static void __attribute__((noinline)) sgpu_io_write64(void *ctx, enum sgpu_block block, uint32_t off, uint64_t value)
+@@ -88,7 +88,7 @@
+     (void)ctx;
+     vm_offset_t addr = address(block, off, 8);
+     if (!addr || (block == SG_GPU && off >= 0x3c000u)) return;
+-    __asm__ volatile("dmb sy; str %0, [%1]; dsb sy" : : "r"(value), "r"(addr) : "memory");
++    __asm__ volatile("dmb sy\n\tstr %0, [%1]\n\tdsb sy" : : "r"(value), "r"(addr) : "memory");
+ }
+ 
+ static uint64_t now_us(void *ctx)
+@@ -99,7 +99,7 @@
+     return ns / 1000u;
+ }
+ 
+-static void wait_us(void *ctx, uint32_t us)
++static void sgpu_kernel_wait_us(void *ctx, uint32_t us)
+ {
+     (void)ctx;
+     if (us < 50) {
+@@ -108,7 +108,7 @@
+         __asm__ volatile("mrs %0, cntvct_el0" : "=r"(start));
+         uint64_t ticks = ((uint64_t)us * frequency + 999999u) / 1000000u;
+         do {
+-            __asm__ volatile("yield; mrs %0, cntvct_el0" : "=r"(now) : : "memory");
++            __asm__ volatile("yield\n\tmrs %0, cntvct_el0" : "=r"(now) : : "memory");
+         } while (now - start < ticks);
+     } else {
+         uint64_t deadline;
+@@ -151,7 +151,7 @@
+     /* Always invalidate, even if XNU assumes coherent device IO. These lines
+      * were cleaned BEFORE DMA and were never subsequently written by the CPU. */
+     uint64_t ctr;
+-    __asm__ volatile("mrs %0, ctr_el0; dsb sy" : "=r"(ctr) : : "memory");
++    __asm__ volatile("mrs %0, ctr_el0\n\tdsb sy" : "=r"(ctr) : : "memory");
+     uintptr_t line = 4ul << ((ctr >> 16) & 15u);
+     uintptr_t start = (uintptr_t)va & ~(line - 1);
+     uintptr_t end = (uintptr_t)va + size;
+@@ -166,20 +166,20 @@
+     printf("SANTONI GPU: %s [%08x %08x %08x]\n", message, a, b, c);
+     /* The existing log ring flushes asynchronously. Bracket new risky stages
+      * so its last completed stage survives a fabric hang/firmware reset. */
+-    if (strncmp(message, "before ", 7) == 0) wait_us(NULL, 11000000u);
++    if (strncmp(message, "before ", 7) == 0) sgpu_kernel_wait_us(NULL, 11000000u);
+ }
+ 
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
+-    wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
++    sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     const void *firmware = NULL;
+     unsigned int firmware_size = 0;
+     DTEntry chosen;
+     if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess)
+         (void)SecureDTGetProperty(chosen, "santoni-gpu-firmware", &firmware, &firmware_size);
+     struct sgpu_ops ops = {
+-        .map=io_map, .read32=io_read32, .read64=io_read64,
+-        .write32=sgpu_io_write32, .write64=sgpu_io_write64, .now_us=now_us, .wait_us=wait_us,
++        .map=io_map, .read32=sgpu_io_read32, .read64=sgpu_io_read64,
++        .write32=sgpu_io_write32, .write64=sgpu_io_write64, .now_us=now_us, .wait_us=sgpu_kernel_wait_us,
+         .allocate=allocate, .release=release, .clean=clean, .invalidate=sgpu_cache_invalidate,
+         .trace=trace
+     };

@@ -1,0 +1,106 @@
+{
+  "success": true,
+  "hardware_verified": false,
+  "rows": [
+    {
+      "label": "cache",
+      "case": 0,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "6b6ec66eac169eeaffb5743b5397dfb5ef1b394f0e386f3ad03207167ce9d3c4",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:33: void execute_ring(struct live_model *, uint32_t): assertion \"h==sgpu_packet7(op,count) && count<=end-i\" failed\n"
+    },
+    {
+      "label": "late-tables",
+      "case": 29,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "a6258c0ecc682731855b2d5820d4820a0955500b6e7bb2ef88a9a8f755ebcb7f",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:123: int main(int, char **): assertion \"!published && !posts && !sgpu_graphics_hw_ready()\" failed\n"
+    },
+    {
+      "label": "late-cp",
+      "case": 30,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "eba3ff8ea5ca427778f38c12ebd2e46aa3d0d023ae6af33b04054624cf39e237",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:123: int main(int, char **): assertion \"!published && !posts && !sgpu_graphics_hw_ready()\" failed\n"
+    },
+    {
+      "label": "write-readback",
+      "case": 22,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "deae7c34e7240cb10809dbb7bca8f1225af832daccc93c993d4398ea0dd14bf7",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:125: int main(int, char **): assertion \"!published && posts==1 && !sgpu_graphics_hw_ready()\" failed\n"
+    },
+    {
+      "label": "rptr",
+      "case": 23,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "9418b882ea3b198129f6e303e718cc5b4482180e9bd085dbee2d5fd405463514",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:125: int main(int, char **): assertion \"!published && posts==1 && !sgpu_graphics_hw_ready()\" failed\n"
+    },
+    {
+      "label": "busy",
+      "case": 24,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "d0fbd294fb8e22a35ecd20a5824c8706cac467f4adf3554b9b59b97e52fc5e88",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:125: int main(int, char **): assertion \"!published && posts==1 && !sgpu_graphics_hw_ready()\" failed\n"
+    },
+    {
+      "label": "quarantine",
+      "case": 22,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "mutant_sha256": "2f8b7ec886b72401e1bb7dcdec7e81f854f1824162ce433be889c974f79eeb60",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "${PROJECT_ROOT}/out/gpu-ui-resume-20261108-wA06BA/raster-promotion-staging/project/tests/test_santoni_gpu_graphics_publish.c:125: int main(int, char **): assertion \"!published && posts==1 && !sgpu_graphics_hw_ready()\" failed\n"
+    }
+  ],
+  "source_sha256": {
+    "bsd/dev/santoni_gpu_core.c": "7943a6b9c49e9bbc8bff5c1e613881fcb251a410ee2f0e2988902a1c1316405a",
+    "bsd/dev/santoni_gpu_core.h": "d872161c1e74ec0e9b4d9aceda42c9dde89e3a40e909ebd19b723c8bad01e118",
+    "bsd/dev/santoni_gpu_graphics_hw.h": "9e13ac6759d1c7e0cadf5917fae8aaee14da90097617a98bb6291dce90c9d0b0",
+    "bsd/dev/santoni_gpu_uapi.h": "0a23be8f2a9b342933cb66da816d8fda4fab2fa06a9ecb789b5de1aa74cfa924",
+    "bsd/dev/santoni_gpu_graphics.h": "d66496ddaf6c2bb13587fdf757866a5a687daaee4f511b8d13a6859ddbb54dfb",
+    "bsd/dev/santoni_gpu_vm.h": "3a86605e43eaa00f1eabc22035756e89050db4a1a7e0fb714c0197d237e23e6c",
+    "bsd/dev/santoni_gpu_vm.c": "c55687abc67d2a1224e9ba5193c2a953be332afb10807fcc57fb84b6c37332a6"
+  },
+  "inputs_sha256": {
+    "tests/test_santoni_gpu_graphics_publish.c": "0cf1694b7a1c58ca5009ef613a210f2202a01eaf080cde13102d3ea40ce5442e",
+    "tests/test_santoni_gpu_graphics_publish.py": "0c9533ce3bed34723289f94eb21136cfd5b1e4f26b55b2328f6f738f0fbb6521",
+    "tests/native_santoni_gpu_core.py": "7474bd3d36b049ce481f059b95f38d5df01709c883ea1362e653e68d4d5c696e",
+    "tests/reconstruct_santoni_touch.py": "c249ccf32a2114774ca7ce9e0ef5ba19bc1196d2c6ce795f59ddcc6f5b29ae48",
+    "tests/test_santoni_gpu_ui.py": "954890e621cfb2d8d25e61a35e6086309fb8b10561789724030b5a2e84233076",
+    "tests/test_santoni_gpu_live.c": "50feec452b172bc4820af2f21c80fdd75811c61ba9dbc7d5fc3c6a20a38cbaea",
+    "tests/test_santoni_gpu_session.c": "106c28ae22c82f8f3b76dd841ff358f667b7860c661ab750742e81e02b31f168",
+    "tests/test_santoni_gpu_graphics_publish_mutants.py": "625057bd1c7ca5b854d2e1c5615c9b7b67976db865fc4eba97cb4e622a9cb453",
+    "tests/test_santoni_gpu_prepare.py": "20faae32d0db4a2fce54660d48241d87b90e8b47be8627c62c2093ffedf59115"
+  },
+  "public_metadata_redaction": {
+    "scope": "absolute host paths only",
+    "original_receipt_sha256": "38d0b3df462c598f0bc5aabcefc89f99b6e90b54892cf25c62e398e47f29c08a",
+    "results_and_source_input_hashes_preserved": true,
+    "path_placeholders": [
+      "${PROJECT_ROOT}",
+      "${HOST_TMP}",
+      "${HOST_HOME}"
+    ]
+  }
+}

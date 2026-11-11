@@ -1,0 +1,12 @@
+diff --git a/iokit/Kernel/arm/SantoniGraphics.cpp b/iokit/Kernel/arm/SantoniGraphics.cpp
+index db0a280..4d3d222 100644
+--- a/iokit/Kernel/arm/SantoniGraphics.cpp
++++ b/iokit/Kernel/arm/SantoniGraphics.cpp
+@@ -10,6 +10,7 @@
+ #include <IOKit/IOLocks.h>
+ #include <IOKit/IOBufferMemoryDescriptor.h>
+ #include <IOKit/IOMemoryDescriptor.h>
++#include <IOKit/IOSubMemoryDescriptor.h>
+ #include <kern/task.h>
+ #include <vm/pmap.h>
+ #include <pexpert/pexpert.h>

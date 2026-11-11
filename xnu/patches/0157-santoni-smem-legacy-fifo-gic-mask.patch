@@ -1,0 +1,104 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3369,14 +3369,28 @@
+ 	return region + off;
+ }
+ 
++static vm_offset_t santoni_smem_item_partition(uint32_t item, size_t *size);
++
+ /*
+- * Find an item: the "$TOC" global partition first (qcom_smem_get order),
+- * then the legacy toc[]. Logs what it saw once, so one photo shows the
+- * real SMEM layout of this phone.
++ * Find an item: legacy toc[] first (it is the live directory and points
++ * the channel info/fifo at the RPM message ram), the "$TOC" global
++ * partition only as a fallback. Logs what it saw once, so one photo
++ * shows the real SMEM layout of this phone.
+  */
+ static vm_offset_t
+ santoni_smem_item(uint32_t item, size_t *size)
+ {
++	vm_offset_t p = santoni_smem_item_legacy(item, size);
++	if (p) {
++		return p;
++	}
++	return santoni_smem_item_partition(item, size);
++}
++
++/* "$TOC" global-partition path (fallback). */
++static vm_offset_t
++santoni_smem_item_partition(uint32_t item, size_t *size)
++{
+ 	static bool logged;
+ 	vm_offset_t sm = santoni_smd.smem;
+ 	vm_offset_t pt = sm + SMEM_PTABLE_OFFSET;
+@@ -3458,7 +3472,7 @@
+ 		    "aux=%#x\n", magic, n, toc[0], toc[1], toc[2], toc[3]);
+ 	}
+ 	logged = true;
+-	return santoni_smem_item_legacy(item, size);
++	return 0;
+ }
+ 
+ static bool
+@@ -3514,9 +3528,11 @@
+ 			santoni_smd.txfifo = fifo;
+ 			santoni_smd.rxfifo = fifo + santoni_smd.fifo_size;
+ 			if (santoni_smd.fifo_size == 0 ||
+-			    (santoni_smd.fifo_size & (santoni_smd.fifo_size - 1u))) {
+-				printf("SANTONI RPM: fifo size %u not a power "
+-				    "of two\n", santoni_smd.fifo_size);
++			    (santoni_smd.fifo_size & (santoni_smd.fifo_size - 1u)) ||
++			    santoni_smd.fifo_size > 8192u) {
++				printf("SANTONI RPM: fifo size %u not usable "
++				    "(power of two, <= 8192)\n",
++				    santoni_smd.fifo_size);
+ 				return false;
+ 			}
+ 			printf("SANTONI RPM: channel found (tbl %u cid %u, "
+@@ -3665,6 +3681,18 @@
+ 			printf("SANTONI RPM: MMIO mapping failed\n");
+ 			return false;
+ 		}
++		/*
++		 * The RPM answers over SMD and then raises GIC SPI 168 to
++		 * signal the AP; XNU has no handler, and the unhandled
++		 * level interrupt storms and slows the whole boot. This
++		 * driver polls, so mask the SPI in the distributor before
++		 * the first doorbell.
++		 */
++		vm_offset_t gicd = ml_io_map(0x0b000000UL, 0x1000);
++		if (gicd) {
++			*(volatile uint32_t *)(gicd + 0x180 + 4u * (168u / 32u)) =
++			    1u << (168u % 32u);
++		}
+ 		if (!santoni_smd_map_channel()) {
+ 			return false;
+ 		}
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -423,13 +423,13 @@
+ 
+ 	/*
+ 	 * Simulate the upward home-indicator swipe that unlocks iPhone X.
+-	 * Every press does this for the first two minutes (24 presses, one
++	 * Every press does this for the first three minutes (36 presses, one
+ 	 * every fTestSecs): the Lock Screen can appear long after boot on a
+ 	 * slow root mount and an early swipe is simply ignored.  Start at
+ 	 * y = 1270 (the dock background, still inside the 48 px edge-tip
+ 	 * zone) so a swipe on the Home Screen cannot hit the Safari icon.
+ 	 */
+-	if (press && gSweetTouch && self->fTestCount < 48) {
++	if (press && gSweetTouch && self->fTestCount < 72) {
+ 		int cx = 360;
+ 		gSweetTouch->touch(0, true, cx, 1270);
+ 		for (int cy = 1050; cy >= 450; cy -= 200) {
+@@ -441,7 +441,7 @@
+ 	}
+ 
+ 	self->fTestCount++;
+-	if (self->fTestCount >= 48) {
++	if (self->fTestCount >= 72) {
+ 		IOLog("SWEET HID: unlock sequence complete, synthetic input idle\n");
+ 		return;		/* sweetfb_stayon keeps the panel lit */
+ 	}

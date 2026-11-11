@@ -1,0 +1,279 @@
+SCM capability-only probe for Santoni: verified downstream scalar query ABI.
+Explicit mode3/zap1/scm1 only; no PAS memory/load/auth/reset or GPU continuation.
+One shared 64-call/1s/20-busy retry budget; a single SMC return is not guaranteed.
+
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -330,6 +330,261 @@
+     (void)sgpu_pas_release(&buffers.metadata);
+ }
+
++/* SCM query policy: platform calls stay behind this adapter's callbacks.
++ * Verified source: msm-4.9 drivers/soc/qcom/scm.c:382-479,555-590,
++ * 638-699,1138-1162 and include/soc/qcom/scm.h:47-75. Resume returned
++ * x0..x6 after INTERRUPTED; restart the original frame after terminal EBUSY.
++ * qcom_scm.c:165-174 checks cmd7 availability before querying PAS support.
++ * adreno-gpulist.h:219-228 selects a506_zap for A505; msm8953-gpu.dtsi:16-17
++ * associates that firmware family with ID13. Santoni acceptance is UNPROVEN.
++ * Only scalar capability queries are allowed. No PAS load/auth/reset or PA.
++ */
++#define SGPU_SCM_MAX_CALLS 64u
++#define SGPU_SCM_MAX_BUSY 20u
++#define SGPU_SCM_BUDGET_US 1000000u
++#define SGPU_SCM_BUSY_DELAY_US 30000u
++#define SGPU_SCM_INFO_FAST 0x82000601u
++#define SGPU_SCM_INFO 0x02000601u
++#define SGPU_SCM_PAS_SUPPORTED 0x02000207u
++#define SGPU_SCM_64 0x40000000u
++#define SGPU_SCM_GPU_PAS_ID 13u
++
++struct sgpu_scm_ops {
++    void *ctx;
++    bool (*smc)(void *, bool, uint64_t frame[8]);
++    uint64_t (*now_us)(void *);
++    void (*wait_us)(void *, uint32_t);
++    void (*trace)(void *, const char *, uint32_t, uint32_t, uint32_t);
++};
++enum sgpu_scm_error { SGPU_SCM_OK, SGPU_SCM_REJECTED, SGPU_SCM_TRANSPORT_FAILED,
++    SGPU_SCM_CALL_LIMIT, SGPU_SCM_TIME_LIMIT, SGPU_SCM_BUSY_LIMIT, SGPU_SCM_REMOTE_ERROR,
++    SGPU_SCM_BAD_CONVENTION, SGPU_SCM_NOT_SUPPORTED };
++enum sgpu_scm_phase { SGPU_SCM_OFF, SGPU_SCM_PROBE64, SGPU_SCM_PROBE32,
++    SGPU_SCM_AVAILABILITY, SGPU_SCM_SUPPORT };
++enum sgpu_scm_convention { SGPU_SCM_UNKNOWN, SGPU_SCM_SMC32, SGPU_SCM_SMC64 };
++struct sgpu_scm_budget {
++    uint64_t start;
++    uint32_t calls, busy_retries;
++};
++struct sgpu_scm_result {
++    uint32_t error, calls, busy_retries, interruptions;
++    uint64_t elapsed_us, raw[8];
++    bool started, unresolved;
++};
++struct sgpu_scm_report {
++    uint32_t convention, failed_phase;
++    bool attempted, supported;
++    struct sgpu_scm_result probe64, probe32, availability, support, failure;
++};
++
++static bool __attribute__((noinline)) sgpu_scm_readonly_transport(const struct sgpu_scm_ops *ops,
++    uint32_t mode, uint32_t zap, uint32_t probe, const uint64_t request[8],
++    struct sgpu_scm_budget *budget, struct sgpu_scm_result *result)
++{
++    if (!result) return false;
++    *result = (struct sgpu_scm_result){.error=SGPU_SCM_REJECTED};
++    if (!ops || !ops->smc || !ops->now_us || !ops->wait_us || !request || !budget ||
++        mode != 3 || zap != 1 || probe != 1 || request[1] != 1 ||
++        request[3] || request[4] || request[5] || request[6] || request[7]) return false;
++    uint64_t fn = request[0] & ~(uint64_t)SGPU_SCM_64;
++    if ((fn != SGPU_SCM_INFO_FAST || request[2] != SGPU_SCM_INFO_FAST) &&
++        (fn != SGPU_SCM_INFO || request[2] != SGPU_SCM_PAS_SUPPORTED) &&
++        (fn != SGPU_SCM_PAS_SUPPORTED || request[2] != SGPU_SCM_GPU_PAS_ID)) return false;
++    bool smc64 = (request[0] & SGPU_SCM_64) != 0;
++    uint64_t frame[8];
++    memcpy(frame, request, sizeof(frame));
++    int32_t status = 0;
++    /* Counts/deadline are shared by convention, availability and support.
++     * They bound re-entry only: one firmware SMC may itself never return. */
++    for (unsigned attempt = 0; attempt < SGPU_SCM_MAX_CALLS; attempt++) {
++        result->elapsed_us = ops->now_us(ops->ctx) - budget->start;
++        if (result->elapsed_us >= SGPU_SCM_BUDGET_US) {
++            result->error = SGPU_SCM_TIME_LIMIT;
++            result->unresolved = status == 1;
++            return false;
++        }
++        if (budget->calls >= SGPU_SCM_MAX_CALLS) {
++            result->error = SGPU_SCM_CALL_LIMIT;
++            result->unresolved = status == 1;
++            return false;
++        }
++        result->started = true;
++        result->calls++;
++        budget->calls++;
++        if (!ops->smc(ops->ctx, smc64, frame)) {
++            result->error = SGPU_SCM_TRANSPORT_FAILED;
++            result->unresolved = true;
++            result->elapsed_us = ops->now_us(ops->ctx) - budget->start;
++            memcpy(result->raw, frame, sizeof(frame));
++            return false;
++        }
++        memcpy(result->raw, frame, sizeof(frame));
++        result->elapsed_us = ops->now_us(ops->ctx) - budget->start;
++        /* Downstream SCM returns int for SMC64 too. Preserve the full raw
++         * frame separately; a0 transport completion is distinct from a1. */
++        status = (int32_t)(uint32_t)frame[0];
++        if (frame[0] != (uint32_t)frame[0] && frame[0] != (uint64_t)(int64_t)status) {
++            result->error = SGPU_SCM_TRANSPORT_FAILED;
++            result->unresolved = true;
++            return false;
++        }
++        if (status == 1) {
++            result->interruptions++;
++            continue; /* returned x0..x6/session x6, original convention */
++        }
++        if (status == -12) {
++            if (budget->busy_retries >= SGPU_SCM_MAX_BUSY) {
++                result->error = SGPU_SCM_BUSY_LIMIT;
++                return false;
++            }
++            if (result->elapsed_us >= SGPU_SCM_BUDGET_US ||
++                SGPU_SCM_BUDGET_US - result->elapsed_us <= SGPU_SCM_BUSY_DELAY_US) {
++                result->error = SGPU_SCM_TIME_LIMIT;
++                return false;
++            }
++            result->busy_retries++;
++            budget->busy_retries++;
++            ops->wait_us(ops->ctx, SGPU_SCM_BUSY_DELAY_US);
++            memcpy(frame, request, sizeof(frame));
++            continue; /* fresh original request, including session=0 */
++        }
++        if (result->elapsed_us >= SGPU_SCM_BUDGET_US) {
++            result->error = SGPU_SCM_TIME_LIMIT;
++            return false; /* terminal but late: never start another query */
++        }
++        result->error = status == 0 ? SGPU_SCM_OK : SGPU_SCM_REMOTE_ERROR;
++        return status == 0;
++    }
++    result->elapsed_us = ops->now_us(ops->ctx) - budget->start;
++    result->error = result->elapsed_us >= SGPU_SCM_BUDGET_US ? SGPU_SCM_TIME_LIMIT : SGPU_SCM_CALL_LIMIT;
++    result->unresolved = status == 1;
++    return false;
++}
++
++static void __attribute__((noinline)) sgpu_scm_failure(struct sgpu_scm_report *report,
++    uint32_t phase, const struct sgpu_scm_result *result, uint32_t error)
++{
++    if (report->failed_phase) return;
++    report->failed_phase = phase;
++    report->failure = *result;
++    if (report->failure.error == SGPU_SCM_OK) report->failure.error = error;
++}
++
++static bool __attribute__((noinline)) sgpu_scm_query(const struct sgpu_scm_ops *ops,
++    uint32_t mode, uint32_t zap, uint32_t probe, uint32_t function, uint32_t argument,
++    struct sgpu_scm_budget *budget, struct sgpu_scm_result *result)
++{
++    uint64_t request[8] = {function, 1, argument, 0, 0, 0, 0, 0};
++    if (ops->trace) ops->trace(ops->ctx, "SCM scalar query fn/argument", function, 1, argument);
++    bool ok = sgpu_scm_readonly_transport(ops, mode, zap, probe, request, budget, result);
++    if (ops->trace) {
++        ops->trace(ops->ctx, "SCM query transport/service/calls",
++            (uint32_t)result->raw[0], (uint32_t)result->raw[1], result->calls);
++        ops->trace(ops->ctx, "SCM query error/interruptions/busy",
++            result->error, result->interruptions, result->busy_retries);
++    }
++    return ok;
++}
++
++static bool __attribute__((noinline)) sgpu_scm_probe(const struct sgpu_scm_ops *ops,
++    uint32_t mode, uint32_t zap, uint32_t probe, struct sgpu_scm_report *report)
++{
++    if (!report) return false;
++    *report = (struct sgpu_scm_report){0};
++    if (!ops || !ops->smc || !ops->now_us || !ops->wait_us ||
++        mode != 3 || zap != 1 || probe != 1) return false;
++    report->attempted = true;
++    /* The existing persistent-log pause precedes the shared transport budget.
++     * No per-query trace uses the adapter's "before " pause. */
++    if (ops->trace) ops->trace(ops->ctx, "before SCM capability queries; scalar only",
++        SGPU_SCM_INFO_FAST, SGPU_SCM_PAS_SUPPORTED, SGPU_SCM_GPU_PAS_ID);
++    struct sgpu_scm_budget budget = {.start=ops->now_us(ops->ctx)};
++    bool ok = sgpu_scm_query(ops, mode, zap, probe, SGPU_SCM_INFO_FAST | SGPU_SCM_64,
++        SGPU_SCM_INFO_FAST, &budget, &report->probe64);
++    if (ok && report->probe64.raw[1] == 1) report->convention = SGPU_SCM_SMC64;
++    else {
++        int32_t status = (int32_t)(uint32_t)report->probe64.raw[0];
++        /* Narrower than Linux's any-error fallback: only terminal unsupported
++         * -1/-4 or a known negative capability permits one SMC32 attempt. */
++        bool unsupported = (ok && report->probe64.raw[1] == 0) ||
++            (report->probe64.error == SGPU_SCM_REMOTE_ERROR && (status == -1 || status == -4));
++        if (!unsupported || report->probe64.unresolved) {
++            sgpu_scm_failure(report, SGPU_SCM_PROBE64, &report->probe64, SGPU_SCM_BAD_CONVENTION);
++            return false;
++        }
++        ok = sgpu_scm_query(ops, mode, zap, probe, SGPU_SCM_INFO_FAST,
++            SGPU_SCM_INFO_FAST, &budget, &report->probe32);
++        if (!ok || report->probe32.raw[1] != 1) {
++            sgpu_scm_failure(report, SGPU_SCM_PROBE32, &report->probe32, SGPU_SCM_BAD_CONVENTION);
++            return false; /* never legacy SCM */
++        }
++        report->convention = SGPU_SCM_SMC32;
++    }
++    uint32_t mask = report->convention == SGPU_SCM_SMC64 ? SGPU_SCM_64 : 0;
++    ok = sgpu_scm_query(ops, mode, zap, probe, SGPU_SCM_INFO | mask,
++        SGPU_SCM_PAS_SUPPORTED, &budget, &report->availability);
++    if (!ok || report->availability.raw[1] != 1) {
++        sgpu_scm_failure(report, SGPU_SCM_AVAILABILITY, &report->availability, SGPU_SCM_NOT_SUPPORTED);
++        return false;
++    }
++    ok = sgpu_scm_query(ops, mode, zap, probe, SGPU_SCM_PAS_SUPPORTED | mask,
++        SGPU_SCM_GPU_PAS_ID, &budget, &report->support);
++    if (!ok || report->support.raw[1] != 1) {
++        sgpu_scm_failure(report, SGPU_SCM_SUPPORT, &report->support, SGPU_SCM_NOT_SUPPORTED);
++        return false;
++    }
++    report->supported = true;
++    return true; /* capability only: authentication/pixels remain UNPROVEN */
++}
++
++/* SCM capability probe: independent opt-in, no allocation or GPU MMIO.
++ * A passing query is NOT firmware authentication. No buffer PA is sent. */
++static bool __attribute__((noinline)) sgpu_smc_frame(void *ctx, bool smc64, uint64_t a[8])
++{
++    (void)ctx;
++    if (!smc64) for (unsigned i = 0; i < 7; i++) a[i] = (uint32_t)a[i];
++    register uint64_t x0 __asm__("x0") = a[0], x1 __asm__("x1") = a[1],
++        x2 __asm__("x2") = a[2], x3 __asm__("x3") = a[3], x4 __asm__("x4") = a[4],
++        x5 __asm__("x5") = a[5], x6 __asm__("x6") = a[6], x7 __asm__("x7") = 0;
++    __asm__ volatile("dmb sy\n\tsmc #0\n\tdsb sy"
++        : "+r"(x0), "+r"(x1), "+r"(x2), "+r"(x3), "+r"(x4), "+r"(x5), "+r"(x6), "+r"(x7)
++        : : "x8", "x9", "x10", "x11", "x12", "x13", "x14", "x15", "x16", "x17", "cc", "memory");
++    a[0]=x0; a[1]=x1; a[2]=x2; a[3]=x3; a[4]=x4; a[5]=x5; a[6]=x6; a[7]=x7;
++    if (!smc64) for (unsigned i = 0; i < 7; i++) a[i] = (uint32_t)a[i];
++    return true;
++}
++
++/* Returns whether this separate diagnostic handled the worker. Even success
++ * terminates here: no PAS allocation/authentication or sgpu_probe continuation. */
++static bool __attribute__((noinline)) sgpu_scm_capability_probe(uint32_t mode)
++{
++    uint32_t zap = 0, probe = 0;
++    if (mode != 3) return false;
++    (void)PE_parse_boot_argn("santonigpu_zap", &zap, sizeof(zap));
++    (void)PE_parse_boot_argn("santonigpu_scm", &probe, sizeof(probe));
++    if (zap != 1 || probe != 1) return false;
++    printf("SANTONI GPU: SCM capability-only opt-in; REAL SMC, no PAS load/auth, no buffer addresses\n");
++    struct sgpu_scm_ops ops = {.ctx=NULL, .smc=sgpu_smc_frame, .now_us=now_us,
++        .wait_us=sgpu_kernel_wait_us, .trace=trace};
++    struct sgpu_scm_report report;
++    bool passed = sgpu_scm_probe(&ops, mode, zap, probe, &report);
++    const struct sgpu_scm_result *last = report.failed_phase ? &report.failure : &report.support;
++    printf("SANTONI GPU: SCM LAST FRAME a0=%llx a1=%llx a2=%llx a3=%llx\n",
++        (unsigned long long)last->raw[0], (unsigned long long)last->raw[1],
++        (unsigned long long)last->raw[2], (unsigned long long)last->raw[3]);
++    printf("SANTONI GPU: SCM LAST FRAME a4=%llx a5=%llx a6=%llx a7=%llx\n",
++        (unsigned long long)last->raw[4], (unsigned long long)last->raw[5],
++        (unsigned long long)last->raw[6], (unsigned long long)last->raw[7]);
++    printf("SANTONI GPU: SCM PROBE RESULT pass=%u convention=%u supported=%u failed_phase=%u error=%u a0=%lld a1=%llx calls=%u elapsed=%llu unresolved=%u; NO PAS LOAD\n",
++        passed ? 1u : 0u, report.convention, report.supported ? 1u : 0u,
++        report.failed_phase, last->error, (long long)(int32_t)last->raw[0],
++        (unsigned long long)last->raw[1],
++        report.probe64.calls + report.probe32.calls + report.availability.calls + report.support.calls,
++        (unsigned long long)last->elapsed_us, last->unresolved ? 1u : 0u);
++    return true;
++}
++
++
+ static void __attribute__((noinline)) sgpu_failure_summary(const char *label,
+     const struct sgpu_failure *f)
+ {
+@@ -348,6 +603,10 @@
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
++    if (sgpu_scm_capability_probe(sg.mode)) {
++        thread_terminate_self();
++        return;
++    }
+     sgpu_zap_allocation_preflight(sg.mode);
+     const void *firmware = NULL;
+     unsigned int firmware_size = 0;

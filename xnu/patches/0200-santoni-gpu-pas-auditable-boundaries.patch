@@ -1,0 +1,47 @@
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -209,7 +209,7 @@ static uint32_t sgpu_zap_u32(const uint8_t *p)
+         (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
+ }
+ 
+-static bool sgpu_zap_layout(const void *metadata, uint32_t metadata_bytes,
++static bool __attribute__((noinline)) sgpu_zap_layout(const void *metadata, uint32_t metadata_bytes,
+     uint32_t segment_bytes, struct sgpu_zap_layout *layout)
+ {
+     if (!metadata || !layout || metadata_bytes < 52 ||
+@@ -247,7 +247,7 @@ static bool sgpu_zap_layout(const void *metadata, uint32_t metadata_bytes,
+     return true; /* structure only; signature/TZ acceptance unknown */
+ }
+ 
+-static bool sgpu_pas_allocate(struct sgpu_pas_memory *memory, uint32_t bytes,
++static bool __attribute__((noinline)) sgpu_pas_allocate(struct sgpu_pas_memory *memory, uint32_t bytes,
+     uint32_t alignment)
+ {
+     if (!memory || memory->va || memory->pa || memory->bytes || memory->exposed ||
+@@ -275,7 +275,7 @@ static bool sgpu_pas_allocate(struct sgpu_pas_memory *memory, uint32_t bytes,
+     return true;
+ }
+ 
+-static bool sgpu_pas_release(struct sgpu_pas_memory *memory)
++static bool __attribute__((noinline)) sgpu_pas_release(struct sgpu_pas_memory *memory)
+ {
+     if (!memory || memory->exposed) return false;
+     if (memory->va) kmem_free(kernel_map, memory->va, memory->bytes);
+@@ -283,7 +283,7 @@ static bool sgpu_pas_release(struct sgpu_pas_memory *memory)
+     return true;
+ }
+ 
+-static bool sgpu_zap_prepare(const void *metadata, uint32_t metadata_bytes,
++static bool __attribute__((noinline)) sgpu_zap_prepare(const void *metadata, uint32_t metadata_bytes,
+     const void *segment, uint32_t segment_bytes, struct sgpu_zap_buffers *buffers)
+ {
+     struct sgpu_zap_layout layout;
+@@ -303,7 +303,7 @@ static bool sgpu_zap_prepare(const void *metadata, uint32_t metadata_bytes,
+     return true;
+ }
+ 
+-static void sgpu_zap_allocation_preflight(uint32_t mode)
++static void __attribute__((noinline)) sgpu_zap_allocation_preflight(uint32_t mode)
+ {
+     uint32_t enabled = 0;
+     if (mode != 3) return;

@@ -1,0 +1,316 @@
+--- a/iokit/Kernel/arm/SweetSurface.h
++++ b/iokit/Kernel/arm/SweetSurface.h
+@@ -65,6 +65,15 @@
+     uint32_t height, uint32_t bytesPerRow, uint32_t pixelFormat);
+ 
+ /*
++ * Publish fresh wired kernel memory as a surface, the way a userspace
++ * IOSurfaceCreate() would. Used for display frames the kernel composes
++ * itself, where the panel memory cannot be published directly (a 24-bit
++ * panel is not a 32-bit IOSurface).
++ */
++SweetSurface *sweet_surface_create_buffer(uint32_t width, uint32_t height,
++    uint32_t bytesPerRow, uint32_t pixelFormat);
++
++/*
+  * topaz scanout pool: physically contiguous low memory (below 4 GiB, unused by
+  * xnu, which runs in the upper DDR bank) so the MDP can fetch a surface
+  * directly. The framebuffer sets the full-screen geometry it can scan out.
+--- a/iokit/Kernel/arm/SweetSurface.cpp
++++ b/iokit/Kernel/arm/SweetSurface.cpp
+@@ -338,6 +338,44 @@
+ 	return s;
+ }
+ 
++SweetSurface *
++sweet_surface_create_buffer(uint32_t width, uint32_t height, uint32_t bytesPerRow,
++    uint32_t pixelFormat)
++{
++	SweetSurface *s = sweet_surface_alloc();
++	if (s == NULL) {
++		return NULL;
++	}
++	s->width = width;
++	s->height = height;
++	s->bytesPerRow = bytesPerRow;
++	s->bytesPerElement = 4;
++	s->elementWidth = s->elementHeight = 1;
++	s->pixelFormat = pixelFormat;
++	s->allocSize = (uint32_t)round_page((uint64_t)bytesPerRow * height);
++	IOBufferMemoryDescriptor *mem = NULL;
++	if (s->allocSize != 0 &&
++	    (uint64_t)OSAddAtomic64(s->allocSize, (volatile SInt64 *)&sweet_surface_wired) +
++	    s->allocSize <= SWEET_SURFACE_WIRED_MAX) {
++		mem = IOBufferMemoryDescriptor::inTaskWithOptions(kernel_task,
++		    kIODirectionInOut | kIOMemoryKernelUserShared, s->allocSize, page_size);
++	}
++	if (mem == NULL) {
++		OSAddAtomic64(-(SInt64)s->allocSize, (volatile SInt64 *)&sweet_surface_wired);
++		s->release();
++		return NULL;
++	}
++	bzero(mem->getBytesNoCopy(), s->allocSize);
++	s->memory = mem;
++	/* cached: the compositor writes every pixel, a WC mapping would crawl */
++	s->mapCache = kIOMapDefaultCache;
++	if (!sweet_surface_publish(s)) {
++		s->release();
++		return NULL;
++	}
++	return s;
++}
++
+ mach_port_name_t
+ sweet_surface_port_in_task(SweetSurface *s, task_t task)
+ {
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -67,8 +67,10 @@
+ 	}
+ }
+ class AppleCLCD;
++#if !defined(SANTONI)
+ static AppleCLCD *sweet_cons_fb;
+ static void sweet_cons_show(void);
++#endif
+ class OSDictionary;
+ static void sweet_bl_log(const char *who, OSDictionary *d);
+ extern "C" void sweet_dcache_clean(vm_offset_t addr, unsigned length);  /* osfmk/arm/caches.c */
+@@ -144,9 +146,15 @@
+ 	uint32_t      fWidth, fHeight, fRowBytes;
+ 	uint32_t      fLogicalW, fLogicalH;     /* size reported to userland */
+ 	int32_t       fOffX, fOffY;             /* logical origin of the panel */
+-	uintptr_t     fPixels;          /* kernel mapping of the panel memory */
++	uintptr_t     fPixels;          /* kernel alias of the composed 32-bit frame */
+ 	IOMemoryMap  *fMap;
+-	SweetSurface *fSurface;         /* the panel memory as an IOSurface */
++	SweetSurface *fSurface;         /* the composed BGRA frame as an IOSurface */
++	uint32_t      fBpp;             /* panel bytes per pixel: 4, or 3 for 24-bit BGR */
++	uint32_t      fPanelStride;     /* panel bytes per row (3 * fWidth when fBpp == 3) */
++	uintptr_t     fPanelVA;         /* write-combined mapping of the panel memory */
++	IOMemoryDescriptor *fPanelMem;
++	IOMemoryMap  *fPanelMap;
++	void          blitPanel();
+ 	IOLock       *fLock;            /* swaps and client list */
+ 	OSArray      *fClients;
+ 	uint32_t      fSwapID;
+@@ -274,10 +282,28 @@
+ 	fWidth = (uint32_t)video.v_width;
+ 	fHeight = (uint32_t)video.v_height;
+ 	fRowBytes = (uint32_t)video.v_rowBytes;
+-	if (fPhys == 0 || fWidth == 0 || fHeight == 0 || fRowBytes < fWidth * 4) {
++	fPanelStride = fRowBytes;
++	/*
++	 * santoni: the ABL continuous-splash framebuffer is 24-bit BGR with a
++	 * 3 * width stride (720x1280, stride 2160, v_depth 24). sweet's is
++	 * 32-bit BGRA. Only those two are composed; anything else has no
++	 * surface format this driver can describe.
++	 */
++	if (video.v_depth == 24 || (fRowBytes >= fWidth * 3 && fRowBytes < fWidth * 4)) {
++		fBpp = 3;
++	} else if (video.v_depth == 32 || fRowBytes >= fWidth * 4) {
++		fBpp = 4;
++	} else {
++		IOLog("SWEET FB: unsupported boot framebuffer depth %llu stride %u for width %u\n",
++		    (unsigned long long)video.v_depth, fRowBytes, fWidth);
++		return false;
++	}
++	if (fPhys == 0 || fWidth == 0 || fHeight == 0 || fPanelStride < fWidth * fBpp) {
+ 		IOLog("SWEET FB: no boot framebuffer\n");
+ 		return false;
+ 	}
++	/* Layers are always composed in 32-bit BGRA; the panel may be 24-bit. */
++	fRowBytes = fWidth * 4;
+ 	int native = 0;
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
+ 	fLogicalW = fWidth;
+@@ -291,10 +317,31 @@
+ 	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
+ 	fLock = IOLockAlloc();
+ 	fClients = OSArray::withCapacity(4);
+-	fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes, SWEET_FB_FORMAT_BGRA);
+-	fPixels = fSurface != NULL ? fSurface->kernelAddress() : 0;
++	if (fBpp == 4) {
++		/* sweet: the panel memory is already 32-bit BGRA; publish it. */
++		fSurface = sweet_surface_create_physical(fPhys, fWidth, fHeight, fRowBytes,
++		    SWEET_FB_FORMAT_BGRA);
++		fPixels = fSurface != NULL ? fSurface->kernelAddress() : 0;
++	} else {
++		/*
++		 * santoni: a 24-bit panel is not a 32-bit IOSurface (bytesPerRow
++		 * 2160 < 4 * 720), and CoreAnimation would render 4-byte pixels
++		 * straight into it. Publish a 32-bit shadow frame instead, compose
++		 * the layers there, and convert it to the panel in blitPanel().
++		 */
++		fSurface = sweet_surface_create_buffer(fWidth, fHeight, fRowBytes,
++		    SWEET_FB_FORMAT_BGRA);
++		fPanelMem = IOMemoryDescriptor::withPhysicalAddress(fPhys,
++		    ((vm_size_t)fPanelStride * fHeight + page_size - 1) & ~(vm_size_t)(page_size - 1),
++		    kIODirectionInOut);
++		fPanelMap = fPanelMem != NULL ? fPanelMem->map(kIOMapWriteCombineCache) : NULL;
++		fPanelVA = fPanelMap != NULL ? (uintptr_t)fPanelMap->getVirtualAddress() : 0;
++		/* kernel alias of the published shadow: what the layers compose into */
++		fPixels = fSurface != NULL ? fSurface->kernelAddress() : 0;
++	}
+ 	fWorkLoop = IOWorkLoop::workLoop();
+-	if (fLock == NULL || fClients == NULL || fPixels == 0 || fWorkLoop == NULL) {
++	if (fLock == NULL || fClients == NULL || fPixels == 0 || fWorkLoop == NULL ||
++	    (fBpp == 3 && fPanelVA == 0)) {
+ 		IOLog("SWEET FB: setup failed\n");
+ 		OSSafeReleaseNULL(fSurface);    /* stays published: also held by the table */
+ 		OSSafeReleaseNULL(fWorkLoop);
+@@ -305,6 +352,25 @@
+ 		IOLog("SWEET FB: no vsync timer\n");
+ 		return false;
+ 	}
++	uint32_t accelOn = 1;
++	(void)PE_parse_boot_argn("sweetaccel", &accelOn, sizeof(accelOn));
++	IOAcceleratorES *accel = accelOn ? OSTypeAlloc(IOAcceleratorES) : NULL;
++	if (accel != NULL && accel->init()) {
++		accel->setName("sgx");
++		if (accel->attach(this)) {
++			accel->registerService();
++			IOLog("SWEET FB: empty IOAcceleratorES published (no 30 s wait in CAMetalContextCreate)\n");
++		}
++	}
++	OSSafeReleaseNULL(accel);
++	/*
++	 * topaz (SM7150) only: VIG0/CTL0 direct scanout, DSI0 brightness and the
++	 * INTF1 timing engine. MSM8937 has none of this hardware at these
++	 * addresses, and ML_IO_MAP of an undecoded physical address faults on
++	 * first access, so santoni never touches them (fVig0/fDsi stay NULL and
++	 * every topaz path is a no-op there).
++	 */
++#if !defined(SANTONI)
+ 	fVig0 = (volatile uint32_t *)ml_io_map(0x05e05000, 0x1000);
+ 	fCtl0 = (volatile uint32_t *)ml_io_map(0x05e02000, 0x1000);
+ 	fDsi = (volatile uint8_t *)ml_io_map(0x05e94000, 0x1000);
+@@ -338,17 +404,6 @@
+ 		}
+ 		OSSafeReleaseNULL(bl);
+ 	}
+-	uint32_t accelOn = 1;
+-	(void)PE_parse_boot_argn("sweetaccel", &accelOn, sizeof(accelOn));
+-	IOAcceleratorES *accel = accelOn ? OSTypeAlloc(IOAcceleratorES) : NULL;
+-	if (accel != NULL && accel->init()) {
+-		accel->setName("sgx");
+-		if (accel->attach(this)) {
+-			accel->registerService();
+-			IOLog("SWEET FB: empty IOAcceleratorES published (no 30 s wait in CAMetalContextCreate)\n");
+-		}
+-	}
+-	OSSafeReleaseNULL(accel);
+ 	/* dpu sm6115 catalog: intf_1 at mdp+0x6a800, mdp at 0x5e01000 */
+ 	fIntf1 = (volatile uint32_t *)ml_io_map(0x05e6b000, 0x1000);
+ 	if (fIntf1 != NULL) {
+@@ -396,6 +451,7 @@
+ 			OSSafeReleaseNULL(fCons);
+ 		}
+ 	}
++#endif /* !SANTONI */
+ 	uint32_t hz = 10;
+ 	PE_parse_boot_argn("sweetfb_hz", &hz, sizeof(hz));
+ 	fFlushTicks = (hz == 0 || hz >= 60) ? 1 : 60 / hz;
+@@ -405,8 +461,10 @@
+ 	setProperty("external", false);
+ 	setProperty("DisplayPipePlaneBaseAlignment", 64ULL, 32);
+ 	registerService();
+-	IOLog("SWEET FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
+-	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
++	IOLog("SWEET FB: AppleCLCD %ux%u panel stride %u %u-bpp at 0x%llx, frame stride %u, "
++	    "default surface %u, presented as %ux%u\n",
++	    fWidth, fHeight, fPanelStride, fBpp * 8, fPhys, fRowBytes, fSurface->id,
++	    fLogicalW, fLogicalH);
+ 	return true;
+ }
+ 
+@@ -479,6 +537,7 @@
+ 					row[x] = step < 6 ? (row[x] >> 1) & 0x7f7f7f7f : 0;
+ 				}
+ 			}
++			fb->blitPanel();
+ 		}
+ 		sender->setTimeoutUS(SWEET_FB_VSYNC_US);
+ 		return;
+@@ -579,6 +638,9 @@
+ void
+ AppleCLCD::scanFrom(uint64_t pa, uint32_t stride)
+ {
++	if (fVig0 == NULL || fCtl0 == NULL) {
++		return;
++	}
+ 	fVig0[0x14 / 4] = (uint32_t)pa;
+ 	fVig0[0x24 / 4] = stride;
+ 	__asm__ volatile("dsb sy" ::: "memory");
+@@ -589,6 +651,35 @@
+ }
+ 
+ /*
++ * 24-bit panel (santoni): convert the composed 32-bit BGRA frame to the
++ * panel's byte order and write it out row by row. The panel memory holds
++ * b8g8r8, not r8g8b8: the ABL splash and the early console both write blue
++ * to the lowest address, and a solid red splash reads back red on this
++ * panel. Four-byte pixels are therefore stored as B,G,R in that order.
++ */
++void
++AppleCLCD::blitPanel()
++{
++	if (fBpp != 3 || fPanelVA == 0 || fPixels == 0) {
++		return;
++	}
++	const uint8_t *src = (const uint8_t *)fPixels;
++	for (uint32_t y = 0; y < fHeight; y++) {
++		const uint32_t *in = (const uint32_t *)(src + (uint64_t)y * fRowBytes);
++		uint8_t *out = (uint8_t *)(fPanelVA + (uint64_t)y * fPanelStride);
++		for (uint32_t x = 0; x < fWidth; x++) {
++			uint32_t p = in[x];
++			out[0] = (uint8_t)p;            /* blue  */
++			out[1] = (uint8_t)(p >> 8);     /* green */
++			out[2] = (uint8_t)(p >> 16);    /* red   */
++			out += 3;
++		}
++	}
++	/* Write-combining memory: complete the stores before the panel fetches. */
++	__asm__ volatile("dsb sy" ::: "memory");
++}
++
++/*
+  * DCS long write through the DSI command DMA path (topaz-woa: the TPG FIFO
+  * path is a no-op on this DSI 2.4.1). The packet lives in a contiguous
+  * buffer below 4 GiB; header = word count, data type 0x39, flags last|long.
+@@ -773,6 +864,7 @@
+ }
+ 
+ /* panic: show the console frame (MMIO only, no locks) */
++#if !defined(SANTONI)
+ static void
+ sweet_cons_show(void)
+ {
+@@ -781,6 +873,7 @@
+ 		fb->scanFrom(fb->fConsPhys, fb->fRowBytes);
+ 	}
+ }
++#endif
+ 
+ void
+ AppleCLCD::fadeStep(const uint8_t *src, uint32_t srcStride, uint32_t step)
+@@ -813,6 +906,9 @@
+ AppleCLCD::flipBack(void)
+ {
+ 	uint32_t idx = fFlipIdx ^ 1;
++	if (fVig0 == NULL || fCtl0 == NULL || fFlip[idx] == NULL) {
++		return;
++	}
+ 	sweet_dcache_clean((vm_offset_t)(uintptr_t)fFlip[idx]->getBytesNoCopy(), (unsigned)fFlip[idx]->getLength());
+ 	scanFrom(fFlipPhys[idx], fRowBytes);
+ 	fFlipIdx = idx;
+@@ -1028,6 +1124,9 @@
+ 	}
+ 	if (fFlip[0] != NULL) {
+ 		flipBack();
++	} else {
++		/* santoni: no MDP to scan the composed frame, push it to the panel. */
++		blitPanel();
+ 	}
+ }
+ 

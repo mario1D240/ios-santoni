@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/chaotic-cx/mesa-mirror.git",
+  "tag": "mesa-25.0.7",
+  "commit": "742a20f48c59e8649533c84c4d49dd95b403f5da",
+  "source_sha256": {
+    "src/mesa/main/dlist.c": "f865ca8f17c24a38a3cfe06e026314dd0b7b00403fcda6c867681cce3fccc743",
+    "include/drm-uapi/msm_drm.h": "72c8f32bd744fbd77f0b840a93846bfa32fa91703ea8ff2b7a61540911a5a897",
+    "include/drm-uapi/drm.h": "6b80aff056e2ac2e126e5144a3ce2c750292edb4d080d4689ac487dc17e4dae8",
+    "src/freedreno/common/freedreno_devices.py": "a62e2df3b81e9bd0ec71078adc43ce4e421c8e8b8fdcc2646dc7eb14e0823b3f",
+    "src/freedreno/drm/msm/msm_ringbuffer_sp.c": "32d13b2685109da4a9f36b7e4e2f31d745abef0a1f597fd43f46915952ddd159",
+    "src/freedreno/drm/freedreno_priv.h": "03ecfedcb165a5abba841d09b8c83fbc76ac2ba2bd94adf658c66dc2763a3413",
+    "src/gallium/drivers/freedreno/a5xx/fd5_program.c": "9c607dcfe6f3d00c3b59c30d5892da480bbaffca1bf329b2ae3baff1f8a5ae25",
+    "src/gallium/drivers/freedreno/a5xx/fd5_emit.c": "784b61bc4a2a1f1243319570af6ac6eb573e822538256e8d894b862cfab4e062",
+    "src/freedreno/registers/adreno/adreno_pm4.xml": "38910be0ba35799374c66b16a5538b407bd0032406934609c8d8a5fe48af7218",
+    "src/freedreno/registers/adreno/a5xx.xml": "5d77e21ffdb5a82e8f26b37f00f26404b67be2a70c7f333fd7748c15416f0466",
+    "src/freedreno/ir3/ir3_compiler.c": "f57e82896984465ab630027df256a3c9126165485cdfea2a1db0072763e2c6e3",
+    "src/util/macros.h": "cb7761079fd529cae22c7c5959573ddccdad7ebc335f362431557f7e0ef19e06"
+  },
+  "A505_profile_source": "src/freedreno/common/freedreno_devices.py",
+  "command_suballocation_bytes": 32768,
+  "physical_hardware_verified": false
+}

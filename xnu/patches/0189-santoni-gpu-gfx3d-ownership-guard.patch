@@ -1,0 +1,17 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -320,6 +320,13 @@
+             BIT(31), command, 0, command, 0, 0);
+         return false;
+     }
++    /* An inherited GFX3D branch request is not ours to clear. Restoring it ON
++     * before GX collapse would violate the verified clock-off prerequisite. */
++    uint32_t gfx = read32(p, SG_CC, 0x20);
++    if (gfx & 1u) {
++        sgpu_failure(p, SG_FAIL_OWNER, SG_CC, 0x20, 1, 0, gfx, 0, gfx, 0, 0);
++        return false;
++    }
+     /* Keep the root enabled through GDSC transitions. XO / 1, no PLL/voltage writes. */
+     if (!change(p, SG_CC, CC_CMD, 2, 2) ||
+         !poll(p, SG_CC, CC_CMD, BIT(31), 0, 10000) ||

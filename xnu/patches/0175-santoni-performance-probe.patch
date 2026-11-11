@@ -1,0 +1,155 @@
+Subject: [PATCH 0175] santoni: avoid absent identity resolver and measure CPU performance
+
+Santoni reintroduced config_ext_resolver after the iOS port disabled
+it; iOS has no memberd provider. Use the existing compatibility path.
+Optional santoniperf=1 runs one-shot post-startup read-only clock/cache
+and per-core ALU/memory/coherence probes. Never changes clocks, voltage,
+coherency registers, input wiring or CPU count. No hardware speed claim.
+
+diff --git a/config/MASTER.arm64.santoni b/config/MASTER.arm64.santoni
+--- a/config/MASTER.arm64.santoni
++++ b/config/MASTER.arm64.santoni
+@@ -29,7 +29,7 @@
+ #  BSD_RELEASE =    [ BSD_BASE ]
+ #  BSD_DEV =        [ BSD_BASE config_vnguard ]
+ #  BSD_DEBUG =      [ BSD_BASE config_vnguard ]
+-#  FILESYS_BASE =   [ devfs fdesc fifo mockfs sweet_hfs fs_compression config_protect config_mnt_rootsnap config_rosv_startup config_mount_vm config_mount_prebootrecovery config_basesystemroot config_fse quota namedstreams config_imgsrc_access config_triggers config_ext_resolver config_searchfs config_volfs config_appledouble nullfs bindfs config_mnt_suid config_firmlinks config_dataless_files config_union_mounts config_file_leases ]
++#  FILESYS_BASE =   [ devfs fdesc fifo mockfs sweet_hfs fs_compression config_protect config_mnt_rootsnap config_rosv_startup config_mount_vm config_mount_prebootrecovery config_basesystemroot config_fse quota namedstreams config_imgsrc_access config_triggers config_searchfs config_volfs config_appledouble nullfs bindfs config_mnt_suid config_firmlinks config_dataless_files config_union_mounts config_file_leases ]
+ #  FILESYS_RELEASE= [ FILESYS_BASE ]
+ #  FILESYS_DEV =    [ FILESYS_BASE config_iocount_trace ]
+ #  FILESYS_DEBUG =  [ FILESYS_BASE config_iocount_trace ]
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -15,6 +15,7 @@
+ #include <kern/clock.h>
+ #include <kern/processor.h>
+ #include <kern/thread.h>
++#include <kern/sched_prim.h>
+ #include <mach/mach_time.h>
+ #include <pexpert/pexpert.h>
+ 
+@@ -25,6 +26,8 @@
+ /* The assembly/C cache helpers must not acquire C++ name mangling. */
+ extern "C" void CleanPoC_DcacheRegion_Force(vm_offset_t va, size_t length);
+ extern "C" void flush_dcache64(addr64_t addr, unsigned count, int phys);
++extern "C" vm_offset_t ml_io_map(vm_offset_t phys_addr, vm_size_t size);
++extern "C" int printf(const char *format, ...);
+ 
+ #if defined(SANTONI)
+ /* Matches the assembly's private cache-line slot; no neighboring CPU writes. */
+@@ -62,6 +65,7 @@
+ 
+ public:
+ 	static void startAll(void *arg, wait_result_t result);
++	static void probePerformance(void *arg, wait_result_t result);
+ 	bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
+ 	void free(void) APPLE_KEXT_OVERRIDE;
+ 	void initCPU(bool boot) APPLE_KEXT_OVERRIDE;
+@@ -206,6 +210,106 @@
+ 	ml_set_max_cpus(topology->max_cpu_id + 1);
+ 	IOLog("SWEET CPU: %u/%u CPUs initialized, SGI1 verified\n",
+ 	    topology->num_cpus, topology->num_cpus);
++#if defined(SANTONI)
++	int perf = 0;
++	(void)PE_parse_boot_argn("santoniperf", &perf, sizeof(perf));
++	if (perf) {
++		thread_t probe;
++		if (kernel_thread_start(&SweetCPU::probePerformance, NULL, &probe) == KERN_SUCCESS) {
++			thread_deallocate(probe);
++		}
++	}
++#endif
++	thread_terminate(current_thread());
++}
++
++/* Read-only diagnostics: never change PLLs, muxes, voltage or coherency bits.
++ * Optional one-shot worker runs AFTER CPU startup/resource publication. */
++void
++SweetCPU::probePerformance(void *arg __unused, wait_result_t result __unused)
++{
++#if defined(SANTONI)
++	static const struct {
++		const char *name;
++		vm_offset_t apcs, pll;
++	} clocks[] = {
++		{ "cluster1", 0x0b011000, 0x0b016000 },
++		{ "cluster0", 0x0b111000, 0x0b116000 },
++		{ "CCI",      0x0b1d1000, 0 },
++	};
++	for (unsigned i = 0; i < 3; i++) {
++		vm_offset_t apcs = ml_io_map(clocks[i].apcs, 0x1000);
++		vm_offset_t pll = clocks[i].pll ? ml_io_map(clocks[i].pll, 0x40) : 0;
++		if (!apcs || (clocks[i].pll && !pll)) {
++			printf("SANTONI PERF: %s clock map failed\n", clocks[i].name);
++			continue;
++		}
++		uint32_t cmd = *(volatile uint32_t *)(apcs + 0x50);
++		uint32_t cfg = *(volatile uint32_t *)(apcs + 0x54);
++		/* Linux apcs-msm8916: src bits10:8, HID bits4:0 at CFG +0x54. */
++		printf("SANTONI PERF: %s cmd=%#x cfg=%#x src=%u hid=%u pll_mode=%#x pll_L=%u pll_M=%u pll_N=%u pll_status=%#x\n",
++		    clocks[i].name, cmd, cfg, (cfg >> 8) & 7u, cfg & 31u,
++		    pll ? *(volatile uint32_t *)pll : 0u,
++		    pll ? *(volatile uint32_t *)(pll + 4) : 0u,
++		    pll ? *(volatile uint32_t *)(pll + 8) : 0u,
++		    pll ? *(volatile uint32_t *)(pll + 12) : 0u,
++		    pll ? *(volatile uint32_t *)(pll + 0x1c) : 0u);
++	}
++	const ml_topology_info_t *topology = ml_get_topology_info();
++	printf("SANTONI PERF: selected=%u clusters=%u; one-shot diagnostics only\n",
++	    topology->num_cpus, topology->num_clusters);
++	const unsigned words = (128u * 1024u) / sizeof(uint32_t);
++	volatile uint32_t *buffer = (volatile uint32_t *)IOMallocZeroData(words * sizeof(uint32_t));
++	if (!buffer) {
++		printf("SANTONI PERF: no benchmark buffer\n");
++		thread_terminate(current_thread());
++		return;
++	}
++	bool pattern_written = false;
++	unsigned pattern_cpu = 0;
++	for (unsigned i = 0; i < topology->num_cpus; i++) {
++		SweetCPU *cpu = __atomic_load_n(&sweet_cpus[i], __ATOMIC_ACQUIRE);
++		processor_t previous = thread_bind(cpu->machProcessor);
++		(void)thread_block(THREAD_CONTINUE_NULL);
++		if ((unsigned)cpu_number() != i) {
++			printf("SANTONI PERF: requested cpu%u, running cpu%d; skipped\n", i, cpu_number());
++			thread_bind(previous);
++			continue;
++		}
++		uint64_t sctlr = __builtin_arm_rsr64("SCTLR_EL1");
++		uint64_t mair = __builtin_arm_rsr64("MAIR_EL1");
++		uint32_t value = 1;
++		uint64_t start = mach_absolute_time(), alu_ns, memory_ns;
++		for (unsigned n = 0; n < 250000; n++) {
++			value = value * 1664525u + 1013904223u;
++			__asm__ volatile("" : "+r"(value));
++		}
++		absolutetime_to_nanoseconds(mach_absolute_time() - start, &alu_ns);
++		unsigned stale = 0;
++		__builtin_arm_dmb(DMB_ISH);
++		if (pattern_written) {
++			for (unsigned n = 0; n < words; n += 16) {
++				if (buffer[n] != (0x5a000000u | (pattern_cpu << 16) | n)) stale++;
++			}
++		}
++		for (unsigned n = 0; n < words; n += 16) buffer[n] = 0x5a000000u | (i << 16) | n;
++		pattern_cpu = i;
++		pattern_written = true;
++		__builtin_arm_dmb(DMB_ISH);
++		start = mach_absolute_time();
++		for (unsigned pass = 0; pass < 64; pass++) {
++			for (unsigned n = 0; n < words; n += 16) value ^= buffer[n];
++		}
++		absolutetime_to_nanoseconds(mach_absolute_time() - start, &memory_ns);
++		printf("SANTONI PERF: cpu=%u mpidr=%#llx D=%u I=%u mair=%#llx alu_ns=%llu mem_ns=%llu stale_lines=%u check=%#x\n",
++		    i, (unsigned long long)(__builtin_arm_rsr64("MPIDR_EL1") & 0xffffULL),
++		    (unsigned)((sctlr >> 2) & 1), (unsigned)((sctlr >> 12) & 1),
++		    (unsigned long long)mair, (unsigned long long)alu_ns,
++		    (unsigned long long)memory_ns, stale, value);
++		thread_bind(previous);
++	}
++	IOFreeData((void *)buffer, words * sizeof(uint32_t));
++#endif
+ 	thread_terminate(current_thread());
+ }
+ 

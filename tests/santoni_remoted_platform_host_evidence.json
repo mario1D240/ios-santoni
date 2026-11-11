@@ -1,0 +1,111 @@
+{
+  "success": true,
+  "native_cases": {
+    "santoni": {
+      "O0": 52,
+      "O2": 52,
+      "UBSan": 52
+    },
+    "other_board": {
+      "O0": 6,
+      "O2": 6,
+      "UBSan": 6
+    }
+  },
+  "native_total": 174,
+  "compiled_rejected_mutants": 6,
+  "case_names": {
+    "santoni": [
+      "helper/default_off",
+      "helper/optin_two",
+      "helper/optin_full_width",
+      "helper/null_process",
+      "helper/other_process",
+      "helper/missing_text",
+      "helper/directory",
+      "helper/device_vnode",
+      "helper/missing_mount",
+      "helper/nonroot",
+      "helper/other_root_path",
+      "helper/path_suffix",
+      "helper/unresolved_alias",
+      "helper/cryptex_alias_refused",
+      "helper/path_error",
+      "helper/path_overflow",
+      "helper/zero_length",
+      "helper/negative_length",
+      "helper/short_length",
+      "helper/oversized_length",
+      "helper/missing_nul",
+      "helper/invalid_blob",
+      "helper/killed_exec",
+      "helper/signed_root_missing_platform",
+      "helper/readonly_root",
+      "helper/signed_root_missing_blob",
+      "helper/unsigned_root",
+      "helper/no_signature_claim",
+      "helper/existing_blob_platform",
+      "helper/existing_exec_platform",
+      "helper/first_exec",
+      "helper/log_once",
+      "query/default_off",
+      "query/invalid_optin",
+      "query/exec_local_platform",
+      "query/null_text_or_process",
+      "query/original_signed_blob",
+      "query/original_nonplatform_blob",
+      "exec/successful_signed_exec",
+      "exec/successful_unsigned_exec",
+      "exec/mac_policy_failure",
+      "exec/signature_failure",
+      "exec/launch_constraint_failure",
+      "exec/machine_signature_failure",
+      "exec/thread_signature_failure",
+      "exec/missing_ios_platform",
+      "exec/wrong_ios_platform",
+      "exec/taskgated_refusal",
+      "exec/taskgated_transport_error",
+      "exec/no_access_port_unsigned",
+      "exec/inherited_platform_cleared",
+      "exec/default_off_success"
+    ],
+    "other_board": [
+      "other/process_flag_does_not_change_policy",
+      "other/original_platform_blob",
+      "other/unsigned_process_refused",
+      "other/missing_blob_refused",
+      "other/missing_text_refused",
+      "other/null_process_refused"
+    ]
+  },
+  "mutants": [
+    "mutant_default_on",
+    "mutant_path_identity",
+    "mutant_invent_signature",
+    "mutant_invalid_blob",
+    "mutant_unconditional_exec",
+    "mutant_query_default_on"
+  ],
+  "source_sha256": {
+    "bsd/kern/kern_exec.c": "66fd82f9ee00fd997d590fa2f74040485a687899b53faccad6f93cee3143099b",
+    "bsd/kern/kern_cs.c": "3cd9e3ab3eb68c81cec67941563d694779db399e580e56f63477b78930ec8a09"
+  },
+  "mechanical_apply_and_bytes_verified": true,
+  "GPU_core_MMIO_PAS_BO_lifetime_unchanged": true,
+  "hardware_verified": false,
+  "kernel_certified": false,
+  "old_test_executions": 0,
+  "sha256": {
+    "xnu/patches/0212-santoni-remoted-platform-workaround.patch": "449b01b7575400ef4ee36bd5a49b9a8cce6cccb6000b8c40713f169a0dca5449",
+    "tests/test_santoni_remoted_platform.c": "0802384ade1929e636137b2f3e27ef9a40b7b1b4caf6467edaa074a3ce9febff",
+    "tests/santoni_remoted_platform_stubs.h": "060f2cfbd766b547ba6e646340d76196a44e6f49522069e9a86e832a93bd31da",
+    "tests/verify_santoni_remoted_platform.py": "21b398d2990be539946abee02d6ae935a17e293b0d225bd31753f1c291dc516e",
+    "tests/test_santoni_remoted_platform_other.c": "e808929cd8f79d45b53c75aebbd8c3596adc606a416b01a48b746dcc0197de6c",
+    "tests/verify_santoni_remoted_platform_other.py": "13daa174071f589e6ede7868f7ef427fd141da6667d45b73542b30867f3367bf"
+  },
+  "origin": {
+    "primary": "out/santoni-remoted-panic-20261102T072210250908Z/native-resume/result.json",
+    "other_board": "out/santoni-remoted-panic-20261102T072210250908Z/native-other/result.json",
+    "initial_compile_failure": "out/santoni-remoted-panic-20261102T072210250908Z/native-first/O0/compile.log"
+  }
+}

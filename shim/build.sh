@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Build the freestanding shim and wrap it in an Android boot.img v0 for MSM8937 (santoni).
 set -euo pipefail
 
@@ -44,12 +44,14 @@ python3 ../tools/mkinit.py out/santoni-init.o out/init.macho
 # Ramdisk: an xnu payload (tools/mkpayload.py) if given as $1, else an empty
 # newc cpio -> diagnostics.
 RAMDISK="out/ramdisk.bin"
+# Use one command line for the payload and Android wrapper. Physical touch
+# replaces automatic input; keep disk diagnostics without drawing over the UI.
+CMDLINE="debug=0x14e serial=3 disable_kprintf_output=0 sweetfb_native=1 sweetfb_noconsole=1 sweetfb_hz=30 sweetlog=1 sweetfb_stayon=1 sweethidtest=0 santoni_varfix=1 cpus=8 sweetcpufreq=0 sweetbattery=0 rd=emmcroot0 emmcrw=1 rootrw=1 unentitled_ios_sim_launch=1 launchd_unsecure_cache=1 wdt=-1 wdt_test=no_user_checkin ignition_level=1 -v keepsyms=1 santoni"
 if [ -n "$PAYLOAD" ]; then
 	magic=$(python3 -c "import sys; f=open(sys.argv[1],'rb'); b=f.read(4); print(b.hex())" "$PAYLOAD" 2>/dev/null || true)
 	if [ "$magic" = "cffaedfe" ] || [ "$magic" = "feedfacf" ]; then
 		echo "Detected raw Mach-O kernel ($PAYLOAD). Generating ADT and packing with mkpayload.py..."
-		python3 ../tools/mkadt.py out/santoni.adt
-		CMDLINE="debug=0x14e serial=3 disable_kprintf_output=0 -enable_kprintf_spam sweetfb_native=1 sweetcpufreq=0 sweetbattery=0 rd=md0 -v keepsyms=1 santoni"
+		python3 ../tools/mkadt.py out/santoni.adt --native
 		python3 ../tools/mkpayload.py "$PAYLOAD" out/santoni.adt out/payload.bin --cmdline "$CMDLINE" --ramdisk out/init.macho
 		RAMDISK="out/payload.bin"
 	else
@@ -70,7 +72,6 @@ if [ -f ../resources/santoni_appended_dtbs.bin ]; then
 fi
 
 # Packaging: wrap in boot.img v0 using tools/mkbootimg.py
-CMDLINE="debug=0x14e serial=3 disable_kprintf_output=0 -enable_kprintf_spam sweetfb_native=1 sweetcpufreq=0 sweetbattery=0 rd=md0 -v keepsyms=1 santoni"
 python3 ../tools/mkbootimg.py \
 	--kernel out/Image \
 	--ramdisk "$RAMDISK" \

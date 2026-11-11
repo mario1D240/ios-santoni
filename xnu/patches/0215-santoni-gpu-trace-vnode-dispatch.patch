@@ -1,0 +1,36 @@
+diff --git a/bsd/vfs/vfs_vnops.c b/bsd/vfs/vfs_vnops.c
+index 3a94ed4..dd6f2e1 100644
+--- a/bsd/vfs/vfs_vnops.c
++++ b/bsd/vfs/vfs_vnops.c
+@@ -86,6 +86,12 @@
+ #include <sys/vnode_internal.h>
+ #include <sys/ioctl.h>
+ #include <sys/fsctl.h>
++
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <dev/santoni_gpu_launch_trace.h>
++/* The vnode vector identity is checked before interpreting mockfs state. */
++extern int (**mockfs_vnodeop_p)(void *);
++#endif
+ #include <sys/tty.h>
+ #include <sys/ubc.h>
+ #include <sys/conf.h>
+@@ -1676,6 +1682,18 @@ vn_ioctl(struct fileproc *fp, u_long com, caddr_t data, vfs_context_t ctx)
+
+ 	switch (vp->v_type) {
+ 	case VREG:
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++		/* XNU8796 normally rejects custom regular-file ioctls with ENOTTY.
++		 * Route only our fixed IOC_IN command on the mockfs vnode vector;
++		 * its existing receiver enforces boot role, exact executable/root
++		 * access, record shape and quota. MAC checks and this vnode iocount
++		 * remain outside the route. No GPU or backing ownership changes. */
++		if (com == SGPU_LAUNCH_TRACE_IOCTL && vp->v_op == mockfs_vnodeop_p) {
++			error = VNOP_IOCTL(vp, com, data, fp->fp_glob->fg_flag, ctx);
++			goto out;
++		}
++		OS_FALLTHROUGH;
++#endif
+ 	case VDIR:
+ 		if (com == FIONREAD) {
+ 			off_t temp_nbytes;

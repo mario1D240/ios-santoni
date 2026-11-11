@@ -1,0 +1,80 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 6eb3cc8..66fec10 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1261,6 +1261,45 @@ user_fault_addr_matches_pac_error_code(vm_offset_t fault_addr, bool data_key)
+ }
+ #endif /* __has_feature(ptrauth_calls) */
+
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <sys/proc.h>
++#include <pexpert/pexpert.h>
++#include <dev/santoni_gpu_launch.h>
++
++/* First terminal PID1 user abort on the explicit boot-only EL0 role. This
++ * observes the exception frame before triage; it neither changes that frame
++ * nor enters VFS/MMIO/SMC. Successful/redriven VM faults never reach the hooks.
++ * One weak compare/exchange attempt avoids a retry loop on the exception path;
++ * contention may drop a sample. A printed frame is not an EL0 completion gate.
++ */
++static uint32_t santoni_gpu_user_fault_reported;
++
++static void __attribute__((noinline))
++santoni_gpu_user_fault(arm_saved_state_t *state, exception_type_t exc,
++    mach_exception_data_type_t code, mach_exception_data_type_t address)
++{
++    if (!state || !is_saved_state64(state) ||
++        !PSR64_IS_USER(get_saved_state_cpsr(state))) return;
++    proc_t p=current_proc();
++    if (!p || !proc_isinitproc(p)) return;
++    uint32_t mode=0,enabled=0;
++    if (!PE_parse_boot_argn("santonigpu",&mode,sizeof(mode)) || mode!=3 ||
++        !PE_parse_boot_argn("santonigpu_user_exec",&enabled,sizeof(enabled)) || enabled!=1 ||
++        !santoni_gpu_user_launch_mount_published() ||
++        !santoni_gpu_user_launch_worker_ready(mode)) return;
++    uint32_t expected=0;
++    if (!__atomic_compare_exchange_n(&santoni_gpu_user_fault_reported,&expected,1,
++        true,__ATOMIC_RELAXED,__ATOMIC_RELAXED)) return;
++    printf("SANTONI GPU: USER FAULT pc=%016llx sp=%016llx lr=%016llx\n",
++        (unsigned long long)get_saved_state_pc(state),
++        (unsigned long long)get_saved_state_sp(state),
++        (unsigned long long)get_saved_state_lr(state));
++    printf("SANTONI GPU: USER FAULT esr=%08x far=%016llx exc=%u code=%016llx address=%016llx\n",
++        get_saved_state_esr(state),(unsigned long long)get_saved_state_far(state),
++        (unsigned)exc,(unsigned long long)code,(unsigned long long)address);
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
++
+ static void
+ handle_pc_align(arm_saved_state_t *ss)
+ {
+@@ -1282,6 +1321,9 @@ handle_pc_align(arm_saved_state_t *ss)
+ 	codes[0] = EXC_ARM_DA_ALIGN;
+ 	codes[1] = get_saved_state_pc(ss);
+
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	santoni_gpu_user_fault(ss, exc, codes[0], codes[1]);
++#endif
+ 	exception_triage(exc, codes, numcodes);
+ 	__builtin_unreachable();
+ }
+@@ -1307,6 +1349,9 @@ handle_sp_align(arm_saved_state_t *ss)
+ 	codes[0] = EXC_ARM_SP_ALIGN;
+ 	codes[1] = get_saved_state_sp(ss);
+
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	santoni_gpu_user_fault(ss, exc, codes[0], codes[1]);
++#endif
+ 	exception_triage(exc, codes, numcodes);
+ 	__builtin_unreachable();
+ }
+@@ -1560,6 +1605,9 @@ handle_user_abort(arm_saved_state_t *state, uint32_t esr, vm_offset_t fault_addr
+ 		exc |= EXC_PTRAUTH_BIT;
+ 	}
+ #endif /* __has_feature(ptrauth_calls) */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	santoni_gpu_user_fault(state, exc, codes[0], codes[1]);
++#endif
+ 	exception_triage(exc, codes, numcodes);
+ 	__builtin_unreachable();
+ }

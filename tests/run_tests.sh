@@ -1,9 +1,9 @@
 #!/bin/bash
 # Host tests + patch validation for the Santoni bring-up.
 #
-# Called by shim/build.sh (and the xnu workflow) so that the three phase 4
-# host tests and the unified-diff structure of the Santoni patches are checked
-# on every build. Everything here is host-only: no device, no XNU tree.
+# Called by shim/build.sh and the xnu workflow: storage/log host tests,
+# executable tests of the reconstructed SMP/input/display drivers, and patch checks.
+# Everything here is host-only: no device or external XNU checkout required.
 #
 #   tests/run_tests.sh            # normal run, binaries in out/
 #   OUT_DIR=/tmp/t tests/run_tests.sh
@@ -14,6 +14,51 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+python3 tools/verify_santoni_gpu_graphics_evidence.py graphics tests/santoni_gpu_graphics_host_evidence.json
+python3 tools/verify_santoni_gpu_graphics_evidence.py pm4 tests/santoni_gpu_pm4_host_evidence.json
+python3 tools/verify_santoni_gpu_graphics_evidence.py bridge tests/santoni_gpu_graphics_bridge_host_evidence.json
+python3 tools/verify_santoni_gpu_graphics_evidence.py publish tests/santoni_gpu_graphics_publish_host_evidence.json
+python3 tools/verify_santoni_gpu_graphics_evidence.py publish-mutants tests/santoni_gpu_graphics_publish_mutants_host_evidence.json
+python3 tools/verify_santoni_gpu_raster_evidence.py ir3 tests/santoni_gpu_ir3_host_evidence.json
+python3 tools/verify_santoni_gpu_raster_evidence.py raster tests/santoni_gpu_raster_host_evidence.json
+python3 tools/verify_santoni_gpu_live_evidence.py tests/santoni_gpu_live_host_evidence.json
+python3 tools/verify_santoni_gpu_render_evidence.py tests/santoni_gpu_render_host_evidence.json
+python3 -m unittest tests.test_native_santoni_gpu_core tests.test_santoni_gpu_raster_evidence tests.test_santoni_gpu_native_vm_evidence
+python3 -m unittest tests.test_santoni_gpu_graphics_gates
+python3 -m unittest tests.test_santoni_graphics_build_policy
+python3 -m unittest tests.test_santoni_graphics_loader_build tests.test_santoni_ui_loader_binding tests.test_santoni_graphics_startup
+python3 -m unittest tests.test_santoni_gpu_dyld tests.test_santoni_gpu_dyld_audit tests.test_santoni_gpu_ui_launch
+python3 -m unittest tests.test_santoni_gpu_dyld_startup
+python3 -m unittest tests.test_santoni_graphics_library tests.test_santoni_graphics_terminal
+python3 -m unittest tests.test_santoni_graphics_mesa_oom
+python3 -m unittest tests.test_santoni_graphics_mesa_terminal
+python3 -m unittest tests.test_santoni_graphics_gles tests.test_santoni_graphics_gles_sharing
+python3 -m unittest tests.test_santoni_graphics_ui_context tests.test_santoni_graphics_ui_groups
+python3 -m unittest tests.test_santoni_graphics_ui_backend tests.test_santoni_graphics_ui_backend_groups
+python3 -m unittest tests.test_santoni_graphics_dispatch tests.test_santoni_graphics_ui_dispatch tests.test_santoni_graphics_ui_dispatch_shared tests.test_santoni_graphics_ui_shader
+python3 -m unittest tests.test_santoni_graphics_eagl tests.test_santoni_graphics_eagl_groups
+python3 -m unittest tests.test_santoni_graphics_capture tests.test_santoni_graphics_capture_inspect tests.test_santoni_graphics_capture_ui
+
+python3 tools/verify_santoni_gpu_ui_evidence.py tests/santoni_gpu_ui_host_evidence.json
+python3 -m unittest tests.test_santoni_gpu_ui_gates
+python3 -m unittest tests.test_santoni_gpu_ui_binary
+python3 -m unittest tests.test_santoni_gpu_render_audit
+python3 -m unittest tests.test_santoni_gpu_session_composition tests.test_santoni_gpu_exclusion_scopes tests.test_santoni_gpu_session_entry_replay
+
+python3 -m unittest tests.test_santoni_gpu_live
+python3 -m unittest tests.test_santoni_gpu_render
+
+python3 -m unittest tests.test_santoni_gpu_readiness
+python3 tools/verify_santoni_gpu_readiness_evidence.py tests/santoni_gpu_readiness_host_evidence.json
+
+echo "== rootfs: extension setup and preserved migration state =="
+python3 -m unittest tests.test_sweet_root_tweaks
+
+echo "== SANTONI: exact recorded PID1 user-fault observation contracts =="
+python3 -m unittest tests.test_santoni_gpu_user_fault_evidence
+python3 -m unittest tests.test_santoni_gpu_user_fault_binary
+python3 tools/verify_santoni_gpu_user_fault_evidence.py tests/santoni_gpu_user_fault_host_evidence.json
+
 CC="${HOST_CC:-${CC:-clang}}"
 OUT="${OUT_DIR:-out}"
 mkdir -p "$OUT"
@@ -21,6 +66,7 @@ mkdir -p "$OUT"
 P142="xnu/patches/0142-santoni-sdhci-emmc-driver.patch"
 P143="xnu/patches/0143-santoni-persistent-console-log.patch"
 P144="xnu/patches/0144-santoni-4k-unsigned-dyld-cache.patch"
+P149="xnu/patches/0149-santoni-varfix.patch"
 
 echo "== host unit tests (-Wall -Wextra) =="
 for t in test_sdhci_mock test_gpt_parser test_log_ring; do
@@ -30,6 +76,58 @@ for t in test_sdhci_mock test_gpt_parser test_log_ring; do
 		*)  "./$OUT/$t" ;;
 	esac
 done
+
+echo "== SANTONI: executable touch/buttons/RPM contracts from the actual patch chain =="
+python3 tests/test_santoni_touch.py --cc "$CC" --out-dir "$OUT/santoni-touch"
+
+echo "== SANTONI: actual HID timer and panel conversion =="
+python3 tests/test_santoni_ui.py --out-dir "$OUT/santoni-ui"
+
+echo "== SANTONI: actual GICv2 routing, private IRQ banks and IPI ordering =="
+python3 tests/test_santoni_smp.py
+
+echo "== SANTONI: actual EL1/EL2 secondary entry and CPU_ON handoff =="
+python3 tests/test_santoni_secondary.py
+
+echo "== SANTONI: actual startup/reset publication with separate cache/PoC views =="
+python3 tests/test_santoni_startup_publication.py
+
+echo "== SANTONI: iOS resolver config and read-only per-CPU performance probe =="
+python3 tests/test_santoni_performance.py
+
+echo "== SANTONI: vendor A505 target, command packets and firmware preparation =="
+python3 tests/test_santoni_gpu_prepare.py
+
+echo "== SANTONI: actual guarded A505 kernel core, cache/DMA and offscreen tests =="
+python3 tests/test_santoni_gpu_driver.py
+python3 -m unittest tests.test_santoni_gpu_stock
+python3 -m unittest tests.test_santoni_gpu_pixels
+python3 -m unittest tests.test_santoni_gpu_g3
+python3 -m unittest tests.test_santoni_gpu_session
+python3 -m unittest tests.test_santoni_gpu_user
+python3 tests/test_santoni_gpu_pas_cache.py
+
+echo "== SANTONI: GPU hardware-delivery and actual-binary audit rejection gates =="
+python3 tests/test_santoni_gpu_boot_gates.py
+python3 tests/test_santoni_gpu_kernel_audit.py
+python3 -m unittest tests.test_santoni_gpu_stock_audit
+python3 -m unittest tests.test_santoni_gpu_pixel_audit
+python3 -m unittest tests.test_santoni_gpu_g3_audit
+python3 -m unittest tests.test_santoni_gpu_session_gates
+python3 -m unittest tests.test_santoni_gpu_user_gates
+python3 -m unittest tests.test_santoni_gpu_session_audit
+python3 -m unittest tests.test_santoni_gpu_control_audit
+python3 -m unittest tests.test_santoni_gpu_binary_model
+python3 -m unittest tests.test_santoni_gpu_session_replay
+
+echo "== SANTONI: coherent WFI idle cache policy =="
+python3 tests/test_santoni_idle.py
+
+echo "== persistent log extraction (fake ADB only) =="
+python3 tests/test_sweet_log_pull.py
+
+echo "== CI artifact fallback (fake curl only) =="
+python3 -m unittest tests.test_gofile_upload
 
 echo "== unified diff structure (all xnu/patches) =="
 python3 tools/check_patch.py xnu/patches/*.patch > "$OUT/check_patch.log"
@@ -230,13 +328,61 @@ python3 tools/check_patch.py "$P142" -q \
 	--added-lacks 'bsd/dev/santoni_sdhci.c:return physio('
 echo "ok   0142 never hands a user VA to memcpy and keeps the cdev lock off uiomove"
 
+echo "== STOR-14: kernel buffers copied under the lock, psize in 512-byte  =="
+echo "==          units, sync/solid-state/feature ioctls, pread LBA 2      =="
+python3 tools/check_patch.py "$P142" -q \
+	--added-contains 'bsd/dev/santoni_sdhci.c:case DKIOCSYNCHRONIZE:' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:case DKIOCSYNCHRONIZECACHE:' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:case DKIOCISSOLIDSTATE:' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:case DKIOCGETFEATURES:' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:*f = DK_FEATURE_BARRIER;' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:(int)MIN(se.nblocks, (uint64_t)INT_MAX)' \
+	--added-lacks 'bsd/dev/santoni_sdhci.c:(int)MIN(se.nblocks * SDHCI_BLOCK'
+grep -q '^#define SYS_pread	153$' tools/santoni-init.S
+grep -q 'mov	x3, #1024' tools/santoni-init.S
+grep -q 'read eMMC LBA 2 (off 1024)' tools/santoni-init.S
+echo "ok   0142 locks kernel memcpy, reports sectors, and accepts sync ioctls"
+
+echo "== SANTONI-01: /private/var mkdir rescue and EACCES paths (0149) =="
+python3 tools/check_patch.py "$P149" -q \
+	--added-contains 'bsd/vfs/vfs_syscalls.c:santoni_varfix_enabled(void)' \
+	--added-contains 'bsd/vfs/vfs_syscalls.c:santoni_var_path(kbuf)' \
+	--added-contains 'bsd/vfs/vfs_syscalls.c:santoni_chown_created(rctx' \
+	--added-contains 'bsd/vfs/vfs_syscalls.c:mkdir1at(rctx, (user_addr_t)(uintptr_t)kbuf' \
+	--added-contains 'bsd/vfs/vfs_syscalls.c:SANTONI VFS: mkdir' \
+	--added-contains 'bsd/vfs/vfs_syscalls.c:SANTONI VFS: open' \
+	--added-lacks 'bsd/vfs/vfs_syscalls.c:santoni_var_path("/'
+grep -Eq 'sweetfb_noconsole=[01]' shim/build.sh
+grep -q 'santoni_varfix=1' shim/build.sh
+# sweetlog=1 is optional; omitting it disables console line filtering
+echo "ok   0149 rescues data-volume mkdir and logs EACCES paths"
+
 # Optional deep check: if a patched XNU source tree is provided, the three
-# patches must also apply to it as-is (git apply --check).
+# storage patches plus 0149 must also apply to it as-is (git apply --check).
 if [ -n "${XNU_SRC:-}" ]; then
 	echo "== git apply --check against XNU_SRC=$XNU_SRC =="
 	(cd "$XNU_SRC" && git apply --check \
-	    "$OLDPWD/$P142" "$OLDPWD/$P143" "$OLDPWD/$P144")
-	echo "ok   all three patches apply to $XNU_SRC"
+	    "$OLDPWD/$P142" "$OLDPWD/$P143" "$OLDPWD/$P144" "$OLDPWD/$P149")
+	echo "ok   all four patches apply to $XNU_SRC"
 fi
+
+echo "== SANTONI-02: SPMI v2 map, 0164 FIFO/poll/CRC, GIC SPI 168->200 and I2C half-period (0164) =="
+python3 tools/check_patch.py xnu/patches/0164-santoni-touch-fixes.patch -q \
+	--added-contains 'bsd/dev/santoni_sdhci.c:pmic_arb_apid_map_offset_v2() = 0x800 + 4*APID' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:uint8_t tmp[128];' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:uint8_t crc = 0;' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:GIC_SPI 168 -> hwirq 200' \
+	--added-contains 'bsd/dev/santoni_sdhci.c:static bool' \
+	--added-lacks 'bsd/dev/santoni_sdhci.c:core + 0x2000'
+echo "ok   0164 carries SPMI/GIC/FT-CRC/FIFO/reply-parse fixes"
+
+echo "== SANTONI-03: CI must not silently drop numbered Santoni patches (xnu.yml) =="
+if grep -Fq "if grep -E 'Skipping patch .*[0-9]{4}-santoni' build.log; then" .github/workflows/xnu.yml; then
+	echo "ok   workflow fails on skipped Santoni patches, including 016x and 0201"
+else
+	echo "workflow skip guard does not cover every four-digit Santoni patch" >&2
+	exit 1
+fi
+
 
 echo "run_tests: all hosts tests, patch checks and shipped-code assertions passed"

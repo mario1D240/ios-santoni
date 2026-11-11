@@ -1,0 +1,382 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+index d0032fa..27c4857 100644
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -1966,4 +1966,309 @@ uint32_t sgpu_client_call(struct sgpu_client *client, struct sgpu_session_queue
+     *packet=reply; /* zeroed, by-value reply; never a pointer into live state */
+     return SG_CLIENT_OK;
+ }
++/* First render bridge wave: an OFFLINE, caller-owned page-table arena and
++ * kernel-built copy contract. No boot role, allocator, IOUserClient, live CB
++ * replacement, ring publication or display integration is added here.
++ * SGPU_PAGE / SGPU_VA_BASE / PTE_RW come from Santoni's programmed SMMUv2
++ * CB0 in this file, not Sailfish's A530 VA/PTE/compute constants.
++ * Four adjacent L3 tables cover 8MiB at the same 2MiB-aligned base; this is
++ * prepared table content, not evidence that a live GPU accepted the window.
++ */
++#define SG_RENDER_FN __attribute__((noinline, used))
++
++static SG_RENDER_FN bool sgpu_render_overlap(const void *one, uint32_t one_bytes,
++    const void *two, uint32_t two_bytes)
++{
++    uintptr_t a = (uintptr_t)one, b = (uintptr_t)two;
++    return a > UINTPTR_MAX - one_bytes || b > UINTPTR_MAX - two_bytes ||
++        (a < b + two_bytes && b < a + one_bytes);
++}
++
++static SG_RENDER_FN bool sgpu_render_memory_valid(const struct sgpu_render_memory *m)
++{
++    if (!m || !m->tables || !m->pixels || !m->pa || !m->pages ||
++        m->pages > SGPU_RENDER_MAX_PAGES ||
++        (((uintptr_t)m->tables | (uintptr_t)m->pixels) & (SGPU_PAGE - 1))) return false;
++    uintptr_t t = (uintptr_t)m->tables, p = (uintptr_t)m->pixels;
++    uint32_t tb = SGPU_RENDER_TABLE_PAGES * SGPU_PAGE, pb = m->pages * SGPU_PAGE;
++    if (t > UINTPTR_MAX - tb || p > UINTPTR_MAX - pb || (t < p + pb && p < t + tb)) return false;
++    if (sgpu_render_overlap(m->pa, m->pages * sizeof(uint64_t), m->tables, tb) ||
++        sgpu_render_overlap(m->pa, m->pages * sizeof(uint64_t), m->pixels, pb)) return false;
++    for (unsigned i = 0; i < SGPU_RENDER_TABLE_PAGES; i++) {
++        uint64_t pa = m->table_pa[i];
++        if ((pa & (SGPU_PAGE - 1)) || pa < SGPU_DMA_MIN || pa >= SGPU_DMA_END) return false;
++        for (unsigned j = 0; j < i; j++) if (pa == m->table_pa[j]) return false;
++    }
++    for (unsigned i = 0; i < m->pages; i++) {
++        uint64_t pa = m->pa[i];
++        if ((pa & (SGPU_PAGE - 1)) || pa < SGPU_DMA_MIN || pa >= SGPU_DMA_END) return false;
++        for (unsigned j = 0; j < i; j++) if (pa == m->pa[j]) return false;
++        for (unsigned j = 0; j < SGPU_RENDER_TABLE_PAGES; j++) if (pa == m->table_pa[j]) return false;
++    }
++    return true;
++}
++
++static SG_RENDER_FN bool sgpu_render_tables_valid(const struct sgpu_render_arena *a)
++{
++    if (!a || !a->initialized || !sgpu_render_memory_valid(&a->memory)) return false;
++    const struct sgpu_render_memory *m = &a->memory;
++    const uint64_t *l1 = (const uint64_t *)(const void *)m->tables;
++    const uint64_t *l2 = l1 + SGPU_PAGE / 8;
++    const uint64_t *l3 = l2 + SGPU_PAGE / 8;
++    for (unsigned i = 0; i < SGPU_RENDER_BOS; i++) {
++        const struct sgpu_render_bo *b = &a->bo[i];
++        if (!b->handle) continue;
++        for (unsigned j = 0; j < i; j++) {
++            const struct sgpu_render_bo *c = &a->bo[j];
++            if (c->handle && (b->handle == c->handle ||
++                (b->physical < (uint64_t)c->physical + c->pages &&
++                 c->physical < (uint64_t)b->physical + b->pages))) return false;
++        }
++    }
++    for (unsigned i = 0; i < SGPU_PAGE / 8; i++) {
++        uint64_t want = i == 0 ? m->table_pa[1] | 3 : 0;
++        if (l1[i] != want) return false;
++        want = i >= (SGPU_VA_BASE >> 21) && i < (SGPU_VA_BASE >> 21) + 4 ?
++            m->table_pa[2 + i - (SGPU_VA_BASE >> 21)] | 3 : 0;
++        if (l2[i] != want) return false;
++    }
++    if (l3[0] != (m->table_pa[6] | PTE_RW) || !a->va_used[0]) return false;
++    for (unsigned slot = 1; slot < SGPU_RENDER_MAX_PAGES; slot++) {
++        uint64_t want = 0;
++        bool used = false;
++        for (unsigned i = 0; i < SGPU_RENDER_BOS; i++) {
++            const struct sgpu_render_bo *b = &a->bo[i];
++            if (!b->handle) continue;
++            if (!b->owner || !b->pages || !b->bytes || b->bytes > SGPU_RENDER_BO_BYTES ||
++                b->pages != (b->bytes + SGPU_PAGE - 1) / SGPU_PAGE || !b->first ||
++                b->first >= SGPU_RENDER_MAX_PAGES || b->pages >= SGPU_RENDER_MAX_PAGES - b->first ||
++                b->physical >= m->pages || b->pages > m->pages - b->physical) return false;
++            if (slot >= b->first && slot <= b->first + b->pages) {
++                if (used) return false;
++                used = true;
++                if (slot < b->first + b->pages) {
++                    unsigned physical = b->physical + slot - b->first;
++                    if (!a->physical_used[physical]) return false;
++                    want = m->pa[physical] | PTE_RW;
++                }
++            }
++        }
++        if (l3[slot] != want || (a->va_used[slot] != 0) != used) return false;
++    }
++    return true;
++}
++
++static SG_RENDER_FN struct sgpu_render_bo *sgpu_render_lookup(struct sgpu_render_arena *a,
++    uint64_t owner, uint32_t handle)
++{
++    if (!a || !a->initialized || !owner || !handle) return NULL;
++    for (unsigned i = 0; i < SGPU_RENDER_BOS; i++)
++        if (a->bo[i].owner == owner && a->bo[i].handle == handle &&
++            !a->bo[i].retired && !a->bo[i].quarantine) return &a->bo[i];
++    return NULL;
++}
++
++SG_RENDER_FN bool sgpu_render_init(struct sgpu_render_arena *a,
++    const struct sgpu_render_memory *m, const struct sgpu_ops *ops)
++{
++    if (!a || a->initialized || !sgpu_render_memory_valid(m) || !ops || !ops->clean ||
++        !ops->invalidate || !ops->now_us || !ops->wait_us || !ops->read32) return false;
++    if (sgpu_render_overlap(a, sizeof(*a), m->tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE) ||
++        sgpu_render_overlap(a, sizeof(*a), m->pixels, m->pages * SGPU_PAGE) ||
++        sgpu_render_overlap(a, sizeof(*a), m, sizeof(*m)) ||
++        sgpu_render_overlap(a, sizeof(*a), ops, sizeof(*ops)) ||
++        sgpu_render_overlap(m->tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE, m, sizeof(*m)) ||
++        sgpu_render_overlap(m->tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE, ops, sizeof(*ops)) ||
++        sgpu_render_overlap(m->pixels, m->pages * SGPU_PAGE, m, sizeof(*m)) ||
++        sgpu_render_overlap(m->pixels, m->pages * SGPU_PAGE, ops, sizeof(*ops)) ||
++        sgpu_render_overlap(m->tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE, m->pa, m->pages * sizeof(uint64_t)) ||
++        sgpu_render_overlap(a, sizeof(*a), m->pa, m->pages * sizeof(uint64_t))) return false;
++    /* Caller supplies a zeroed, disjoint state; no reset/reinit of exposed state. */
++    *a = (struct sgpu_render_arena){.memory = *m, .ops = ops, .next_handle = 1};
++    for (unsigned i = 0; i < SGPU_RENDER_TABLE_PAGES * SGPU_PAGE; i++) m->tables[i] = 0;
++    uint64_t *l1 = (uint64_t *)(void *)m->tables;
++    uint64_t *l2 = l1 + SGPU_PAGE / 8;
++    uint64_t *l3 = l2 + SGPU_PAGE / 8;
++    l1[0] = m->table_pa[1] | 3;
++    for (unsigned i = 0; i < 4; i++) l2[(SGPU_VA_BASE >> 21) + i] = m->table_pa[2 + i] | 3;
++    l3[0] = m->table_pa[6] | PTE_RW;
++    a->va_used[0] = 1;
++    a->initialized = true;
++    return true;
++}
++
++SG_RENDER_FN uint32_t sgpu_render_new(struct sgpu_render_arena *a, uint64_t owner, uint32_t bytes)
++{
++    if (!a || !owner || !bytes || bytes > SGPU_RENDER_BO_BYTES || a->busy || a->exposed ||
++        a->error || !a->next_handle || a->next_handle == UINT32_MAX || !sgpu_render_tables_valid(a)) return 0;
++    unsigned pages = (bytes + SGPU_PAGE - 1) / SGPU_PAGE;
++    unsigned index = SGPU_RENDER_BOS, first = 0, physical = SGPU_RENDER_MAX_PAGES, run = 0;
++    for (unsigned i = 0; i < SGPU_RENDER_BOS; i++) if (!a->bo[i].handle) { index = i; break; }
++    for (unsigned i = 1; i < SGPU_RENDER_MAX_PAGES; i++) {
++        run = a->va_used[i] ? 0 : run + 1;
++        if (run == pages + 1) { first = i - pages; break; }
++    }
++    run = 0;
++    for (unsigned i = 0; i < a->memory.pages; i++) {
++        run = a->physical_used[i] ? 0 : run + 1;
++        if (run == pages) { physical = i + 1 - pages; break; }
++    }
++    if (index == SGPU_RENDER_BOS || !first || physical == SGPU_RENDER_MAX_PAGES) return 0;
++    struct sgpu_render_bo *b = &a->bo[index];
++    *b = (struct sgpu_render_bo){.owner = owner, .handle = a->next_handle++, .bytes = bytes,
++        .first = first, .physical = physical, .pages = pages};
++    uint64_t *l3 = (uint64_t *)(void *)(a->memory.tables + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < pages; i++) {
++        a->physical_used[physical + i] = a->va_used[first + i] = 1;
++        l3[first + i] = a->memory.pa[physical + i] | PTE_RW;
++    }
++    a->va_used[first + pages] = 1; /* invalid guard PTE, including across L3 boundaries */
++    uint8_t *pixels = a->memory.pixels + physical * SGPU_PAGE;
++    for (unsigned i = 0; i < pages * SGPU_PAGE; i++) pixels[i] = 0;
++    return b->handle;
++}
++
++SG_RENDER_FN bool sgpu_render_free(struct sgpu_render_arena *a, uint64_t owner, uint32_t handle)
++{
++    struct sgpu_render_bo *b = sgpu_render_lookup(a, owner, handle);
++    if (!b) return false;
++    if (a->exposed || a->busy || a->error) {
++        b->retired = b->quarantine = true;
++        return false; /* NEVER clear PTEs, release backing or reuse an exposed VA */
++    }
++    if (!sgpu_render_tables_valid(a)) return false;
++    uint64_t *l3 = (uint64_t *)(void *)(a->memory.tables + 2 * SGPU_PAGE);
++    for (unsigned i = 0; i < b->pages; i++) {
++        l3[b->first + i] = 0;
++        a->va_used[b->first + i] = a->physical_used[b->physical + i] = 0;
++    }
++    a->va_used[b->first + b->pages] = 0;
++    *b = (struct sgpu_render_bo){0};
++    return true;
++}
++
++SG_RENDER_FN bool sgpu_render_cpu(struct sgpu_render_arena *a, uint64_t owner,
++    uint32_t handle, uint32_t offset, uint32_t bytes, uint8_t **out)
++{
++    struct sgpu_render_bo *b = sgpu_render_lookup(a, owner, handle);
++    if (!b || !out || !bytes || a->busy || a->error || offset > b->bytes ||
++        bytes > b->bytes - offset || !sgpu_render_tables_valid(a)) return false;
++    *out = a->memory.pixels + b->physical * SGPU_PAGE + offset;
++    return true;
++}
++
++static SG_RENDER_FN bool sgpu_render_plane_valid(const struct sgpu_render_plane *p,
++    const struct sgpu_render_bo *b)
++{
++    if (!p || !b || !p->width || !p->height || p->width > 4096 || p->height > 4096 ||
++        (p->format != SG_RENDER_RGBA8 && p->format != SG_RENDER_BGRA8) ||
++        p->stride < p->width * 4 || (p->stride & 63) || (p->offset & 63) ||
++        p->stride > 65535u * 64u || p->offset > b->bytes) return false;
++    uint64_t span = (uint64_t)p->stride * p->height;
++    /* RB_2D_{SRC,DST}_SIZE packs pitch/array pitch in two 16-bit 64-byte units,
++     * from Mesa fd5_blitter / the retained emit_blit reference. Include ALL
++     * row padding in the range contract, not just width*height*4 bytes. */
++    return span / 64 <= 65535 && span <= b->bytes - p->offset;
++}
++
++SG_RENDER_FN void sgpu_render_abort(struct sgpu_render_arena *a, uint32_t error)
++{
++    if (!a || !a->initialized) return;
++    if (!a->error) a->error = error >= SG_RENDER_TIMEOUT && error <= SG_RENDER_BAD_MAPPING ? error : SG_RENDER_FAULT;
++    for (unsigned i = 0; i < SGPU_RENDER_BOS; i++) if (a->bo[i].handle) a->bo[i].quarantine = true;
++    /* busy/exposed/fence state is intentionally retained, not a clean teardown. */
++}
++
++SG_RENDER_FN uint32_t sgpu_render_begin(struct sgpu_render_arena *a, uint64_t owner,
++    const struct sgpu_render_plane *source, const struct sgpu_render_plane *destination,
++    uint32_t *out, uint32_t capacity)
++{
++    if (!a || !source || !destination || !out || capacity < SGPU_RENDER_WORDS ||
++        a->busy || a->error || a->submitted == UINT32_MAX || !sgpu_render_tables_valid(a)) return 0;
++    if (sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, a, sizeof(*a)) ||
++        sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, a->memory.tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE) ||
++        sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, a->memory.pixels, a->memory.pages * SGPU_PAGE) ||
++        sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, a->ops, sizeof(*a->ops)) ||
++        sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, source, sizeof(*source)) ||
++        sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, destination, sizeof(*destination)) ||
++        sgpu_render_overlap(out, SGPU_RENDER_WORDS * 4, a->memory.pa, a->memory.pages * sizeof(uint64_t))) return 0;
++    struct sgpu_render_plane sp = *source, dp = *destination;
++    struct sgpu_render_bo *s = sgpu_render_lookup(a, owner, sp.handle);
++    struct sgpu_render_bo *d = sgpu_render_lookup(a, owner, dp.handle);
++    if (s == d || !sgpu_render_plane_valid(&sp, s) || !sgpu_render_plane_valid(&dp, d) ||
++        sp.width != dp.width || sp.height != dp.height || sp.format != dp.format) return 0;
++    uint32_t commands[SGPU_RENDER_WORDS];
++    uint32_t n = sgpu_blit_commands(commands, SGPU_RENDER_WORDS, SGPU_MARKER_VA + 768);
++    if (!n) return 0;
++    /* Keep every A505 register/control word from the proven fixed builder.
++     * The only deltas are validated bases/pitches/extents and private fence.
++     * RGBA/BGRA are byte-preserving SAME-format copies; no RGBA->BGRA swizzle,
++     * alpha blending, scale or BGR24 scanout is promised by this contract. */
++    for (unsigned i = 0; i < n;) {
++        uint32_t h = commands[i++], count = (h >> 28) == 4 ? h & 127 : h & 0x3fff;
++        if ((h >> 28) == 4) {
++            uint32_t reg = (h >> 8) & 0x3ffff;
++            if (reg == 0x2107 || reg == 0x2110) {
++                const struct sgpu_render_plane *p = reg == 0x2107 ? &sp : &dp;
++                const struct sgpu_render_bo *b = reg == 0x2107 ? s : d;
++                commands[i + 1] = SGPU_VA_BASE + b->first * SGPU_PAGE + p->offset;
++                commands[i + 3] = (p->stride / 64) | ((uint32_t)((uint64_t)p->stride * p->height / 64) << 16);
++            }
++        } else if (((h >> 16) & 0x7f) == 0x2c) {
++            commands[i + 2] = commands[i + 4] = (sp.width - 1) | ((sp.height - 1) << 16);
++        } else if (((h >> 16) & 0x7f) == 0x46) {
++            commands[i + 1] = SGPU_VA_BASE;
++            if (commands[i] == 4) commands[i + 3] = a->submitted + 1;
++        }
++        i += count;
++    }
++    a->busy = ++a->submitted;
++    s->last_seq = d->last_seq = a->busy;
++    a->destination = dp.handle;
++    a->exposed = true; /* conservative ownership BEFORE first cache/publish operation */
++    volatile uint32_t *fence = (volatile uint32_t *)(void *)(a->memory.tables + 6 * SGPU_PAGE);
++    *fence = 0;
++    for (unsigned i = 0; i < n; i++) out[i] = commands[i];
++    const struct sgpu_ops *ops = a->ops;
++    ops->clean(ops->ctx, a->memory.tables, SGPU_RENDER_TABLE_PAGES * SGPU_PAGE);
++    ops->clean(ops->ctx, a->memory.pixels + s->physical * SGPU_PAGE, s->pages * SGPU_PAGE);
++    ops->clean(ops->ctx, a->memory.pixels + d->physical * SGPU_PAGE, d->pages * SGPU_PAGE);
++    ops->clean(ops->ctx, out, n * 4);
++    return n;
++}
++
++SG_RENDER_FN bool sgpu_render_wait(struct sgpu_render_arena *a)
++{
++    if (!a || !a->initialized || !a->busy || a->error || !a->exposed) return false;
++    const struct sgpu_ops *ops = a->ops;
++    uint8_t *fence = a->memory.tables + 6 * SGPU_PAGE;
++    uint64_t start = ops->now_us(ops->ctx);
++    for (unsigned i = 0; i <= SGPU_RENDER_WAIT_US / 100; i++) {
++        ops->invalidate(ops->ctx, fence, 64);
++        uint32_t got = *(volatile uint32_t *)(void *)fence;
++        uint32_t status = ops->read32(ops->ctx, SG_GPU, SG_STATUS);
++        uint32_t irq = ops->read32(ops->ctx, SG_GPU, SG_INT_STATUS);
++        uint32_t cb = ops->read32(ops->ctx, SG_SMMU, SG_CB_FSR);
++        uint32_t global = ops->read32(ops->ctx, SG_SMMU, 0x48);
++        if ((irq & SG_ERROR_IRQ_MASK) || (cb & SG_SMMU_FSR_FAULT) || global) {
++            sgpu_render_abort(a, SG_RENDER_FAULT); return false;
++        }
++        if (got == a->busy && !(status & SG_IDLE_MASK)) {
++            if (!sgpu_render_tables_valid(a)) { sgpu_render_abort(a, SG_RENDER_BAD_MAPPING); return false; }
++            struct sgpu_render_bo *d = NULL;
++            for (unsigned j = 0; j < SGPU_RENDER_BOS; j++)
++                if (a->bo[j].handle == a->destination && !a->bo[j].retired && !a->bo[j].quarantine) d = &a->bo[j];
++            if (!d || d->last_seq != a->busy) { sgpu_render_abort(a, SG_RENDER_BAD_MAPPING); return false; }
++            ops->invalidate(ops->ctx, a->memory.pixels + d->physical * SGPU_PAGE, d->pages * SGPU_PAGE);
++            a->completed = a->busy; a->busy = 0;
++            return true; /* owned backing/PTEs remain retained after success */
++        }
++        if (ops->now_us(ops->ctx) - start >= SGPU_RENDER_WAIT_US) break;
++        if (i != SGPU_RENDER_WAIT_US / 100) ops->wait_us(ops->ctx, 100);
++    }
++    sgpu_render_abort(a, SG_RENDER_TIMEOUT);
++    return false;
++}
++#undef SG_RENDER_FN
++
+ #endif
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+index 8aed93f..93994f3 100644
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -147,6 +147,63 @@ bool sgpu_session_execute(const uint32_t[4], struct sgpu_session_result *);
+ void sgpu_session_failure_result(struct sgpu_session_result *);
+ void sgpu_session_stop(void);
+
++/* Prepared kernel-only render arena. The adapter must retain owned wired
++ * backing, PA arrays, ops and this state under one mutex through reboot.
++ * This is not a userspace map/import ABI. Initialization is offline only:
++ * the adapter must prove that these tables are not attached to a live CB.
++ * No caller may write pixels/commands/tables while a submission is busy.
++ */
++#define SGPU_RENDER_BOS 4u
++#define SGPU_RENDER_MAX_PAGES 2048u
++#define SGPU_RENDER_BO_BYTES (4u * 1024u * 1024u)
++#define SGPU_RENDER_TABLE_PAGES 7u /* L1, L2, four L3, private fence */
++#define SGPU_RENDER_WORDS 100u
++#define SGPU_RENDER_WAIT_US 200000u
++enum sgpu_render_format { SG_RENDER_RGBA8 = 1, SG_RENDER_BGRA8 };
++enum sgpu_render_error { SG_RENDER_OK, SG_RENDER_TIMEOUT, SG_RENDER_FAULT,
++    SG_RENDER_BAD_MAPPING };
++struct sgpu_render_memory {
++    uint8_t *tables, *pixels;
++    const uint64_t *pa;
++    uint64_t table_pa[SGPU_RENDER_TABLE_PAGES];
++    uint32_t pages;
++};
++struct sgpu_render_plane {
++    uint32_t handle, offset, width, height, stride, format;
++};
++struct sgpu_render_bo {
++    uint64_t owner;
++    uint32_t handle, bytes, first, physical, pages, last_seq;
++    bool retired, quarantine;
++};
++struct sgpu_render_arena {
++    struct sgpu_render_memory memory;
++    const struct sgpu_ops *ops;
++    struct sgpu_render_bo bo[SGPU_RENDER_BOS];
++    uint8_t physical_used[SGPU_RENDER_MAX_PAGES], va_used[SGPU_RENDER_MAX_PAGES];
++    uint32_t next_handle, submitted, completed, busy, error, destination;
++    bool initialized, exposed;
++};
++bool sgpu_render_init(struct sgpu_render_arena *, const struct sgpu_render_memory *,
++    const struct sgpu_ops *);
++uint32_t sgpu_render_new(struct sgpu_render_arena *, uint64_t, uint32_t);
++bool sgpu_render_free(struct sgpu_render_arena *, uint64_t, uint32_t);
++/* Borrowed kernel alias only, valid until the next serialized API call. */
++bool sgpu_render_cpu(struct sgpu_render_arena *, uint64_t, uint32_t, uint32_t,
++    uint32_t, uint8_t **);
++/* Snapshot both plane records under the caller's mutex. Only unscaled,
++ * same-format byte-preserving copies between distinct BOs are admitted.
++ * Output is a caller-owned immutable command snapshot through its fence.
++ * A successful begin marks exposure BEFORE the caller can publish the ring.
++ * Any subsequent publication failure requires sgpu_render_abort, even when
++ * no ring write is believed to have succeeded. No maps may then be removed.
++ */
++uint32_t sgpu_render_begin(struct sgpu_render_arena *, uint64_t,
++    const struct sgpu_render_plane *, const struct sgpu_render_plane *,
++    uint32_t *, uint32_t);
++bool sgpu_render_wait(struct sgpu_render_arena *);
++void sgpu_render_abort(struct sgpu_render_arena *, uint32_t);
++
+ /* Register offsets are BYTES, from MSM4.9 a5xx_reg.h (which uses WORDS). */
+ #define SG_RB_BASE 0x2000u
+ #define SG_RB_BASE_HI 0x2004u

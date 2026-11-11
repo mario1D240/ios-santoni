@@ -1,0 +1,177 @@
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -170,6 +170,166 @@ static void trace(void *ctx, const char *message, uint32_t a, uint32_t b, uint32
+     if (strncmp(message, "before ", 7) == 0) sgpu_kernel_wait_us(NULL, 11000000u);
+ }
+ 
++/* PAS preparation only: no SCM calls and no secure-mode packets in this patch.
++ * XNU 8796 vm_kern.c: kmem_alloc_contig_guard -> cpm_allocate; vm_resident.c
++ * supplies ascending physical pages. Still verify every mapping before use.
++ * A /chosen property is input, never a writable/owned PAS allocation.
++ * The supplied a506_zap has one relocatable .b02 PT_LOAD (QDSP6 machine 164).
++ * peripheral-loader.c:pil_setup_region rounds the end to 4K; the lowest
++ * relocatable segment supplies p_align. We conservatively align the PA too.
++ */
++#define SG_PAS_MAX_BYTES 65536u
++#define SG_PAS_MAX_ALIGNMENT 0x100000u
++#define SG_ZAP_MAX_METADATA 16384u
++#define SG_PAS_MAX_PNUM 0xfffffu /* complete allocation must remain below 4GiB */
++
++struct sgpu_pas_memory {
++    vm_offset_t va;
++    uint64_t pa;
++    uint32_t bytes;
++    bool exposed; /* set BEFORE any future SCM call; never free if uncertain */
++};
++
++struct sgpu_zap_layout {
++    uint32_t memory_bytes, alignment;
++};
++
++struct sgpu_zap_buffers {
++    struct sgpu_pas_memory metadata, image;
++};
++
++static uint16_t sgpu_zap_u16(const uint8_t *p)
++{
++    return (uint16_t)((uint16_t)p[0] | (uint16_t)p[1] << 8);
++}
++
++static uint32_t sgpu_zap_u32(const uint8_t *p)
++{
++    return (uint32_t)p[0] | (uint32_t)p[1] << 8 |
++        (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
++}
++
++static bool sgpu_zap_layout(const void *metadata, uint32_t metadata_bytes,
++    uint32_t segment_bytes, struct sgpu_zap_layout *layout)
++{
++    if (!metadata || !layout || metadata_bytes < 52 ||
++        metadata_bytes > SG_ZAP_MAX_METADATA || !segment_bytes ||
++        segment_bytes > SG_PAS_MAX_BYTES) return false;
++    const uint8_t *m = metadata;
++    if (memcmp(m, "\177ELF\001\001\001", 7) || sgpu_zap_u16(m + 16) != 2 ||
++        sgpu_zap_u16(m + 18) != 164 || sgpu_zap_u32(m + 20) != 1 ||
++        sgpu_zap_u16(m + 40) != 52 || sgpu_zap_u16(m + 42) != 32) return false;
++    uint32_t phoff = sgpu_zap_u32(m + 28), count = sgpu_zap_u16(m + 44);
++    if (!count || count > 64 || phoff < 52 || phoff > metadata_bytes ||
++        count > (metadata_bytes - phoff) / 32u) return false;
++    unsigned loads = 0;
++    struct sgpu_zap_layout found = {0};
++    for (uint32_t i = 0; i < count; i++) {
++        const uint8_t *ph = m + phoff + i * 32u;
++        uint32_t type = sgpu_zap_u32(ph), flags = sgpu_zap_u32(ph + 24);
++        uint32_t memsz = sgpu_zap_u32(ph + 20);
++        /* qcom_mdt_loader.h: hash type=2 in bits[26:24], relocatable=bit27. */
++        if (type != 1 || (flags & 0x07000000u) == 0x02000000u || !memsz) continue;
++        uint32_t paddr = sgpu_zap_u32(ph + 12), filesz = sgpu_zap_u32(ph + 16);
++        uint32_t alignment = sgpu_zap_u32(ph + 28);
++        /* Narrow to the reviewed single .b02 format, not a general PAS loader.
++         * No fixed-PA image may be relocated into ordinary kernel memory. */
++        if (++loads != 1 || i != 2 || !(flags & 0x08000000u) ||
++            filesz != segment_bytes || filesz > memsz || memsz > SG_PAS_MAX_BYTES ||
++            (paddr & (SGPU_PAGE - 1u)) || (uint64_t)paddr + memsz > 0x100000000ull ||
++            alignment > SG_PAS_MAX_ALIGNMENT || (alignment && (alignment & (alignment - 1u))))
++            return false;
++        found.memory_bytes = (memsz + SGPU_PAGE - 1u) & ~(SGPU_PAGE - 1u);
++        found.alignment = alignment < SGPU_PAGE ? SGPU_PAGE : alignment;
++    }
++    if (loads != 1) return false;
++    *layout = found;
++    return true; /* structure only; signature/TZ acceptance unknown */
++}
++
++static bool sgpu_pas_allocate(struct sgpu_pas_memory *memory, uint32_t bytes,
++    uint32_t alignment)
++{
++    if (!memory || memory->va || memory->pa || memory->bytes || memory->exposed ||
++        page_shift != 12 || page_size != SGPU_PAGE || !bytes || bytes > SG_PAS_MAX_BYTES ||
++        alignment < SGPU_PAGE || alignment > SG_PAS_MAX_ALIGNMENT ||
++        (alignment & (alignment - 1u))) return false;
++    uint32_t size = (bytes + SGPU_PAGE - 1u) & ~(SGPU_PAGE - 1u);
++    vm_offset_t va = 0;
++    /* VA mask is byte-based; physical mask is page-number-based. No NOFAIL,
++     * pageable, KOBJECT, borrowed ADT, or ordinary kmem_alloc fallback.
++     * This VM operation can block/collect pages; only call from the worker. */
++    if (kmem_alloc_contig(kernel_map, &va, size, SGPU_PAGE - 1u,
++        SG_PAS_MAX_PNUM, alignment / SGPU_PAGE - 1u,
++        KMA_DATA | KMA_ZERO, VM_KERN_MEMORY_IOKIT) != KERN_SUCCESS) return false;
++    bool valid = va && !(va & (SGPU_PAGE - 1u)) && va <= ~(vm_offset_t)0 - size;
++    uint64_t pa = valid ? (uint64_t)pmap_find_phys(kernel_pmap, va) << 12 : 0;
++    valid = valid && pa && !(pa & (alignment - 1u)) && pa <= 0x100000000ull - size;
++    for (uint32_t off = 0; valid && off < size; off += SGPU_PAGE)
++        valid = ((uint64_t)pmap_find_phys(kernel_pmap, va + off) << 12) == pa + off;
++    if (!valid) {
++        if (va) kmem_free(kernel_map, va, size);
++        return false;
++    }
++    *memory = (struct sgpu_pas_memory){.va=va, .pa=pa, .bytes=size};
++    return true;
++}
++
++static bool sgpu_pas_release(struct sgpu_pas_memory *memory)
++{
++    if (!memory || memory->exposed) return false;
++    if (memory->va) kmem_free(kernel_map, memory->va, memory->bytes);
++    *memory = (struct sgpu_pas_memory){0};
++    return true;
++}
++
++static bool sgpu_zap_prepare(const void *metadata, uint32_t metadata_bytes,
++    const void *segment, uint32_t segment_bytes, struct sgpu_zap_buffers *buffers)
++{
++    struct sgpu_zap_layout layout;
++    if (!buffers || !segment || buffers->metadata.va || buffers->metadata.pa ||
++        buffers->metadata.bytes || buffers->metadata.exposed || buffers->image.va ||
++        buffers->image.pa || buffers->image.bytes || buffers->image.exposed ||
++        !sgpu_zap_layout(metadata, metadata_bytes, segment_bytes, &layout)) return false;
++    if (!sgpu_pas_allocate(&buffers->metadata, metadata_bytes, SGPU_PAGE)) return false;
++    if (!sgpu_pas_allocate(&buffers->image, layout.memory_bytes, layout.alignment)) {
++        (void)sgpu_pas_release(&buffers->metadata);
++        return false;
++    }
++    memcpy((void *)buffers->metadata.va, metadata, metadata_bytes);
++    memcpy((void *)buffers->image.va, segment, segment_bytes);
++    /* KMA_ZERO covers BSS and the complete page-rounded PAS span. No dword
++     * overread of either input. Future SCM must clean these full owned spans. */
++    return true;
++}
++
++static void sgpu_zap_allocation_preflight(uint32_t mode)
++{
++    uint32_t enabled = 0;
++    if (mode != 3) return;
++    (void)PE_parse_boot_argn("santonigpu_zap", &enabled, sizeof(enabled));
++    if (enabled != 1) return;
++    printf("SANTONI GPU: zap allocation-only preflight; NO PAS/SMC, TRUST gate unchanged\n");
++    DTEntry chosen;
++    const void *metadata = NULL, *segment = NULL;
++    unsigned int metadata_bytes = 0, segment_bytes = 0;
++    struct sgpu_zap_buffers buffers = {0};
++    if (SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess ||
++        SecureDTGetProperty(chosen, "santoni-gpu-zap-mdt", &metadata, &metadata_bytes) != kSuccess ||
++        SecureDTGetProperty(chosen, "santoni-gpu-zap-b02", &segment, &segment_bytes) != kSuccess ||
++        !sgpu_zap_prepare(metadata, metadata_bytes, segment, segment_bytes, &buffers)) {
++        printf("SANTONI GPU: zap allocation preflight rejected; PAS not attempted\n");
++        return;
++    }
++    printf("SANTONI GPU: zap owned spans metadata=%llx/%u image=%llx/%u; authentication UNPROVEN\n",
++        (unsigned long long)buffers.metadata.pa, buffers.metadata.bytes,
++        (unsigned long long)buffers.image.pa, buffers.image.bytes);
++    /* Nothing was exposed. This diagnostic deliberately releases both spans;
++     * a later PAS loader must quarantine before calling into secure firmware. */
++    (void)sgpu_pas_release(&buffers.image);
++    (void)sgpu_pas_release(&buffers.metadata);
++}
++
+ static void __attribute__((noinline)) sgpu_failure_summary(const char *label,
+     const struct sgpu_failure *f)
+ {
+@@ -188,6 +348,7 @@ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
++    sgpu_zap_allocation_preflight(sg.mode);
+     const void *firmware = NULL;
+     unsigned int firmware_size = 0;
+     DTEntry chosen;

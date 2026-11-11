@@ -1,0 +1,24 @@
+Subject: [PATCH 0171] santoni: retain coherent caches during ordinary WFI idle
+
+Adapted from joranv1/ios-sailfish patch 0180-sailfish-idle-cache-pmap-aks.
+Santoni uses coherent Cortex-A53 caches and plain WFI, not PSCI suspend or
+cache/power collapse. The generic non-Apple idle hook cleans/invalidates by
+set/way before every idle entry. Keep cache contents for ordinary WFI;
+explicit startup handoff, DMA cache maintenance and shutdown are unchanged.
+This is particularly important when driver polling has caused short sleeps.
+
+--- a/osfmk/arm64/cpu.c
++++ b/osfmk/arm64/cpu.c
+@@ -568,7 +568,11 @@
+ #endif /* MONOTONIC */
+ 
+ 	if (wfi) {
+-#if !defined(APPLE_ARM64_ARCH_FAMILY)
++#if !defined(APPLE_ARM64_ARCH_FAMILY) && !defined(SANTONI)
++		/* Santoni's plain WFI retains its coherent caches. There is no
++		 * PSCI suspend/power collapse here. Avoid whole-cache set/way
++		 * clean+invalidate on each idle entry, as ios-sailfish does. */
++		/* Other generic boards retain their existing cache-idle hook. */
+ 		platform_cache_idle_enter();
+ #endif
+ 

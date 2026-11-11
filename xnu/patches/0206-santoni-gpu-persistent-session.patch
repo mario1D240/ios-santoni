@@ -1,0 +1,1063 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -7,12 +7,13 @@
+ #if defined(ARM64_BOARD_CONFIG_SANTONI)
+ #include <sys/param.h>
+ #include <sys/systm.h>
+ #include <kern/clock.h>
+ #include <kern/thread.h>
+ #include <kern/sched_prim.h>
++#include <kern/locks.h>
+ #include <mach/mach_time.h>
+ #include <pexpert/pexpert.h>
+ #include <pexpert/device_tree.h>
+ #include <vm/vm_kern.h>
+ #include <vm/vm_map.h>
+ #include <vm/pmap.h>
+@@ -33,12 +34,13 @@
+ static struct {
+     vm_offset_t maps[SG_BLOCKS], pool;
+     uint32_t sizes[SG_BLOCKS], attempted, mode, stock_unsecure;
+     int wait_channel;
+     uint32_t stock_pixels;
+     uint32_t g3;
++    uint32_t session;
+ } sg;
+
+ static const uint32_t sgpu_block_pa[SG_BLOCKS] = {
+     0x01859000,0x0185b000,0x01845000,0x01812000,0x01c00000,0x01c40000
+ };
+
+@@ -810,12 +812,157 @@
+     if (!enabled) return true;
+     if (mode!=3 || enabled!=1 || sg.stock_unsecure!=1 || sg.stock_pixels!=1) return false;
+     sg.g3=1;
+     return true;
+ }
+
++/* Session role: kernel-only requests, a distinct gate after the old G3 gate. */
++static bool __attribute__((noinline)) sgpu_session_options(uint32_t mode)
++{
++    uint32_t enabled=0;
++    sg.session=0;
++    (void)PE_parse_boot_argn("santonigpu_session",&enabled,sizeof(enabled));
++    if (!enabled) return true;
++    if (enabled!=1 || mode!=3 || sg.g3!=1 || sg.stock_unsecure!=1 || sg.stock_pixels!=1) return false;
++    sg.session=1;
++    return true;
++}
++
++static LCK_GRP_DECLARE(sgpu_session_group, "santoni_gpu_session");
++static LCK_MTX_DECLARE(sgpu_session_lock, &sgpu_session_group);
++static struct sgpu_session_queue session_queue;
++static int session_queue_event;
++static uint32_t session_idle_count;
++_Static_assert(sizeof(session_queue)+sizeof(session_queue_event)+sizeof(session_idle_count) < 8192,
++    "bounded CPU queue; core separately reserves adapter overhead");
++_Static_assert(sizeof(sgpu_session_lock)+sizeof(sgpu_session_group)+
++    sizeof(session_queue_event)+sizeof(session_idle_count)<=1024,
++    "adapter lock/events fit the core's reserved control overhead");
++
++/* A separate kernel-only producer proves that startup stack lifetime and a
++ * worker idle/wakeup are real. It never reads/writes GPU or shared DMA pages. */
++static void sgpu_session_producer(void *arg __unused, wait_result_t result __unused)
++{
++    unsigned sent=0;
++    uint32_t wave_idle=0;
++    uint64_t start=now_us(NULL);
++    bool done=false;
++    for (unsigned attempt=0;attempt<10000;attempt++) {
++        lck_mtx_lock(&sgpu_session_lock);
++        struct sgpu_session_status state=session_queue.status;
++        bool terminal=state.state==SG_SESSION_CLOSED || state.state==SG_SESSION_FAULTED;
++        bool second_wave=sent>=16 && (state.completed<16 || session_idle_count<=wave_idle);
++        if (!terminal && session_idle_count && !second_wave && sent<SGPU_SESSION_LIMIT) {
++            uint32_t values[4];
++            for (unsigned i=0;i<4;i++) values[i]=0xa5060000u ^ ((sent+1)<<8) ^ i;
++            uint32_t id=0;
++            uint32_t rc=sgpu_session_enqueue(&session_queue,SGPU_SESSION_OWNER,SGPU_SESSION_WRITE4,values,&id);
++            if (rc==SG_SESSION_OK) { sent++; if (sent==16) wave_idle=session_idle_count; }
++            else if (rc!=SG_SESSION_FULL && rc!=SG_SESSION_AT_QUOTA) {
++                (void)sgpu_session_close(&session_queue,SGPU_SESSION_OWNER);
++                terminal=true;
++            }
++        }
++        lck_mtx_unlock(&sgpu_session_lock);
++        thread_wakeup(&session_queue_event);
++        if (terminal) { done=true; break; }
++        uint64_t now=now_us(NULL);
++        if (now<start || now-start>=100000000u) break;
++        sgpu_kernel_wait_us(NULL,10000);
++    }
++    if (!done) {
++        lck_mtx_lock(&sgpu_session_lock);
++        (void)sgpu_session_close(&session_queue,SGPU_SESSION_OWNER);
++        lck_mtx_unlock(&sgpu_session_lock);
++        thread_wakeup(&session_queue_event);
++        printf("SANTONI GPU: SESSION producer deadline; close pending; no hardware retry\n");
++    }
++    thread_terminate_self();
++}
++
++static void __attribute__((noinline)) sgpu_session_loop(void)
++{
++    lck_mtx_lock(&sgpu_session_lock);
++    bool initialized=sgpu_session_queue_init(&session_queue);
++    lck_mtx_unlock(&sgpu_session_lock);
++    if (!initialized) { sgpu_session_stop(); return; }
++    thread_t producer;
++    if (kernel_thread_start(sgpu_session_producer,NULL,&producer)!=KERN_SUCCESS) {
++        lck_mtx_lock(&sgpu_session_lock);
++        session_queue.status.state=SG_SESSION_FAULTED;
++        session_queue.status.reason=SG_SESSION_FAILURE;
++        session_queue.status.error=SG_NO_MEMORY;
++        lck_mtx_unlock(&sgpu_session_lock);
++        sgpu_session_stop();
++        printf("SANTONI GPU: SESSION producer creation failed; state HELD; no retry\n");
++        return;
++    }
++    thread_deallocate(producer);
++    printf("SANTONI GPU: SESSION ready; fixed mappings, kernel WRITE4 only; NO PAS; NO UI\n");
++    for (;;) {
++        struct sgpu_session_request request;
++        lck_mtx_lock(&sgpu_session_lock);
++        bool have=sgpu_session_take(&session_queue,&request);
++        bool terminal=session_queue.status.state==SG_SESSION_CLOSED || session_queue.status.state==SG_SESSION_FAULTED;
++        if (!have) {
++            if (terminal) { lck_mtx_unlock(&sgpu_session_lock); break; }
++            if (session_idle_count!=UINT32_MAX) session_idle_count++;
++            wait_result_t waiting=assert_wait(&session_queue_event,THREAD_UNINT);
++            lck_mtx_unlock(&sgpu_session_lock);
++            if (waiting==THREAD_WAITING) thread_block(THREAD_CONTINUE_NULL);
++            continue; /* predicate and wait registration share the queue lock */
++        }
++        lck_mtx_unlock(&sgpu_session_lock);
++        struct sgpu_session_result result={0};
++        if (!sgpu_session_prepare()) sgpu_session_failure_result(&result);
++        else {
++            lck_mtx_lock(&sgpu_session_lock);
++            bool committed=sgpu_session_commit(&session_queue,request.id);
++            lck_mtx_unlock(&sgpu_session_lock);
++            if (!committed) {
++                sgpu_session_stop();
++                lck_mtx_lock(&sgpu_session_lock);
++                sgpu_session_fault_pending(&session_queue,NULL);
++                lck_mtx_unlock(&sgpu_session_lock);
++                continue;
++            }
++            if (!sgpu_session_execute(request.value,&result) && !result.error)
++                result.error=SG_BAD_MODE;
++        }
++        if (!result.error && result.state!=SG_REQUEST_COMPLETE) result.error=SG_BAD_MODE;
++        lck_mtx_lock(&sgpu_session_lock);
++        bool recorded=sgpu_session_finish(&session_queue,request.id,&result);
++        if (!recorded) {
++            /* Internal contract violation: stop, never manufacture completion. */
++            sgpu_session_fault_pending(&session_queue,&result);
++        }
++        lck_mtx_unlock(&sgpu_session_lock);
++        if (result.error || !recorded) sgpu_session_stop();
++    }
++    sgpu_session_stop();
++    lck_mtx_lock(&sgpu_session_lock);
++    struct sgpu_session_status state=session_queue.status;
++    struct sgpu_session_result first={0};
++    if (state.first_failed_id && state.first_failed_id<=SGPU_SESSION_LIMIT)
++        first=session_queue.entry[state.first_failed_id-1].result;
++    uint32_t idle=session_idle_count;
++    lck_mtx_unlock(&sgpu_session_lock);
++    bool passed=state.state==SG_SESSION_CLOSED && state.reason==SG_SESSION_QUOTA &&
++        state.admitted==32 && state.committed==32 && state.submitted==32 && state.completed==32 &&
++        state.writes==128 && state.last_sequence==34 && state.wptr==522 && !state.error &&
++        !state.cancelled && !state.failed && !state.active && !state.outstanding && idle>=2;
++    sgpu_failure_summary("SESSION FIRST_FAIL",&state.failure);
++    if (state.error)
++        printf("SANTONI GPU: SESSION failure phase=%u seq=%u attempted_wptr=%u publish_attempted=%u; state retained\n",
++            first.phase,first.sequence,first.wptr,first.publish_attempted?1u:0u);
++    printf("SANTONI GPU: SESSION RESULT pass=%u admitted=%u committed=%u submitted=%u completed=%u cancelled=%u failed=%u writes=%u\n",
++        passed?1u:0u,state.admitted,state.committed,state.submitted,state.completed,state.cancelled,state.failed,state.writes);
++    printf("SANTONI GPU: SESSION STATE state=%u reason=%u last_seq=%u wptr=%u error=%u failed_id=%u idle=%u retained=%u; NO PAS; NO UI; held until reboot\n",
++        state.state,state.reason,state.last_sequence,state.wptr,state.error,state.first_failed_id,idle,SGPU_POOL_BYTES);
++}
++
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
+     if (!sgpu_stock_options(sg.mode)) {
+@@ -827,12 +974,17 @@
+         printf("SANTONI GPU: invalid pixel opt-in; requires separate mode3/stock1/pixels1; no hardware access\n");
+         thread_terminate_self();
+         return;
+     }
+     if (!sgpu_g3_options(sg.mode)) {
+         printf("SANTONI GPU: invalid G3 opt-in; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
++    if (!sgpu_session_options(sg.mode)) {
++        printf("SANTONI GPU: invalid session opt-in; no hardware access\n");
+         thread_terminate_self();
+         return;
+     }
+     if (sgpu_pas_cache_preflight(sg.mode)) {
+         thread_terminate_self();
+         return;
+@@ -848,17 +1000,20 @@
+     if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess)
+         (void)SecureDTGetProperty(chosen, "santoni-gpu-firmware", &firmware, &firmware_size);
+     struct sgpu_ops ops = {
+         .map=io_map, .read32=sgpu_io_read32, .read64=sgpu_io_read64,
+         .write32=sgpu_io_write32, .write64=sgpu_io_write64, .now_us=now_us, .wait_us=sgpu_kernel_wait_us,
+         .allocate=allocate, .release=release, .clean=clean, .invalidate=sgpu_cache_invalidate,
+-        .trace=trace, .stock_unsecure=sg.stock_unsecure, .stock_pixels=sg.stock_pixels, .g3=sg.g3
++        .trace=trace, .stock_unsecure=sg.stock_unsecure, .stock_pixels=sg.stock_pixels, .g3=sg.g3,
++        .session=sg.session
+     };
+-    struct sgpu_report report;
++    struct sgpu_report report={0};
+     printf("SANTONI GPU: start mode=%u; A505 diagnostic only, XO 19.2MHz, kernel 2D test; no UI replacement\n", sg.mode);
+-    bool passed = sgpu_probe(&ops, sg.mode, firmware, firmware_size, &report);
++    bool session_started=false, passed=false;
++    if (sg.session==1) session_started=sgpu_session_start(&ops,sg.mode,firmware,firmware_size,&report);
++    else passed = sgpu_probe(&ops, sg.mode, firmware, firmware_size, &report);
+     sgpu_failure_summary("FIRST_FAIL", &report.failure);
+     sgpu_failure_summary("ROLLBACK_FAIL", &report.rollback_failure);
+     printf("SANTONI GPU: RESULT pass=%u stage=%u error=%u markers=%u pixels=%u trust=%08x restored=%u retained=%u trust_read=%u quiescent=%u smmu_restored=%u power_pending=%u\n",
+         passed ? 1u : 0u, report.stage, report.error, report.markers, report.pixels,
+         report.trust, report.restored ? 1u : 0u, report.memory_retained ? SGPU_POOL_BYTES : 0u,
+         report.trust_read ? 1u : 0u, report.gpu_quiescent ? 1u : 0u,
+@@ -872,12 +1027,21 @@
+             report.pixel.passed ? 1u : 0u, report.pixel.started ? 1u : 0u, report.pixels,
+             report.stock.held ? 1u : 0u, report.error);
+     if (report.g3.requested)
+         printf("SANTONI GPU: G3 RESULT pass=%u started=%u submitted=%u completed=%u writes=%u held=%u error=%u; KERNEL IB ONLY; NO PAS; NO UI\n",
+             report.g3.passed ? 1u : 0u, report.g3.started ? 1u : 0u, report.g3.submitted,
+             report.g3.completed, report.g3.writes, report.stock.held ? 1u : 0u, report.error);
++    if (sg.session==1) {
++        if (session_started) sgpu_session_loop();
++        else {
++            struct sgpu_session_result failure={0};
++            sgpu_session_failure_result(&failure);
++            printf("SANTONI GPU: SESSION startup rejected error=%u phase=%u; no requests; held/cleanup as reported above\n",
++                failure.error,failure.phase);
++        }
++    }
+     thread_terminate_self();
+ }
+
+ void santoni_gpu_start(void)
+ {
+     uint32_t mode = 0;
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -1254,14 +1254,15 @@
+     return true;
+ failed:
+     sgpu_g3_abort(g);
+     return false; /* no reset/unmap/free/retry, including after a partial submit */
+ }
+
+-bool sgpu_probe(const struct sgpu_ops *ops, uint32_t mode, const uint8_t *blob,
+-    size_t blob_size, struct sgpu_report *report)
++static bool __attribute__((noinline)) sgpu_bootstrap(const struct sgpu_ops *ops, uint32_t mode, const uint8_t *blob,
++    size_t blob_size, struct sgpu_report *report, struct probe *p, struct sgpu_g3 *g3,
++    uint32_t *end_wptr)
+ {
+     if (!report) return false;
+     *report = (struct sgpu_report){0};
+     if (mode == 0) return true;
+     if (mode > 3 || !ops || !ops->map || !ops->read32 || !ops->write32 ||
+         !ops->read64 || !ops->write64 || !ops->now_us || !ops->wait_us || !ops->allocate ||
+@@ -1278,128 +1279,129 @@
+         report->error = SG_BAD_MODE; return false;
+     }
+     report->g3.requested = ops->g3 == 1;
+     report->pixel.requested = ops->stock_pixels == 1;
+     report->stock.requested = ops->stock_unsecure == 1;
+     if (report->stock.requested) report->stock.before = report->stock.after = ~0u;
+-    struct probe p = {.ops = ops, .report = report};
+-    struct sgpu_g3 g3;
++    *p = (struct probe){.ops = ops, .report = report};
++    *end_wptr = 0;
+     struct sgpu_firmware fw = {0};
+     struct smmu_saved smmu = {0};
+     bool passed = false, stopped = true;
+     report->stage = SG_FIRMWARE;
+     if (mode >= 2 && !sgpu_firmware_validate(blob, blob_size, &fw)) {
+         report->error = SG_BAD_FIRMWARE; return false;
+     }
+     report->pm4_version = fw.pm4_version; report->pfp_version = fw.pfp_version;
+     if (mode >= 2) {
+         report->stage = SG_TABLES;
+-        if (!ops->allocate(ops->ctx, &p.memory)) { report->error = SG_NO_MEMORY; return false; }
+-        if (!sgpu_tables_build(&p.memory, &fw)) { report->error = SG_BAD_MEMORY; goto done; }
+-        if (ops->g3 == 1 && !sgpu_g3_prepare(&p,&g3,&fw)) { report->error=SG_BAD_MEMORY; goto done; }
++        if (!ops->allocate(ops->ctx, &p->memory)) { report->error = SG_NO_MEMORY; return false; }
++        if (!sgpu_tables_build(&p->memory, &fw)) { report->error = SG_BAD_MEMORY; goto done; }
++        if (ops->g3 == 1 && !sgpu_g3_prepare(p,g3,&fw)) { report->error=SG_BAD_MEMORY; goto done; }
+     }
+     const uint32_t pa[] = {0x01859000,0x0185b000,0x01845000,0x01812000};
+     report->stage = SG_POWER;
+     for (unsigned i = 0; i < COUNT(pa); i++)
+         if (!ops->map(ops->ctx, (enum sgpu_block)i, pa[i], 0x1000)) {
+             report->error = SG_NO_MAP; goto done;
+         }
+-    if (!sgpu_power(&p)) { report->error = SG_POWER_TIMEOUT; goto done; }
++    if (!sgpu_power(p)) { report->error = SG_POWER_TIMEOUT; goto done; }
+     /* Do not touch an unpowered GPU/SMMU, including on an earlier failure. */
+     report->stage = SG_REGISTERS;
+-    trace(&p, "before powered GPU read", 0x01c00000, 0x40000, mode);
++    trace(p, "before powered GPU read", 0x01c00000, 0x40000, mode);
+     if (!ops->map(ops->ctx, SG_GPU, 0x01c00000, 0x40000)) { report->error = SG_NO_MAP; goto done; }
+-    p.gpu_live = true;
+-    report->vbif = read32(&p, SG_GPU, SG_VBIF_VERSION);
+-    uint32_t aon = read32(&p, SG_GPU, SG_AON_LO);
+-    wait_us(&p, 1000);
+-    report->aon_delta = read32(&p, SG_GPU, SG_AON_LO) - aon;
+-    report->status = read32(&p, SG_GPU, SG_STATUS);
++    p->gpu_live = true;
++    report->vbif = read32(p, SG_GPU, SG_VBIF_VERSION);
++    uint32_t aon = read32(p, SG_GPU, SG_AON_LO);
++    wait_us(p, 1000);
++    report->aon_delta = read32(p, SG_GPU, SG_AON_LO) - aon;
++    report->status = read32(p, SG_GPU, SG_STATUS);
+     report->trust = ~0u; /* no protected-register read is needed for CP-only proof */
+-    trace(&p, "GPU VBIF/AON delta/status", report->vbif, report->aon_delta, report->status);
++    trace(p, "GPU VBIF/AON delta/status", report->vbif, report->aon_delta, report->status);
+     if (!report->vbif || report->vbif == ~0u || !report->aon_delta) { report->error = SG_BAD_ID; goto done; }
+     if (report->status & SG_BUSY_MASK) { report->error = SG_BUSY; goto done; }
+     if (mode == 1) { passed = true; goto done; }
+     report->stage = SG_TRANSLATION;
+-    trace(&p, "before powered SMMU read/setup", 0x01c40000, 0x10000, 0);
++    trace(p, "before powered SMMU read/setup", 0x01c40000, 0x10000, 0);
+     if (!ops->map(ops->ctx, SG_SMMU, 0x01c40000, 0x10000)) { report->error = SG_NO_MAP; goto done; }
+     /* The logging pause and IRQ-mask handoff are not an ownership lock. */
+-    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++    if (!poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+         report->error = SG_BUSY; goto done;
+     }
+-    if (!checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
++    if (!checked_write32(p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
+         report->error = SG_FAULT; goto done;
+     }
+-    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++    if (!poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+         report->error = SG_BUSY; goto done;
+     }
+     /* kgsl_pwrctrl_enable's A50x callback precedes CP/MMU work. Cold-domain
+      * ownership and both immediate idle checks above still gate every write. */
+-    if (!sgpu_a505_resume(&p)) {
++    if (!sgpu_a505_resume(p)) {
+         report->error = SG_FAULT; goto done;
+     }
+-    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++    if (!poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+         report->error = SG_BUSY; goto done;
+     }
+-    if (!sgpu_a505_halt(&p, 1)) {
++    if (!sgpu_a505_halt(p, 1)) {
+         report->error = SG_FAULT; goto done;
+     }
+-    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++    if (!poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+         report->error = SG_BUSY; goto done;
+     }
+-    p.gpu_owned = true; /* reset only after the immediate idle/halt handoff checks */
+-    p.gpu_resumed = false;
+-    write32(&p, SG_GPU, SG_RESET, 1);
+-    (void)read32(&p, SG_GPU, SG_RESET);
+-    wait_us(&p, 2);
+-    write32(&p, SG_GPU, SG_RESET, 0);
++    p->gpu_owned = true; /* reset only after the immediate idle/halt handoff checks */
++    p->gpu_resumed = false;
++    write32(p, SG_GPU, SG_RESET, 1);
++    (void)read32(p, SG_GPU, SG_RESET);
++    wait_us(p, 2);
++    write32(p, SG_GPU, SG_RESET, 0);
+     /* adreno.c _soft_reset re-enables A50x regulators immediately afterward. */
+-    if (!sgpu_a505_resume(&p) ||
+-        !sgpu_a505_halt(&p, 2) ||
+-        !checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
++    if (!sgpu_a505_resume(p) ||
++        !sgpu_a505_halt(p, 2) ||
++        !checked_write32(p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
+         report->error = SG_FAULT; goto done;
+     }
+-    ops->clean(ops->ctx, p.memory.va, SGPU_POOL_BYTES);
+-    if (!sgpu_smmu_start(&p, &smmu)) {
++    ops->clean(ops->ctx, p->memory.va, SGPU_POOL_BYTES);
++    if (!sgpu_smmu_start(p, &smmu)) {
+         if (!report->error) report->error = SG_BAD_SMMU;
+         goto done;
+     }
+-    sgpu_a505_init(&p, fw.pfp_version);
++    sgpu_a505_init(p, fw.pfp_version);
+     report->stage = SG_COMMANDS;
+-    trace(&p, "before ME_INIT/owned marker commands", SGPU_RING_VA, SGPU_MARKER_VA, 0);
++    trace(p, "before ME_INIT/owned marker commands", SGPU_RING_VA, SGPU_MARKER_VA, 0);
+     uint32_t wptr = 0;
+-    if (!marker_test(&p, &fw, &wptr)) {
++    if (!marker_test(p, &fw, &wptr)) {
+         if (!report->error) report->error = SG_COMMAND_TIMEOUT;
+         goto done;
+     }
+-    faults(&p);
++    faults(p);
+     if (has_fault(report)) { report->error = SG_FAULT; goto done; }
+     if (ops->stock_unsecure == 1) {
+         report->stage = SG_STOCK_TRANSITION;
+-        passed = sgpu_stock_transition(&p, mode, wptr);
++        passed = sgpu_stock_transition(p, mode, wptr);
+         if (passed && ops->stock_pixels == 1)
+-            passed = sgpu_stock_pixels_test(&p, mode, &wptr);
++            passed = sgpu_stock_pixels_test(p, mode, &wptr);
+         if (passed && ops->g3 == 1)
+-            passed = sgpu_g3_test(&p, &g3, mode, &wptr);
++            passed = sgpu_g3_test(p, g3, mode, &wptr);
++        *end_wptr = wptr;
+         goto done; /* Stock-only never renders; the pixel opt-in still never cleans up. */
+     }
+     if (mode == 3) {
+         report->stage = SG_RENDER;
+-        trace(&p, "before TRUST read ONLY; no secure writes", SG_TRUST, 0, 0);
+-        report->trust = read32(&p, SG_GPU, SG_TRUST);
++        trace(p, "before TRUST read ONLY; no secure writes", SG_TRUST, 0, 0);
++        report->trust = read32(p, SG_GPU, SG_TRUST);
+         report->trust_read = true;
+         if (report->trust != 0) {
+             report->error = SG_NEEDS_UNSECURE;
+-            trace(&p, "CP passed; render gated by TRUST", report->trust, report->markers, 0);
++            trace(p, "CP passed; render gated by TRUST", report->trust, report->markers, 0);
+             goto done;
+         }
+-        if (!render_test(&p, &wptr)) {
++        if (!render_test(p, &wptr)) {
+             if (!report->error) report->error = SG_MARKER_MISMATCH;
+             goto done;
+         }
+-        faults(&p);
++        faults(p);
+         if (has_fault(report)) { report->error = SG_FAULT; goto done; }
+     }
+     report->stage = SG_COMPLETE;
+     passed = true;
+ done:
+     if (report->stock.attempted || report->pixel.started) {
+@@ -1407,71 +1409,494 @@
+          * translations, DMA pages and all power prerequisites until reboot.
+          * Echo-zero is reported separately; overall pass/restored stay false. */
+         report->memory_retained = true;
+         report->restored = false;
+         report->gpu_quiescent = false;
+         report->smmu_restored = false;
+-        report->power_pending = p.saved_count;
+-        trace(&p, report->pixel.started ? "stock pixel test ended; state HELD until reboot; no cleanup" :
++        report->power_pending = p->saved_count;
++        if (ops->session == 1 && report->g3.passed)
++            trace(p, "session bootstrap held; readiness pending; NO UI", report->g3.completed, *end_wptr, 0);
++        else {
++        trace(p, report->pixel.started ? "stock pixel test ended; state HELD until reboot; no cleanup" :
+             "stock TRUST attempted; state HELD until reboot; no cleanup",
+             report->stock.before, report->stock.after, report->stock.echo_zero ? 1u : 0u);
+-        return false;
+-    }
+-    p.restoring = true;
++        }
++        return false;
++    }
++    p->restoring = true;
+     report->smmu_restored = !smmu.changed;
+-    if (p.gpu_live && p.gpu_owned) {
+-        faults(&p);
++    if (p->gpu_live && p->gpu_owned) {
++        faults(p);
+         /* Failed post-reset resume must not grant further CP access/teardown. */
+-        stopped = p.gpu_resumed && sgpu_a505_halt(&p, 3) &&
+-            poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000) &&
+-            poll(&p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000);
+-        if (!stopped && p.commands_started) {
++        stopped = p->gpu_resumed && sgpu_a505_halt(p, 3) &&
++            poll(p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000) &&
++            poll(p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000);
++        if (!stopped && p->commands_started) {
+             /* A soft reset is vendor-supported on A505, not the A530v1 exception. */
+-            p.gpu_resumed = false;
+-            write32(&p, SG_GPU, SG_RESET, 1);
+-            (void)read32(&p, SG_GPU, SG_RESET);
+-            wait_us(&p, 2);
+-            write32(&p, SG_GPU, SG_RESET, 0);
+-            stopped = sgpu_a505_resume(&p) &&
+-                checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0) &&
+-                sgpu_a505_halt(&p, 4) &&
+-                poll(&p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000) &&
+-                poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000);
++            p->gpu_resumed = false;
++            write32(p, SG_GPU, SG_RESET, 1);
++            (void)read32(p, SG_GPU, SG_RESET);
++            wait_us(p, 2);
++            write32(p, SG_GPU, SG_RESET, 0);
++            stopped = sgpu_a505_resume(p) &&
++                checked_write32(p, SG_GPU, SG_INT_MASK, ~0u, 0) &&
++                sgpu_a505_halt(p, 4) &&
++                poll(p, SG_GPU, SG_STATUS, SG_IDLE_MASK, 0, 10000) &&
++                poll(p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000);
+         }
+-    } else if (p.gpu_live) {
++    } else if (p->gpu_live) {
+         /* A register-only probe or inherited busy engine is not ours to reset.
+          * If it stays busy, leave every clock/domain prerequisite intact. */
+-        if (p.gpu_resume_touched && !p.gpu_resumed) {
++        if (p->gpu_resume_touched && !p->gpu_resumed) {
+             /* Idle status alone cannot verify a partially changed A50x resume.
+              * Do not collapse its prerequisites after a failed internal-clock
+              * echo, even before CP ownership/DMA. Keep them until reboot. */
+             stopped = false;
+-            trace(&p, "partial A50x resume; power held until reboot", report->stage,
+-                report->failure.offset, p.saved_count);
++            trace(p, "partial A50x resume; power held until reboot", report->stage,
++                report->failure.offset, p->saved_count);
+         } else {
+-            stopped = poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
++            stopped = poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
+         }
+-    } else if (p.gx_touched) {
++    } else if (p->gx_touched) {
+         /* A late power/map failure cannot safely read the GPU yet. Only a
+          * confirmed collapsed GX permits teardown without an engine idle read. */
+-        uint32_t gx = read32(&p, SG_CC, CC_GX);
++        uint32_t gx = read32(p, SG_CC, CC_GX);
+         stopped = (gx & (BIT(31) | 1u)) == 1u;
+-        if (!stopped) sgpu_failure(&p, SG_FAIL_GUARD, SG_CC, CC_GX,
++        if (!stopped) sgpu_failure(p, SG_FAIL_GUARD, SG_CC, CC_GX,
+             BIT(31) | 1u, 1, gx, 0, gx, 0, 0);
+     }
+-    if (p.gpu_live) faults(&p); /* post-idle faults must also invalidate success */
+-    report->gpu_quiescent = p.gpu_live && stopped;
++    if (p->gpu_live) faults(p); /* post-idle faults must also invalidate success */
++    report->gpu_quiescent = p->gpu_live && stopped;
+     /* An uncertain engine keeps its contained translations and power. */
+-    if (stopped && smmu.changed) report->smmu_restored = sgpu_smmu_restore(&p, &smmu);
+-    report->memory_retained = p.dma_exposed;
+-    if (p.memory.va && !p.dma_exposed) ops->release(ops->ctx, &p.memory);
+-    report->restored = stopped && report->smmu_restored && sgpu_restore_power(&p);
+-    report->power_pending = p.saved_count;
++    if (stopped && smmu.changed) report->smmu_restored = sgpu_smmu_restore(p, &smmu);
++    report->memory_retained = p->dma_exposed;
++    if (p->memory.va && !p->dma_exposed) ops->release(ops->ctx, &p->memory);
++    report->restored = stopped && report->smmu_restored && sgpu_restore_power(p);
++    report->power_pending = p->saved_count;
+     if (!report->restored) {
+-        trace(&p, "rollback incomplete; bounded DMA retained", report->error, report->stage,
++        trace(p, "rollback incomplete; bounded DMA retained", report->error, report->stage,
+             report->memory_retained ? SGPU_POOL_BYTES : 0);
+         if (!report->error) report->error = SG_ROLLBACK_FAILED;
+         passed = false;
+     }
+     return passed && report->error == SG_OK;
+ }
++bool sgpu_probe(const struct sgpu_ops *ops, uint32_t mode, const uint8_t *blob,
++    size_t blob_size, struct sgpu_report *report)
++{
++    if (ops && ops->session) {
++        if (report) *report = (struct sgpu_report){.error=SG_BAD_MODE};
++        return false; /* never silently reinterpret the old diagnostic */
++    }
++    struct probe p;
++    struct sgpu_g3 g3;
++    uint32_t end_wptr;
++    return sgpu_bootstrap(ops, mode, blob, blob_size, report, &p, &g3, &end_wptr);
++}
++
++/* CPU-only queue contracts. Adapter serializes every call with one mutex.
++ * Only take/commit/finish are called by the hardware-owning worker. */
++static bool session_terminal(const struct sgpu_session_queue *q)
++{ return q->status.state == SG_SESSION_CLOSED || q->status.state == SG_SESSION_FAULTED; }
++
++bool sgpu_session_queue_init(struct sgpu_session_queue *q)
++{
++    if (!q || q->initialized) return false;
++    *q = (struct sgpu_session_queue){.initialized=true,
++        .status={.state=SG_SESSION_READY,.last_sequence=2,.wptr=170}};
++    return true;
++}
++
++uint32_t sgpu_session_enqueue(struct sgpu_session_queue *q, uint32_t owner,
++    uint32_t kind, const uint32_t value[4], uint32_t *id)
++{
++    if (!q || !value || !id || owner != SGPU_SESSION_OWNER || kind != SGPU_SESSION_WRITE4)
++        return SG_SESSION_BAD_REQUEST;
++    if (!q->initialized) return SG_SESSION_NOT_READY;
++    if (session_terminal(q) || q->close_requested) return SG_SESSION_IS_CLOSED;
++    if (q->status.admitted >= SGPU_SESSION_LIMIT) return SG_SESSION_AT_QUOTA;
++    if (q->status.outstanding >= SGPU_SESSION_DEPTH) return SG_SESSION_FULL;
++    uint32_t slot=q->status.admitted;
++    struct sgpu_session_entry next={.result={.state=SG_REQUEST_QUEUED}};
++    for (unsigned i=0;i<4;i++) next.value[i]=value[i];
++    q->entry[slot]=next;
++    q->status.admitted++; q->status.outstanding++;
++    *id=slot+1;
++    return SG_SESSION_OK;
++}
++
++static void session_cancel_queued(struct sgpu_session_queue *q)
++{
++    for (unsigned i=0;i<q->status.admitted;i++) {
++        if (q->entry[i].result.state == SG_REQUEST_QUEUED) {
++            q->entry[i].result.state=SG_REQUEST_CANCELLED;
++            q->status.cancelled++; q->status.outstanding--;
++        }
++    }
++}
++
++static void session_queue_settle(struct sgpu_session_queue *q)
++{
++    if (q->close_requested) session_cancel_queued(q);
++    if (q->status.active || q->status.outstanding || session_terminal(q)) return;
++    if (q->close_requested || q->status.admitted == SGPU_SESSION_LIMIT) {
++        q->status.state=SG_SESSION_CLOSED;
++        q->status.reason=q->close_requested ? SG_SESSION_CLOSE : SG_SESSION_QUOTA;
++    } else q->status.state=SG_SESSION_READY;
++}
++
++bool sgpu_session_take(struct sgpu_session_queue *q, struct sgpu_session_request *out)
++{
++    if (!q || !out || !q->initialized || q->status.active || session_terminal(q)) return false;
++    session_queue_settle(q);
++    if (session_terminal(q)) return false;
++    for (unsigned i=0;i<q->status.admitted;i++) {
++        if (q->entry[i].result.state != SG_REQUEST_QUEUED) continue;
++        q->entry[i].result.state=SG_REQUEST_ACTIVE;
++        q->status.active=i+1; q->status.state=SG_SESSION_ACTIVE;
++        *out=(struct sgpu_session_request){.id=i+1};
++        for (unsigned j=0;j<4;j++) out->value[j]=q->entry[i].value[j];
++        return true;
++    }
++    return false;
++}
++
++bool sgpu_session_commit(struct sgpu_session_queue *q, uint32_t id)
++{
++    if (!q || !id || id>q->status.admitted || q->status.active!=id || session_terminal(q) ||
++        q->entry[id-1].result.state!=SG_REQUEST_ACTIVE) return false;
++    if (q->close_requested) {
++        q->entry[id-1].result.state=SG_REQUEST_CANCELLED;
++        q->status.active=0; q->status.cancelled++; q->status.outstanding--;
++        session_queue_settle(q);
++        return false;
++    }
++    q->entry[id-1].result.state=SG_REQUEST_COMMITTED;
++    q->status.committed++;
++    return true;
++}
++
++bool sgpu_session_finish(struct sgpu_session_queue *q, uint32_t id,
++    const struct sgpu_session_result *result)
++{
++    if (!q || !result || !id || id>q->status.admitted || q->status.active!=id || session_terminal(q))
++        return false;
++    uint32_t prior=q->entry[id-1].result.state;
++    if (prior!=SG_REQUEST_COMMITTED && !(prior==SG_REQUEST_ACTIVE && result->error && !result->publish_attempted))
++        return false;
++    /* A completed record needs actual publication and exactly four compared words. */
++    if (!result->error && (!result->publish_attempted || result->writes!=4 ||
++        result->sequence!=q->status.last_sequence+1 || result->wptr!=q->status.wptr+SG_G3_BATCH_WORDS))
++        return false;
++    q->entry[id-1].result=*result;
++    q->status.active=0; q->status.outstanding--;
++    if (result->publish_attempted) q->status.submitted++;
++    if (result->error) {
++        q->entry[id-1].result.state=SG_REQUEST_FAILED;
++        q->status.failed++;
++        if (!q->status.error) {
++            q->status.error=result->error; q->status.first_failed_id=id;
++            q->status.failure=result->failure;
++        }
++        q->status.state=SG_SESSION_FAULTED; q->status.reason=SG_SESSION_FAILURE;
++        session_cancel_queued(q);
++    } else {
++        q->entry[id-1].result.state=SG_REQUEST_COMPLETE;
++        q->status.completed++; q->status.writes+=result->writes;
++        q->status.last_sequence=result->sequence; q->status.wptr=result->wptr;
++        q->status.state=SG_SESSION_READY;
++        session_queue_settle(q);
++    }
++    return true;
++}
++
++uint32_t sgpu_session_close(struct sgpu_session_queue *q, uint32_t owner)
++{
++    if (!q || owner!=SGPU_SESSION_OWNER) return SG_SESSION_BAD_REQUEST;
++    if (!q->initialized) return SG_SESSION_NOT_READY;
++    if (!session_terminal(q)) { q->close_requested=true; q->status.state=SG_SESSION_CLOSING; }
++    return SG_SESSION_OK; /* worker observes this before commitment or after its bounded operation */
++}
++
++/* Worker-only, under the queue mutex, after an internal commit/result rejection.
++ * Preserve completed records and any publication evidence; settle every pending
++ * record before terminal state. No GPU access, release or invented completion. */
++void sgpu_session_fault_pending(struct sgpu_session_queue *q,
++    const struct sgpu_session_result *result)
++{
++    if (!q || !q->initialized || session_terminal(q)) return;
++    struct sgpu_session_result failed=result ? *result : (struct sgpu_session_result){0};
++    failed.state=SG_REQUEST_FAILED;
++    failed.writes=0;
++    if (!failed.error) {
++        failed.error=SG_BAD_MODE;
++        failed.phase=SG_SESSION_ACCOUNTING;
++    }
++    for (unsigned i=0;i<q->status.admitted;i++) {
++        uint32_t state=q->entry[i].result.state;
++        if (state!=SG_REQUEST_ACTIVE && state!=SG_REQUEST_COMMITTED) continue;
++        q->entry[i].result=failed;
++        q->status.failed++;
++        q->status.outstanding--;
++        if (failed.publish_attempted) q->status.submitted++;
++        if (!q->status.error) {
++            q->status.error=failed.error; q->status.first_failed_id=i+1;
++            q->status.failure=failed.failure;
++        }
++    }
++    session_cancel_queued(q);
++    q->status.active=0;
++    if (!q->status.error) q->status.error=failed.error;
++    q->status.state=SG_SESSION_FAULTED;
++    q->status.reason=SG_SESSION_FAILURE;
++}
++
++bool sgpu_session_get(const struct sgpu_session_queue *q, uint32_t owner, uint32_t id,
++    struct sgpu_session_result *out)
++{
++    if (!q || !out || !q->initialized || owner!=SGPU_SESSION_OWNER || !id || id>q->status.admitted)
++        return false;
++    *out=q->entry[id-1].result;
++    return true;
++}
++
++/* Final-address, once-only core ownership. No pointer here names a worker's
++ * departed stack. The adapter holds its independent CPU queue/lock/events. */
++static struct {
++    bool attempted, ready, active, prepared, stopped;
++    struct sgpu_ops ops;
++    struct probe p;
++    struct sgpu_g3 arena;
++    struct sgpu_report startup, working;
++    struct sgpu_session_result result;
++    uint32_t wptr, values[4];
++    uint64_t start_us, last_us;
++} session_core;
++_Static_assert(sizeof(session_core)+sizeof(struct sgpu_session_queue) <= 15360,
++    "reserve at least 1KiB of the 16KiB control cap for adapter data");
++
++static bool session_fail(uint32_t error, uint32_t phase)
++{
++    if (!session_core.stopped) {
++        session_core.result.error=error;
++        session_core.result.phase=phase;
++        session_core.result.failure=session_core.working.failure;
++        session_core.result.state=SG_REQUEST_FAILED;
++        session_core.ready=session_core.prepared=false;
++        session_core.stopped=true;
++        sgpu_g3_abort(&session_core.arena);
++    }
++    return false;
++}
++
++static bool session_time(uint32_t phase, uint64_t *now)
++{
++    if (session_core.stopped) return false;
++    *now=session_core.ops.now_us(session_core.ops.ctx);
++    if (*now<session_core.last_us || *now<session_core.start_us ||
++        *now-session_core.start_us>=SGPU_SESSION_BUDGET_US)
++        return session_fail(SG_COMMAND_TIMEOUT,phase);
++    session_core.last_us=*now;
++    return true;
++}
++
++static bool session_poll(enum sgpu_block block, uint32_t off, uint32_t mask,
++    uint32_t expected, uint32_t budget, uint32_t phase)
++{
++    uint64_t begin,now;
++    if (budget>POLL_US || !session_time(phase,&begin)) return false;
++    for (unsigned i=0;i<=budget/100;i++) {
++        if (!session_time(phase,&now)) return false;
++        uint32_t got=read32(&session_core.p,block,off);
++        if (!session_time(phase,&now)) return false;
++        if (now-begin>budget) return session_fail(SG_COMMAND_TIMEOUT,phase);
++        if ((got&mask)==expected) return true;
++        if (now-begin>=budget || i==budget/100) {
++            sgpu_failure(&session_core.p,SG_FAIL_POLL,block,off,mask,expected,0,0,got,
++                (uint32_t)(now-begin),budget);
++            return session_fail(SG_COMMAND_TIMEOUT,phase);
++        }
++        uint64_t left=SGPU_SESSION_BUDGET_US-(now-session_core.start_us);
++        if (left>budget-(now-begin)) left=budget-(now-begin);
++        wait_us(&session_core.p,left<100 ? (uint32_t)left : 100);
++    }
++    return session_fail(SG_COMMAND_TIMEOUT,phase);
++}
++
++static bool session_check(enum sgpu_block block, uint32_t off, uint32_t want)
++{
++    uint64_t now;
++    if (!session_time(SG_SESSION_READINESS,&now)) return false;
++    if (!sgpu_stock_check32(&session_core.p,block,off,want))
++        return session_fail(SG_BAD_SMMU,SG_SESSION_READINESS);
++    return session_time(SG_SESSION_READINESS,&now);
++}
++
++static bool session_readiness(void)
++{
++    struct probe *p=&session_core.p;
++    struct sgpu_g3 *g=&session_core.arena;
++    uint32_t w=session_core.wptr;
++    if (!p->gpu_live || !p->gpu_owned || !p->gpu_resumed || !p->smmu_live ||
++        !p->dma_exposed || p->restoring || !p->commands_started || !g->sealed ||
++        g->failed || g->busy || g->memory!=&p->memory || g->submitted!=g->completed ||
++        g->completed<2 || g->completed>34 || w!=148+SG_G3_BATCH_WORDS*g->completed ||
++        !sgpu_memory_validate(&p->memory)) return session_fail(SG_BAD_MEMORY,SG_SESSION_READINESS);
++    for (unsigned i=0;i<3;i++) if (!sgpu_g3_mapping(g,&g->bo[i]) || g->bo[i].owner!=1 ||
++        g->bo[i].pages!=1 || g->bo[i].role!=(i==0?SG_G3_IB:i==1?SG_G3_DATA:SG_G3_FENCE))
++        return session_fail(SG_BAD_MEMORY,SG_SESSION_READINESS);
++    if (!session_check(SG_GPU,SG_TRUST,0) ||
++        !session_poll(SG_GPU,SG_STATUS,SG_BUSY_MASK,0,10000,SG_SESSION_READINESS)) return false;
++    const uint32_t values[][3]={
++        {SG_GPU,SG_RB_RPTR,w},{SG_GPU,SG_RB_WPTR,w},{SG_GPU,SG_ME_CNTL,0},{SG_GPU,SG_INT_MASK,0},
++        {SG_GPU,SG_RB_BASE,SGPU_RING_VA},{SG_GPU,SG_RB_BASE_HI,0},{SG_GPU,SG_RB_CNTL,BIT(27)|(2u<<8)|9u},
++        {SG_GPU,SG_PM4_BASE,SGPU_PM4_VA},{SG_GPU,SG_PM4_BASE+4,0},
++        {SG_GPU,SG_PFP_BASE,SGPU_PFP_VA},{SG_GPU,SG_PFP_BASE+4,0},
++        {SG_SMMU,SG_CB,0x1127u},{SG_SMMU,SG_S2CR0,0},{SG_SMMU,SG_GR1_CBA2R0,1},
++        {SG_SMMU,SG_GR1_CBAR0,0x1f300u},{SG_SMMU,SG_CB_TTBCR,0x00802560u},
++        {SG_SMMU,SG_CB_TTBCR2,0x38010u},{SG_SMMU,SG_CB_MAIR0,0xff44u},{SG_SMMU,SG_CB_MAIR0+4,0},
++        {SG_SMMU,SG_CB_TTBR0,(uint32_t)p->memory.pa[0]},{SG_SMMU,SG_CB_TTBR0+4,0x10000u}};
++    for (unsigned i=0;i<COUNT(values);i++)
++        if (!session_check((enum sgpu_block)values[i][0],values[i][1],values[i][2])) return false;
++    faults(p);
++    if (has_fault(p->report)) return session_fail(SG_FAULT,SG_SESSION_READINESS);
++    uint64_t now;
++    return session_time(SG_SESSION_READINESS,&now);
++}
++
++bool sgpu_session_start(const struct sgpu_ops *ops, uint32_t mode, const uint8_t *blob,
++    size_t length, struct sgpu_report *out)
++{
++    if (!ops || !out || mode!=3 || ops->session!=1 || ops->g3!=1 ||
++        ops->stock_pixels!=1 || ops->stock_unsecure!=1 || session_core.attempted) return false;
++    session_core.attempted=true;
++    session_core.ops=*ops;
++    (void)sgpu_bootstrap(&session_core.ops,mode,blob,length,&session_core.startup,
++        &session_core.p,&session_core.arena,&session_core.wptr);
++    *out=session_core.startup;
++    const struct sgpu_report *r=&session_core.startup;
++    if (!r->pixel.passed || !r->pixel.started || !r->g3.passed || !r->g3.started ||
++        r->markers!=16 || r->pixels!=256 || r->g3.submitted!=2 || r->g3.completed!=2 ||
++        r->g3.writes!=8 || r->error!=SG_STOCK_HELD || r->failure.kind || r->rollback_failure.kind ||
++        !r->stock.held || !r->memory_retained || r->restored || r->gpu_quiescent ||
++        r->smmu_restored || r->power_pending!=13 || session_core.wptr!=170) {
++        session_core.result=(struct sgpu_session_result){.state=SG_REQUEST_FAILED,
++            .error=r->error && r->error!=SG_STOCK_HELD ? r->error : SG_BAD_MODE,
++            .phase=SG_SESSION_BOOT,.failure=r->failure};
++        session_core.stopped=true;
++        return false;
++    }
++    session_core.working=*r; session_core.working.error=SG_OK;
++    session_core.p.report=&session_core.working;
++    session_core.start_us=session_core.last_us=ops->now_us(ops->ctx);
++    if (!session_readiness()) return false;
++    session_core.ready=true;
++    return true;
++}
++
++bool sgpu_session_prepare(void)
++{
++    if (!session_core.ready || session_core.stopped || session_core.active) return false;
++    session_core.active=true;
++    session_core.result=(struct sgpu_session_result){.state=SG_REQUEST_ACTIVE};
++    session_core.working=session_core.startup;
++    session_core.working.error=SG_OK;
++    session_core.start_us=session_core.last_us=session_core.ops.now_us(session_core.ops.ctx);
++    if (session_core.arena.completed>=34 || session_core.wptr>=SGPU_PAGE/4-SG_G3_BATCH_WORDS)
++        return session_fail(SG_BAD_MODE,SG_SESSION_READINESS);
++    session_core.prepared=session_readiness();
++    return session_core.prepared;
++}
++
++void sgpu_session_failure_result(struct sgpu_session_result *out)
++{ if (out) *out=session_core.result; }
++
++void sgpu_session_stop(void)
++{
++    session_core.ready=session_core.prepared=false;
++    session_core.stopped=true; /* deliberate retention, not an engine reset/fault */
++    for (unsigned i=0;i<SG_G3_BOS;i++)
++        if (session_core.arena.bo[i].handle) session_core.arena.bo[i].quarantine=true;
++}
++
++bool sgpu_session_execute(const uint32_t value[4], struct sgpu_session_result *out)
++{
++    if (!out || !value || !session_core.active || !session_core.prepared || session_core.stopped) return false;
++    session_core.prepared=false;
++    struct probe *p=&session_core.p;
++    struct sgpu_g3 *g=&session_core.arena;
++    uint64_t now;
++    if (!session_time(SG_SESSION_CONTENTS,&now)) goto failed;
++    for (unsigned i=0;i<4;i++) session_core.values[i]=value[i];
++    uint32_t *ib=(uint32_t *)(void *)(p->memory.va+g->bo[0].physical[0]*SGPU_PAGE);
++    uint8_t *data=p->memory.va+g->bo[1].physical[0]*SGPU_PAGE;
++    uint8_t *fence=p->memory.va+g->bo[2].physical[0]*SGPU_PAGE;
++    for (unsigned i=0;i<SGPU_PAGE;i++) data[i]=0xa5;
++    *(uint32_t *)(void *)fence=0;
++    for (unsigned i=0;i<4;i++) {
++        ib[i*4]=sgpu_packet7(0x3d,3); ib[i*4+1]=sgpu_g3_va(&g->bo[1])+i*4;
++        ib[i*4+2]=0; ib[i*4+3]=session_core.values[i];
++    }
++    ib[16]=sgpu_packet7(0x26,0);
++    p->ops->clean(p->ops->ctx,ib,SGPU_PAGE);
++    if (!session_time(SG_SESSION_CONTENTS,&now)) goto failed;
++    p->ops->clean(p->ops->ctx,data,SGPU_PAGE);
++    if (!session_time(SG_SESSION_CONTENTS,&now)) goto failed;
++    p->ops->clean(p->ops->ctx,fence,SGPU_PAGE);
++    if (!session_time(SG_SESSION_CONTENTS,&now)) goto failed;
++    uint32_t batch[SG_G3_BATCH_WORDS];
++    if (!sgpu_g3_begin(g,1,g->bo[0].handle,g->bo[1].handle,g->bo[2].handle,17,batch)) {
++        session_fail(SG_BAD_MODE,SG_SESSION_PUBLISH); goto failed;
++    }
++    uint32_t target=session_core.wptr+SG_G3_BATCH_WORDS;
++    session_core.result.sequence=g->busy; session_core.result.wptr=target;
++    uint32_t *ring=(uint32_t *)(void *)(p->memory.va+3*SGPU_PAGE);
++    for (unsigned i=0;i<SG_G3_BATCH_WORDS;i++) ring[session_core.wptr+i]=batch[i];
++    p->ops->clean(p->ops->ctx,ring,SGPU_PAGE);
++    if (!session_time(SG_SESSION_PUBLISH,&now)) goto failed;
++    session_core.result.publish_attempted=true;
++    if (!checked_write32(p,SG_GPU,SG_RB_WPTR,~0u,target)) {
++        session_fail(SG_FAULT,SG_SESSION_PUBLISH); goto failed;
++    }
++    if (!session_poll(SG_GPU,SG_RB_RPTR,~0u,target,POLL_US,SG_SESSION_RPTR) ||
++        !session_poll(SG_GPU,SG_STATUS,SG_BUSY_MASK,0,POLL_US,SG_SESSION_IDLE)) goto failed;
++    uint64_t begin;
++    if (!session_time(SG_SESSION_FENCE,&begin)) goto failed;
++    uint32_t observed=0;
++    for (unsigned i=0;i<=POLL_US/100;i++) {
++        if (!session_time(SG_SESSION_FENCE,&now)) goto failed;
++        p->ops->invalidate(p->ops->ctx,fence,64);
++        observed=*(volatile uint32_t *)(void *)fence;
++        if (!session_time(SG_SESSION_FENCE,&now)) goto failed;
++        if (now-begin>POLL_US) { session_fail(SG_COMMAND_TIMEOUT,SG_SESSION_FENCE); goto failed; }
++        if (observed==g->busy) break;
++        if (observed>g->busy) { session_fail(SG_FAULT,SG_SESSION_FENCE); goto failed; }
++        if (now-begin>=POLL_US || i==POLL_US/100) break;
++        uint64_t left=SGPU_SESSION_BUDGET_US-(now-session_core.start_us);
++        if (left>POLL_US-(now-begin)) left=POLL_US-(now-begin);
++        wait_us(p,left<100 ? (uint32_t)left : 100);
++    }
++    if (observed!=g->busy) { session_fail(SG_COMMAND_TIMEOUT,SG_SESSION_FENCE); goto failed; }
++    p->ops->invalidate(p->ops->ctx,data,SGPU_PAGE);
++    if (!session_time(SG_SESSION_COMPARE,&now)) goto failed;
++    for (unsigned i=0;i<4;i++) if (((volatile uint32_t *)(void *)data)[i]!=session_core.values[i]) {
++        session_fail(SG_MARKER_MISMATCH,SG_SESSION_COMPARE); goto failed;
++    }
++    for (unsigned i=16;i<SGPU_PAGE;i++) if (((volatile uint8_t *)data)[i]!=0xa5) {
++        session_fail(SG_MARKER_MISMATCH,SG_SESSION_COMPARE); goto failed;
++    }
++    if (!session_time(SG_SESSION_FINAL_FAULTS,&now)) goto failed;
++    faults(p);
++    if (has_fault(p->report)) { session_fail(SG_FAULT,SG_SESSION_FINAL_FAULTS); goto failed; }
++    if (!session_time(SG_SESSION_FINAL_FAULTS,&now)) goto failed;
++    if (!sgpu_g3_complete(g,1,g->bo[2].handle,observed)) {
++        session_fail(SG_FAULT,SG_SESSION_FINAL_FAULTS); goto failed;
++    }
++    session_core.wptr=target; session_core.active=false;
++    session_core.result.state=SG_REQUEST_COMPLETE; session_core.result.writes=4;
++    *out=session_core.result;
++    return true;
++failed:
++    *out=session_core.result;
++    return false;
++}
+ #endif
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -51,12 +51,13 @@
+     void (*clean)(void *, const void *, uint32_t);
+     void (*invalidate)(void *, const void *, uint32_t);
+     void (*trace)(void *, const char *, uint32_t, uint32_t, uint32_t);
+     uint32_t stock_unsecure; /* exactly 1 + mode3: transition-only unless separately opted in below */
+     uint32_t stock_pixels; /* exactly 1 + stock1/mode3: owned 256-pixel test, no cleanup */
+     uint32_t g3; /* exact mode3/stock1/pixels1/g3=1: kernel-only bounded IB proof */
++    uint32_t session; /* separate exact mode3/stock1/pixels1/g3=1/session=1 */
+ };
+ enum sgpu_failure_kind { SG_FAIL_NONE, SG_FAIL_OWNER, SG_FAIL_READBACK,
+     SG_FAIL_POLL, SG_FAIL_GUARD };
+ struct sgpu_failure {
+     uint32_t kind, stage, block, offset, mask, want, old, written, got;
+     uint32_t elapsed_us, budget_us, saved_count;
+@@ -81,12 +82,64 @@
+ bool sgpu_firmware_validate(const uint8_t *, size_t, struct sgpu_firmware *);
+ bool sgpu_memory_validate(const struct sgpu_memory *);
+ bool sgpu_tables_build(struct sgpu_memory *, const struct sgpu_firmware *);
+ uint32_t sgpu_blit_commands(uint32_t *, uint32_t, uint32_t);
+ bool sgpu_probe(const struct sgpu_ops *, uint32_t, const uint8_t *, size_t,
+     struct sgpu_report *);
++
++/* Private kernel-only session. Queue functions require the adapter mutex.
++ * Hardware functions have exactly one worker; no producer may call them.
++ * No user pointers, user submissions, live mappings or reclamation. */
++#define SGPU_SESSION_LIMIT 32u
++#define SGPU_SESSION_DEPTH 4u
++#define SGPU_SESSION_OWNER 1u
++#define SGPU_SESSION_WRITE4 1u
++#define SGPU_SESSION_BUDGET_US 2000000u
++enum sgpu_session_state { SG_SESSION_OFF, SG_SESSION_READY, SG_SESSION_ACTIVE,
++    SG_SESSION_CLOSING, SG_SESSION_CLOSED, SG_SESSION_FAULTED };
++enum sgpu_session_reason { SG_SESSION_NONE, SG_SESSION_QUOTA, SG_SESSION_CLOSE,
++    SG_SESSION_FAILURE };
++enum sgpu_request_state { SG_REQUEST_EMPTY, SG_REQUEST_QUEUED, SG_REQUEST_ACTIVE,
++    SG_REQUEST_COMMITTED, SG_REQUEST_COMPLETE, SG_REQUEST_CANCELLED, SG_REQUEST_FAILED };
++enum sgpu_session_rc { SG_SESSION_OK, SG_SESSION_NOT_READY, SG_SESSION_BAD_REQUEST,
++    SG_SESSION_FULL, SG_SESSION_AT_QUOTA, SG_SESSION_IS_CLOSED };
++enum sgpu_session_phase { SG_SESSION_BOOT, SG_SESSION_READINESS, SG_SESSION_CONTENTS,
++    SG_SESSION_PUBLISH, SG_SESSION_RPTR, SG_SESSION_IDLE, SG_SESSION_FENCE,
++    SG_SESSION_COMPARE, SG_SESSION_FINAL_FAULTS, SG_SESSION_ACCOUNTING };
++struct sgpu_session_result {
++    uint32_t state, sequence, wptr, writes, error, phase;
++    bool publish_attempted;
++    struct sgpu_failure failure;
++};
++struct sgpu_session_request { uint32_t id, value[4]; };
++struct sgpu_session_entry { uint32_t value[4]; struct sgpu_session_result result; };
++struct sgpu_session_status {
++    uint32_t state, reason, admitted, outstanding, active;
++    uint32_t committed, submitted, completed, cancelled, failed, writes;
++    uint32_t last_sequence, wptr, error, first_failed_id;
++    struct sgpu_failure failure;
++};
++struct sgpu_session_queue {
++    bool initialized, close_requested;
++    struct sgpu_session_status status;
++    struct sgpu_session_entry entry[SGPU_SESSION_LIMIT];
++};
++bool sgpu_session_queue_init(struct sgpu_session_queue *);
++uint32_t sgpu_session_enqueue(struct sgpu_session_queue *, uint32_t, uint32_t,
++    const uint32_t[4], uint32_t *);
++bool sgpu_session_take(struct sgpu_session_queue *, struct sgpu_session_request *);
++bool sgpu_session_commit(struct sgpu_session_queue *, uint32_t);
++bool sgpu_session_finish(struct sgpu_session_queue *, uint32_t, const struct sgpu_session_result *);
++void sgpu_session_fault_pending(struct sgpu_session_queue *, const struct sgpu_session_result *);
++uint32_t sgpu_session_close(struct sgpu_session_queue *, uint32_t);
++bool sgpu_session_get(const struct sgpu_session_queue *, uint32_t, uint32_t, struct sgpu_session_result *);
++bool sgpu_session_start(const struct sgpu_ops *, uint32_t, const uint8_t *, size_t, struct sgpu_report *);
++bool sgpu_session_prepare(void);
++bool sgpu_session_execute(const uint32_t[4], struct sgpu_session_result *);
++void sgpu_session_failure_result(struct sgpu_session_result *);
++void sgpu_session_stop(void);
+
+ /* Register offsets are BYTES, from MSM4.9 a5xx_reg.h (which uses WORDS). */
+ #define SG_RB_BASE 0x2000u
+ #define SG_RB_BASE_HI 0x2004u
+ #define SG_RB_CNTL 0x2008u
+ #define SG_RB_RPTR_ADDR 0x2010u

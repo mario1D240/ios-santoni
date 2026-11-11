@@ -1,0 +1,204 @@
+diff --git a/bsd/dev/santoni_gpu_launch.c b/bsd/dev/santoni_gpu_launch.c
+index 1fea657..f25b2f3 100644
+--- a/bsd/dev/santoni_gpu_launch.c
++++ b/bsd/dev/santoni_gpu_launch.c
+@@ -143,6 +143,21 @@ bool santoni_gpu_user_launch_mount_published(void)
+     return launch.mounted;
+ }
+ 
++/* Observation is available only after successful exec preparation in the exact
++ * boot-only role, and only on this immutable executable backing. */
++bool santoni_gpu_user_launch_trace_ready(uint64_t kva, uint32_t file_bytes,
++    uint32_t span_bytes)
++{
++    uint32_t enabled=0,mode=0;
++    (void)PE_parse_boot_argn("santonigpu_user_exec",&enabled,sizeof(enabled));
++    if (!enabled) return false;
++    (void)PE_parse_boot_argn("santonigpu",&mode,sizeof(mode));
++    return launch_options(mode)==SG_LAUNCH_ON &&
++        __atomic_load_n(&launch.stage,__ATOMIC_ACQUIRE)==LAUNCH_READY &&
++        launch.mounted && kva && kva==launch.mount.kva &&
++        file_bytes==launch.mount.file_bytes && span_bytes==launch.mount.span_bytes;
++}
++
+ const char *santoni_gpu_user_launch_path(void)
+ {
+     uint32_t enabled=0,mode=0;
+diff --git a/bsd/dev/santoni_gpu_launch.h b/bsd/dev/santoni_gpu_launch.h
+index e70158c..5b339ee 100644
+--- a/bsd/dev/santoni_gpu_launch.h
++++ b/bsd/dev/santoni_gpu_launch.h
+@@ -14,4 +14,5 @@ const char *santoni_gpu_user_launch_path(void);
+ void santoni_gpu_user_launch_exec_result(int);
+ bool santoni_gpu_user_launch_mount_args(const void *, struct sgpu_launch_mount *);
+ bool santoni_gpu_user_launch_mount_published(void);
++bool santoni_gpu_user_launch_trace_ready(uint64_t, uint32_t, uint32_t);
+ #endif
+diff --git a/bsd/dev/santoni_gpu_launch_trace.h b/bsd/dev/santoni_gpu_launch_trace.h
+new file mode 100644
+index 0000000..f858ed6
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_launch_trace.h
+@@ -0,0 +1,25 @@
++#ifndef SANTONI_GPU_LAUNCH_TRACE_H
++#define SANTONI_GPU_LAUNCH_TRACE_H
++#include <stdint.h>
++
++/* CPU-only, write-only observation on the private executable vnode. Darwin
++ * _IOW('G', 0xf0, record): IOC_IN | (64 << 16) | ('G' << 8) | 0xf0.
++ * No user pointers, addresses, GPU commands or output fields cross this ABI. */
++#define SGPU_LAUNCH_TRACE_IOCTL UINT64_C(0x804047f0)
++#define SGPU_LAUNCH_TRACE_VERSION 1u
++#define SGPU_LAUNCH_TRACE_LIMIT 16u
++enum sgpu_launch_trace_event {
++    SG_LTRACE_ENTRY=1, SG_LTRACE_FORK, SG_LTRACE_CHILD, SG_LTRACE_CONSOLE,
++    SG_LTRACE_RUN, SG_LTRACE_RESULT, SG_LTRACE_WRITE, SG_LTRACE_INIT_EXEC,
++    SG_LTRACE_INIT_RETURN
++};
++/* status: 0=success, 1=BSD carry/error, 2=short console write (WRITE only).
++ * value is the normalized syscall return; RESULT carries only report scalars.
++ * The kernel prints its own current PID, never a caller-supplied PID. */
++struct sgpu_launch_trace_record {
++    uint32_t version, bytes, event, status, value;
++    uint32_t pass, sent, verified, negative, error, transport_errno;
++    uint32_t reserved[5];
++};
++_Static_assert(sizeof(struct sgpu_launch_trace_record)==64, "fixed EL0 trace ABI");
++#endif
+diff --git a/bsd/miscfs/mockfs/mockfs_vnops.c b/bsd/miscfs/mockfs/mockfs_vnops.c
+index 0d1572c..07706cc 100644
+--- a/bsd/miscfs/mockfs/mockfs_vnops.c
++++ b/bsd/miscfs/mockfs/mockfs_vnops.c
+@@ -36,6 +36,104 @@
+ #include <libkern/libkern.h>
+ #include <kern/debug.h>
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <sys/proc.h>
++#include <sys/fcntl.h>
++#include <dev/santoni_gpu_launch.h>
++#include <dev/santoni_gpu_launch_trace.h>
++
++/* One private file/mount is admitted by trace_ready. Its existing mount mutex
++ * protects this saturating per-boot count; no BO, pager or GPU state changes. */
++static uint32_t mockfs_santoni_trace_events;
++
++static mockfs_mount_t
++mockfs_santoni_trace_mount(vnode_t vp)
++{
++    if (!vp || vnode_vtype(vp)!=VREG) return NULL;
++    mockfs_fsnode_t node=vnode_fsnode(vp);
++    if (!node || node->type!=MOCKFS_FILE || !node->mnt ||
++        vnode_mount(vp)!=node->mnt) return NULL;
++    mockfs_mount_t mnt=node->mnt->mnt_data;
++    if (!mnt || mnt->santoni_probe_failed ||
++        !santoni_gpu_user_launch_trace_ready(mnt->santoni_probe_kva,
++            mnt->santoni_probe_file_bytes,mnt->santoni_probe_span_bytes)) return NULL;
++    return mnt;
++}
++
++static int
++mockfs_santoni_trace_access(vnode_t vp, vfs_context_t ctx)
++{
++    if (!ctx || vfs_context_iskernel(ctx)) return EACCES;
++    proc_t p=vfs_context_proc(ctx);
++    if (!p || p!=current_proc() || proc_pid(p)<=0 || !vfs_context_issuser(ctx)) return EACCES;
++    /* XNU8796 proc.h: executable vnode is returned with an iocount. The current
++     * process cannot exec while this thread is in its vnode ioctl/open path. */
++    vnode_t textvp=proc_getexecutablevnode(p);
++    if (!textvp) return EACCES;
++    bool same=textvp==vp;
++    vnode_put(textvp);
++    return same?0:EACCES;
++}
++
++int
++mockfs_santoni_open(struct vnop_open_args *ap)
++{
++    if (!ap || !mockfs_santoni_trace_mount(ap->a_vp)) return err_open(ap);
++    if (!(ap->a_mode&FREAD) || (ap->a_mode&FWRITE)) return EACCES;
++    return mockfs_santoni_trace_access(ap->a_vp,ap->a_context);
++}
++
++int
++mockfs_santoni_close(struct vnop_close_args *ap)
++{
++    /* Closing a read-only trace descriptor also occurs during successful
++     * CLOEXEC after the process changes executable. It has no private state. */
++    if (!ap || !mockfs_santoni_trace_mount(ap->a_vp) || (ap->a_fflag&FWRITE))
++        return err_close(ap);
++    return 0;
++}
++
++int
++mockfs_santoni_ioctl(struct vnop_ioctl_args *ap)
++{
++    if (!ap || ap->a_command!=SGPU_LAUNCH_TRACE_IOCTL) return err_ioctl(ap);
++    mockfs_mount_t mnt=mockfs_santoni_trace_mount(ap->a_vp);
++    if (!mnt) return err_ioctl(ap);
++    int error=mockfs_santoni_trace_access(ap->a_vp,ap->a_context);
++    if (error) return error;
++    if (!ap->a_data || !(ap->a_fflag&FREAD) || (ap->a_fflag&FWRITE)) return EINVAL;
++    /* VNOP_IOCTL receives the kernel's fixed IOC_IN copy, never a user pointer.
++     * No copyout or modification of this record is permitted. */
++    const struct sgpu_launch_trace_record *r=(const void *)ap->a_data;
++    if (r->version!=SGPU_LAUNCH_TRACE_VERSION || r->bytes!=sizeof(*r) ||
++        r->event<SG_LTRACE_ENTRY || r->event>SG_LTRACE_INIT_RETURN || r->status>2 ||
++        (r->status==2 && r->event!=SG_LTRACE_WRITE) || r->pass>1 ||
++        r->sent>32 || r->verified>r->sent || r->negative>7 || r->error>6) return EINVAL;
++    for (unsigned i=0;i<5;i++) if (r->reserved[i]) return EINVAL;
++    if (r->event==SG_LTRACE_RESULT) {
++        if (r->status || r->value || (r->pass &&
++            (r->sent!=32 || r->verified!=32 || r->negative!=7 || r->error || r->transport_errno)))
++            return EINVAL;
++    } else if (r->pass || r->sent || r->verified || r->negative || r->error || r->transport_errno)
++        return EINVAL;
++    lck_mtx_lock(&mnt->mockfs_mnt_mtx);
++    if (mockfs_santoni_trace_events>=SGPU_LAUNCH_TRACE_LIMIT) {
++        lck_mtx_unlock(&mnt->mockfs_mnt_mtx);
++        return EBUSY;
++    }
++    uint32_t sequence=++mockfs_santoni_trace_events;
++    lck_mtx_unlock(&mnt->mockfs_mnt_mtx);
++    int pid=proc_pid(current_proc());
++    if (r->event==SG_LTRACE_RESULT)
++        printf("SANTONI GPU USERSPACE: RESULT pass=%u pid=%d sent=%u verified=%u negative=%u error=%u errno=%u; EL0 trace ioctl; NO UI\n",
++            r->pass,pid,r->sent,r->verified,r->negative,r->error,r->transport_errno);
++    else
++        printf("SANTONI GPU USERSPACE: TRACE event=%u pid=%d status=%u value=%u record=%u\n",
++            r->event,pid,r->status,r->value,sequence);
++    return 0;
++}
++#endif
++
+ /*
+  * VOPFUNC macro; why do we have so many distinct definitions of this?
+  */
+@@ -418,15 +516,27 @@ const struct vnodeopv_entry_desc mockfs_vnodeop_entries[] = {
+ 	{ .opve_op = &vnop_default_desc, .opve_impl = (VOPFUNC) vn_default_error }, /* default */
+ 	{ .opve_op = &vnop_lookup_desc, .opve_impl = (VOPFUNC) mockfs_lookup }, /* lookup */
+ 	{ .opve_op = &vnop_create_desc, .opve_impl = (VOPFUNC) err_create },/* create */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	{ .opve_op = &vnop_open_desc, .opve_impl = (VOPFUNC) mockfs_santoni_open }, /* trace open */
++#else
+ 	{ .opve_op = &vnop_open_desc, .opve_impl = (VOPFUNC) err_open }, /* open */
++#endif
+ 	{ .opve_op = &vnop_mknod_desc, .opve_impl = (VOPFUNC) err_mknod }, /* mknod */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	{ .opve_op = &vnop_close_desc, .opve_impl = (VOPFUNC) mockfs_santoni_close }, /* trace close */
++#else
+ 	{ .opve_op = &vnop_close_desc, .opve_impl = (VOPFUNC) err_close }, /* close */
++#endif
+ 	{ .opve_op = &vnop_access_desc, .opve_impl = (VOPFUNC) err_access }, /* access */
+ 	{ .opve_op = &vnop_getattr_desc, .opve_impl = (VOPFUNC) mockfs_getattr }, /* getattr */
+ 	{ .opve_op = &vnop_setattr_desc, .opve_impl = (VOPFUNC) err_setattr }, /* setattr */
+ 	{ .opve_op = &vnop_read_desc, .opve_impl = (VOPFUNC) mockfs_read }, /* read */
+ 	{ .opve_op = &vnop_write_desc, .opve_impl = (VOPFUNC) err_write }, /* write */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	{ .opve_op = &vnop_ioctl_desc, .opve_impl = (VOPFUNC) mockfs_santoni_ioctl }, /* trace ioctl */
++#else
+ 	{ .opve_op = &vnop_ioctl_desc, .opve_impl = (VOPFUNC) err_ioctl }, /* ioctl */
++#endif
+ 	{ .opve_op = &vnop_select_desc, .opve_impl = (VOPFUNC) err_select }, /* select */
+ 	{ .opve_op = &vnop_mmap_desc, .opve_impl = (VOPFUNC) err_mmap }, /* mmap */
+ 	{ .opve_op = &vnop_fsync_desc, .opve_impl = (VOPFUNC) nop_fsync }, /* fsync */

@@ -1,0 +1,401 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3282,11 +3282,35 @@
+ #define RPM_KEY_SWEN            0x6e657773u     /* "swen" */
+ #define RPM_KEY_UV              0x00007675u     /* "uv\0\0" */
+ 
++/*
++ * GLINK-RPM native transport (ported from ios-sailfish bsd/dev/sweet_rpm.c,
++ * silicon-proven on msm8996): if the second msg-ram bank ends with a "grt0"
++ * TOC, this RPM firmware speaks glink for data and the SMD channel state
++ * machine is just a facade -- discover the ap2r/r2ap FIFOs from the TOC and
++ * run the VERSION/OPEN/TX_DATA handshake on them.  Only used after the SMD
++ * data path stays silent; the doorbell is the same APCS1 IPC bit 0.
++ */
++#define GLINK_TOC_MAGIC         0x67727430u     /* "grt0" */
++#define GLINK_FIFO_AP2R         0x61703272u
++#define GLINK_FIFO_R2AP         0x72326170u
++#define GLINK_LCID              1u
++#define GLINK_CMD_VERSION       0u
++#define GLINK_CMD_VERSION_ACK   1u
++#define GLINK_CMD_OPEN          2u
++#define GLINK_CMD_OPEN_ACK      4u
++#define GLINK_CMD_TX_DATA       9u
++#define GLINK_CMD_READ_NOTIF    13u
++
+ struct santoni_smd {
+ 	vm_offset_t smem, ipc, msgram;
+ 	bool mapped, word, open;
+ 	uint32_t fifo_aux, fifo_off;   /* raw toc entry of the fifo item */
+ 	bool alt_tried;
++	/* glink (see the GLINK_ block above) */
++	vm_offset_t gtx_tail, gtx_head, gtx_data, grx_tail, grx_head, grx_data;
++	uint32_t gtx_len, grx_len;
++	bool glink_mapped, gup, gremote, gacked, gactive;
++	uint32_t grcid;
+ 	vm_offset_t txinfo, rxinfo;
+ 	vm_offset_t txfifo, rxfifo;
+ 	uint32_t fifo_size;
+@@ -3755,6 +3779,318 @@
+ }
+ 
+ /*
++ * Shared reply parse: records {type, len, data} after the 8-byte "req"
++ * header; "msg#" must echo our id, "err" carries text.
++ */
++static bool
++santoni_rpm_parse_reply(unsigned ldo, uint32_t id)
++{
++	bool acked = false, err = false;
++	uint32_t words = santoni_smd.resp_len / 4u;
++	if (words >= 2u) {
++		uint32_t end = 2u + santoni_smd.resp[4] / 4u +
++		    ((santoni_smd.resp[4] % 4u) ? 1u : 0u);
++		if (end > words) {
++			end = words;
++		}
++		for (uint32_t i = 2u; i + 2u <= end;) {
++			uint32_t type, len = 0;
++			memcpy(&type, santoni_smd.resp + 4u * i, sizeof(type));
++			memcpy(&len, santoni_smd.resp + 4u * (i + 1u), sizeof(len));
++			if (type == RPM_MSG_MSG_ID && i + 2u < end) {
++				uint32_t rid = 0;
++				memcpy(&rid, santoni_smd.resp + 4u * (i + 2u), sizeof(rid));
++				if (rid == id) {
++					acked = true;
++				}
++			} else if (type == RPM_MSG_ERR && i + 2u < end && len <= 31u) {
++				char text[32];
++				memcpy(text, santoni_smd.resp + 4u * (i + 2u), len);
++				text[len] = 0;
++				printf("SANTONI RPM: L%u: error '%s'\n", ldo, text);
++				err = true;
++			}
++			i += 2u + len / 4u + ((len % 4u) ? 1u : 0u);
++		}
++	}
++	printf("SANTONI RPM: L%u uV vote: %s\n", ldo,
++	    acked && !err ? "ok" : "FAILED");
++	return acked && !err;
++}
++
++/* ---------------- glink transport (ios-sailfish sweet_rpm.c port) ------- */
++
++static bool
++santoni_glink_map(void)
++{
++	if (santoni_smd.glink_mapped) {
++		return true;
++	}
++	volatile uint32_t *toc = (volatile uint32_t *)(santoni_smd.msgram +
++	    RPM_MSGRAM_SIZE - 0x100u);
++	if (toc[0] != GLINK_TOC_MAGIC) {
++		printf("SANTONI RPM: no glink TOC (%#x)\n", toc[0]);
++		return false;
++	}
++	uint32_t count = toc[1];
++	if (count > 20u) {
++		printf("SANTONI RPM: glink TOC count %u\n", count);
++		return false;
++	}
++	for (uint32_t i = 0; i < count; i++) {
++		uint32_t id = toc[2 + 3 * i], off = toc[3 + 3 * i];
++		uint32_t size = toc[4 + 3 * i];
++		/* The TOC sits at the end of the second bank (0x68000..0x70000)
++		 * and its offsets are relative to that bank's base. */
++		vm_offset_t base = santoni_smd.msgram + 0x8000u;
++		if (base + off + size > santoni_smd.msgram + RPM_MSGRAM_SIZE ||
++		    (size & 3u)) {
++			continue;
++		}
++		if (id == GLINK_FIFO_AP2R) {
++			santoni_smd.gtx_tail = base + off;
++			santoni_smd.gtx_head = base + off + 4u;
++			santoni_smd.gtx_data = base + off + 8u;
++			santoni_smd.gtx_len = size;
++		} else if (id == GLINK_FIFO_R2AP) {
++			santoni_smd.grx_tail = base + off;
++			santoni_smd.grx_head = base + off + 4u;
++			santoni_smd.grx_data = base + off + 8u;
++			santoni_smd.grx_len = size;
++		}
++	}
++	if (!santoni_smd.gtx_len || !santoni_smd.grx_len) {
++		printf("SANTONI RPM: glink TOC has no ap2r/r2ap fifo\n");
++		return false;
++	}
++	printf("SANTONI RPM: glink fifos tx %u rx %u bytes\n",
++	    santoni_smd.gtx_len, santoni_smd.grx_len);
++	santoni_smd.glink_mapped = true;
++	return true;
++}
++
++static uint32_t
++santoni_glink_rx_avail(void)
++{
++	uint32_t head = *(volatile uint32_t *)santoni_smd.grx_head;
++	uint32_t tail = *(volatile uint32_t *)santoni_smd.grx_tail;
++	__asm__ volatile("dmb ish" ::: "memory");
++	return head >= tail ? head - tail : santoni_smd.grx_len - tail + head;
++}
++
++static void
++santoni_glink_rx_peek(uint32_t off, uint32_t *buf, uint32_t words_)
++{
++	uint32_t pos = (*(volatile uint32_t *)santoni_smd.grx_tail + off) %
++	    santoni_smd.grx_len;
++	for (uint32_t i = 0; i < words_; i++) {
++		buf[i] = *(volatile uint32_t *)(santoni_smd.grx_data + pos);
++		pos = (pos + 4u) % santoni_smd.grx_len;
++	}
++}
++
++static void
++santoni_glink_rx_advance(uint32_t n)
++{
++	__asm__ volatile("dsb sy" ::: "memory");
++	uint32_t tail = *(volatile uint32_t *)santoni_smd.grx_tail;
++	*(volatile uint32_t *)santoni_smd.grx_tail =
++	    (tail + n) % santoni_smd.grx_len;
++	__asm__ volatile("dsb sy" ::: "memory");
++}
++
++/* n is a multiple of 4; the message is padded to 8 bytes. */
++static bool
++santoni_glink_send(const uint32_t *w, uint32_t n)
++{
++	uint32_t total = (n + 7u) & ~7u;
++	for (unsigned tries = 0;; tries++) {
++		uint32_t head = *(volatile uint32_t *)santoni_smd.gtx_head;
++		uint32_t tail = *(volatile uint32_t *)santoni_smd.gtx_tail;
++		uint32_t avail = tail <= head ?
++		    santoni_smd.gtx_len - head + tail : tail - head;
++		if (avail > total) {
++			break;
++		}
++		if (tries == 100) {
++			printf("SANTONI RPM: glink tx full\n");
++			return false;
++		}
++		delay(1000);
++	}
++	uint32_t pos = *(volatile uint32_t *)santoni_smd.gtx_head;
++	for (uint32_t i = 0; i < total / 4u; i++) {
++		*(volatile uint32_t *)(santoni_smd.gtx_data + pos) =
++		    i < n / 4u ? w[i] : 0u;
++		pos = (pos + 4u) % santoni_smd.gtx_len;
++	}
++	__asm__ volatile("dsb sy" ::: "memory");
++	*(volatile uint32_t *)santoni_smd.gtx_head = pos;
++	santoni_smd_kick();
++	return true;
++}
++
++static bool
++santoni_glink_send_cmd(uint32_t cmd, uint32_t p1, uint32_t p2)
++{
++	uint32_t w[2] = {cmd | (p1 << 16), p2};
++	return santoni_glink_send(w, sizeof(w));
++}
++
++/* Handle one incoming glink message; false when nothing complete is there. */
++static bool
++santoni_glink_rx_one(void)
++{
++	uint32_t avail = santoni_glink_rx_avail(), h[4];
++	if (avail < 8u) {
++		return false;
++	}
++	santoni_glink_rx_peek(0, h, 2);
++	uint32_t cmd = h[0] & 0xffffu, p1 = h[0] >> 16, p2 = h[1];
++	switch (cmd) {
++	case GLINK_CMD_VERSION:
++		santoni_glink_rx_advance(8);
++		(void)santoni_glink_send_cmd(GLINK_CMD_VERSION_ACK, 1, 0);
++		break;
++	case GLINK_CMD_VERSION_ACK:
++		santoni_glink_rx_advance(8);
++		if (p2 != 0) {
++			(void)santoni_glink_send_cmd(GLINK_CMD_VERSION, 1, 0);
++		} else if (!santoni_smd.gup) {
++			santoni_smd.gup = true;
++			uint32_t w[2 + 4] = {
++				GLINK_CMD_OPEN | (GLINK_LCID << 16), 13u
++			};
++			static const char name[13] = "rpm_requests";
++			memcpy(&w[2], name, sizeof(name));
++			(void)santoni_glink_send(w, 8u + 12u);
++		}
++		break;
++	case GLINK_CMD_OPEN: {
++		uint32_t len = 8u + ((p2 + 7u) & ~7u), name[8] = {0};
++		if (avail < len) {
++			return false;
++		}
++		santoni_glink_rx_peek(8, name, 1);
++		santoni_glink_rx_advance(len);
++		char nm[13] = {0};
++		memcpy(nm, name, 4);
++		if (p2 == 12u && nm[0] == 'r' && nm[1] == 'p' && nm[2] == 'm') {
++			santoni_smd.grcid = p1;
++			santoni_smd.gremote = true;
++			(void)santoni_glink_send_cmd(GLINK_CMD_OPEN_ACK, p1, 0);
++		}
++		break;
++	}
++	case GLINK_CMD_OPEN_ACK:
++		santoni_glink_rx_advance(8);
++		if (p1 == GLINK_LCID) {
++			santoni_smd.gacked = true;
++		}
++		break;
++	case GLINK_CMD_TX_DATA: {
++		if (avail < 16u) {
++			return false;
++		}
++		santoni_glink_rx_peek(0, h, 4);
++		uint32_t chunk = h[2], left = h[3];
++		if (avail < 16u + chunk) {
++			return false;
++		}
++		uint32_t take = chunk;
++		if (take > sizeof(santoni_smd.resp)) {
++			take = sizeof(santoni_smd.resp);
++		}
++		take &= ~3u;
++		santoni_glink_rx_peek(16, (uint32_t *)santoni_smd.resp,
++		    take / 4u);
++		santoni_smd.resp_len = take;
++		santoni_smd.resp_ready = true;
++		santoni_glink_rx_advance((16u + chunk + 7u) & ~7u);
++		(void)left;
++		break;
++	}
++	case GLINK_CMD_READ_NOTIF:
++		santoni_glink_rx_advance(8);
++		santoni_smd_kick();
++		break;
++	default:
++		santoni_glink_rx_advance(8);
++		break;
++	}
++	return true;
++}
++
++static bool
++santoni_glink_open(void)
++{
++	if (santoni_smd.gactive) {
++		return true;
++	}
++	if (!santoni_glink_map()) {
++		return false;
++	}
++	santoni_smd.gup = santoni_smd.gremote = santoni_smd.gacked = false;
++	*(volatile uint32_t *)santoni_smd.gtx_head = 0;
++	*(volatile uint32_t *)santoni_smd.grx_tail = 0;
++	__asm__ volatile("dsb sy" ::: "memory");
++	(void)santoni_glink_send_cmd(GLINK_CMD_VERSION, 1, 0);
++	for (int ms = 0; ms < 1000 &&
++	    !(santoni_smd.gup && santoni_smd.gremote && santoni_smd.gacked);
++	    ms++) {
++		while (santoni_glink_rx_one()) {
++		}
++		if (!(santoni_smd.gup && santoni_smd.gremote && santoni_smd.gacked)) {
++			delay(1000);
++		}
++	}
++	bool ok = santoni_smd.gup && santoni_smd.gremote && santoni_smd.gacked;
++	printf("SANTONI RPM: glink link %s\n", ok ? "up" : "FAILED");
++	if (ok) {
++		santoni_smd.gactive = true;
++	}
++	return ok;
++}
++
++/* Same vote as the SMD path, carried by TX_DATA. */
++static bool
++santoni_glink_vote(unsigned ldo, uint32_t uv)
++{
++	if (!santoni_glink_open()) {
++		return false;
++	}
++	uint32_t id = ++santoni_smd.msg_id;
++	uint32_t msg[] = {
++		RPM_MSG_REQ, 20u + 24u,
++		id, 0u, RPM_RSC_LDOA, ldo, 24u,
++		RPM_KEY_SWEN, 4u, 1u,
++		RPM_KEY_UV, 4u, uv,
++	};
++	uint32_t hdr[4] = {
++		GLINK_CMD_TX_DATA | (GLINK_LCID << 16), 0, sizeof(msg), 0
++	};
++	uint32_t w[4 + 13];
++	memcpy(w, hdr, sizeof(hdr));
++	memcpy(w + 4, msg, sizeof(msg));
++	santoni_smd.resp_ready = false;
++	if (!santoni_glink_send(w, sizeof(w))) {
++		return false;
++	}
++	for (int ms = 0; ms < 1000 && !santoni_smd.resp_ready; ms++) {
++		while (santoni_glink_rx_one()) {
++		}
++		if (!santoni_smd.resp_ready) {
++			delay(1000);
++		}
++	}
++	if (!santoni_smd.resp_ready) {
++		printf("SANTONI RPM: glink L%u: no answer\n", ldo);
++		return false;
++	}
++	return santoni_rpm_parse_reply(ldo, id);
++}
++
++/*
+  * Vote PM8937 LDOn on at uv in the active set, exactly like Linux
+  * qcom_smd_regulator with SWEN + UV keys.  rsc "ldoa", id = n.
+  * On silence: dump where the msg ram holds reply magic, try the fifo
+@@ -3825,39 +4161,11 @@
+ 		}
+ 	}
+ 	if (!santoni_smd.resp_ready) {
+-		return false;
++		/* SMD data stayed silent: if this RPM is a glink speaker
++		 * (grt0 TOC in the second bank), vote over glink. */
++		return santoni_glink_vote(ldo, uv);
+ 	}
+-	bool acked = false, err = false;
+-	uint32_t words = santoni_smd.resp_len / 4u;
+-	if (words >= 2u) {
+-		uint32_t end = 2u + santoni_smd.resp[4] / 4u +
+-		    ((santoni_smd.resp[4] % 4u) ? 1u : 0u);
+-		if (end > words) {
+-			end = words;
+-		}
+-		for (uint32_t i = 2u; i + 2u <= end;) {
+-			uint32_t type, len = 0;
+-			memcpy(&type, santoni_smd.resp + 4u * i, sizeof(type));
+-			memcpy(&len, santoni_smd.resp + 4u * (i + 1u), sizeof(len));
+-			if (type == RPM_MSG_MSG_ID && i + 2u < end) {
+-				uint32_t rid = 0;
+-				memcpy(&rid, santoni_smd.resp + 4u * (i + 2u), sizeof(rid));
+-				if (rid == id) {
+-					acked = true;
+-				}
+-			} else if (type == RPM_MSG_ERR && i + 2u < end && len <= 31u) {
+-				char text[32];
+-				memcpy(text, santoni_smd.resp + 4u * (i + 2u), len);
+-				text[len] = 0;
+-				printf("SANTONI RPM: L%u: error '%s'\n", ldo, text);
+-				err = true;
+-			}
+-			i += 2u + len / 4u + ((len % 4u) ? 1u : 0u);
+-		}
+-	}
+-	printf("SANTONI RPM: L%u %u uV: %s\n", ldo, uv,
+-	    acked && !err ? "ok" : "FAILED");
+-	return acked && !err;
++	return santoni_rpm_parse_reply(ldo, id);
+ }
+ 
+ /*

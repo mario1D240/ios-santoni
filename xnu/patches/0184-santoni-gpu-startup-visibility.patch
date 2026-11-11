@@ -1,0 +1,59 @@
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -171,7 +171,9 @@
+ 
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
++    printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
++    printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
+     const void *firmware = NULL;
+     unsigned int firmware_size = 0;
+     DTEntry chosen;
+@@ -197,16 +199,20 @@
+     uint32_t mode = 0;
+     (void)PE_parse_boot_argn("santonigpu", &mode, sizeof(mode));
+     if (mode == 0 || mode > 3) return; /* default path has zero GPU side effects */
+-    /* PAGE_SHIFT/PAGE_SIZE can be runtime variables in XNU's BSD headers. */
+-    if (PAGE_SHIFT != 12 || PAGE_SIZE != SGPU_PAGE) {
+-        printf("SANTONI GPU: non-4K kernel, diagnostic skipped\n");
++    /* BSD PAGE_SHIFT_CONST is a pmap-advertised ABI value, not the VM allocator
++     * granule. Use the actual kernel VM globals for owned-page validation. */
++    printf("SANTONI GPU: request mode=%u kernel_shift=%d kernel_size=%llu bsd_shift=%d\n",
++        mode, page_shift, (unsigned long long)page_size, (int)PAGE_SHIFT);
++    if (page_shift != 12 || page_size != SGPU_PAGE) {
++        printf("SANTONI GPU: kernel granule rejected, diagnostic skipped\n");
+         return;
+     }
+     if (__atomic_exchange_n(&sg.attempted, 1, __ATOMIC_ACQ_REL)) return;
+     sg.mode = mode;
+     thread_t worker;
+-    if (kernel_thread_start(sgpu_kernel_thread, NULL, &worker) == KERN_SUCCESS)
++    if (kernel_thread_start(sgpu_kernel_thread, NULL, &worker) == KERN_SUCCESS) {
++        printf("SANTONI GPU: worker queued mode=%u; no UI acceleration enabled\n", mode);
+         thread_deallocate(worker);
+-    else printf("SANTONI GPU: worker creation failed; CPU UI retained\n");
++    } else printf("SANTONI GPU: worker creation failed; CPU UI retained\n");
+ }
+ #endif
+diff --git a/osfmk/console/serial_console.c b/osfmk/console/serial_console.c
+--- a/osfmk/console/serial_console.c
++++ b/osfmk/console/serial_console.c
+@@ -291,6 +291,16 @@
+ static bool
+ sweet_log_wanted(const char *line, int len)
+ {
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	/* sweetlog=1 enables Santoni's disk ring, but the inherited word filter
++	 * interprets it as the literal word "1". Never silently hide GPU launch,
++	 * page-size rejection, timeout or result diagnostics on this target. */
++	static const char gpu_prefix[] = "SANTONI GPU:";
++	if (len >= (int)sizeof(gpu_prefix) - 1 &&
++	    strncmp(line, gpu_prefix, sizeof(gpu_prefix) - 1) == 0) {
++		return true;
++	}
++#endif
+ 	const char *w = sweet_log_words;
+ 
+ 	while (*w) {

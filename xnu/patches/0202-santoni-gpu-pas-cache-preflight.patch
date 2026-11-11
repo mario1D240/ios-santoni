@@ -1,0 +1,398 @@
+Santoni PAS-owned cache preflight: checked physical-aperture and CPU aliases.
+Separate explicit mode3/zap/cache role; no firmware, SMC or GPU continuation.
+General-use RAM is mapped with unhinted pages at bootstrap; live blocks are never split.
+
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -10,23 +10,27 @@
+ #include <kern/clock.h>
+ #include <kern/thread.h>
+ #include <kern/sched_prim.h>
+ #include <mach/mach_time.h>
+ #include <pexpert/pexpert.h>
+ #include <pexpert/device_tree.h>
+ #include <vm/vm_kern.h>
+ #include <vm/vm_map.h>
+ #include <vm/pmap.h>
++#include <arm/memory_types.h>
+ #include "santoni_gpu_core.h"
+
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern void CleanPoC_DcacheRegion_Force(vm_offset_t, size_t);
+ extern ppnum_t pmap_find_phys(pmap_t, addr64_t);
++extern bool pmap_santoni_pas_cache_control(ppnum_t, unsigned int, unsigned int);
++extern vm_map_address_t phystokv(uint64_t);
++extern boolean_t ml_set_interrupts_enabled(boolean_t);
+ /* XNU exports this C ABI but omits its declaration from BSD's thread.h view. */
+ extern void thread_terminate_self(void);
+ void santoni_gpu_start(void);
+
+ _Static_assert(SGPU_PAGE == 4096, "A505 diagnostic format uses 4K pages");
+ static struct {
+     vm_offset_t maps[SG_BLOCKS], pool;
+     uint32_t sizes[SG_BLOCKS], attempted, mode;
+     int wait_channel;
+@@ -324,18 +328,180 @@
+     printf("SANTONI GPU: zap owned spans metadata=%llx/%u image=%llx/%u; authentication UNPROVEN\n",
+         (unsigned long long)buffers.metadata.pa, buffers.metadata.bytes,
+         (unsigned long long)buffers.image.pa, buffers.image.bytes);
+     /* Nothing was exposed. This diagnostic deliberately releases both spans;
+      * a later PAS loader must quarantine before calling into secure firmware. */
+     (void)sgpu_pas_release(&buffers.image);
+     (void)sgpu_pas_release(&buffers.metadata);
+ }
+
++/* PAS cache view: an AT translation reads attributes without reading a page
++ * whose permission may be under investigation. IRQ exclusion keeps PAR_EL1
++ * paired with this translation; restore the prior interrupt state always. */
++static bool __attribute__((noinline)) sgpu_pas_cache_view(vm_offset_t va, uint64_t pa, uint32_t attribute)
++{
++    if (!va || !pa || (va & 4095u) || (pa & 4095u)) return false;
++    boolean_t interrupts = ml_set_interrupts_enabled(FALSE);
++    uint64_t par;
++    __asm__ volatile("dsb ish\n\tat s1e1r, %1\n\tisb\n\tmrs %0, par_el1"
++        : "=r"(par) : "r"(va) : "memory");
++    (void)ml_set_interrupts_enabled(interrupts);
++    return !(par & 1u) && (par & 0x0000fffffffff000ull) == pa &&
++        (uint32_t)(par >> 56) == attribute;
++}
++
++/* PAS cache policy: no SCM or GPU work. Fresh owned spans only. The current
++ * probe uses test bytes, not firmware; future PAS must set memory.exposed
++ * before its first address-bearing call, after which release refuses all work. */
++struct sgpu_pas_cached_span {
++    struct sgpu_pas_memory memory;
++    uint32_t converted_pages;
++    bool uncertain;
++};
++
++static bool __attribute__((noinline)) sgpu_pas_cached_views(const struct sgpu_pas_memory *memory,
++    uint32_t offset, uint32_t attribute)
++{
++    if (!memory || !memory->va || !memory->pa || memory->exposed ||
++        (memory->va & (SGPU_PAGE - 1u)) || (memory->pa & (SGPU_PAGE - 1u)) ||
++        !memory->bytes || memory->bytes > SG_PAS_MAX_BYTES ||
++        (memory->bytes & (SGPU_PAGE - 1u)) || offset >= memory->bytes ||
++        (offset & (SGPU_PAGE - 1u)) || memory->pa > 0x100000000ull - memory->bytes ||
++        memory->va > ~(vm_offset_t)0 - memory->bytes) return false;
++    uint64_t pa = memory->pa + offset;
++    if (((uint64_t)pmap_find_phys(kernel_pmap, memory->va + offset) << 12) != pa) return false;
++    vm_offset_t aperture = (vm_offset_t)phystokv(pa);
++    return sgpu_pas_cache_view(memory->va + offset, pa, attribute) &&
++        sgpu_pas_cache_view(aperture, pa, attribute);
++}
++
++static bool __attribute__((noinline)) sgpu_pas_cached_prepare(struct sgpu_pas_cached_span *span)
++{
++    if (!span || span->converted_pages || span->uncertain || span->memory.exposed ||
++        !span->memory.bytes || span->memory.bytes > SG_PAS_MAX_BYTES ||
++        (span->memory.bytes & (SGPU_PAGE - 1u))) return false;
++    /* Establish all page identities and leaf eligibility before changing any
++     * cache policy. Reclaimed block/hinted mappings fail without a live split. */
++    for (uint32_t off = 0; off < span->memory.bytes; off += SGPU_PAGE) {
++        if (!sgpu_pas_cached_views(&span->memory, off, 0xff) ||
++            !pmap_santoni_pas_cache_control((ppnum_t)((span->memory.pa + off) >> 12),
++                VM_WIMG_DEFAULT, VM_WIMG_DEFAULT)) return false;
++    }
++    CleanPoC_DcacheRegion_Force(span->memory.va, span->memory.bytes);
++    for (uint32_t off = 0; off < span->memory.bytes; off += SGPU_PAGE) {
++        span->uncertain = true; /* a failed transition may have changed an alias */
++        if (!pmap_santoni_pas_cache_control((ppnum_t)((span->memory.pa + off) >> 12),
++                VM_WIMG_DEFAULT, VM_WIMG_WCOMB) ||
++            !sgpu_pas_cached_views(&span->memory, off, 0x44)) return false;
++        span->converted_pages++;
++        span->uncertain = false;
++    }
++    return true;
++}
++
++static bool __attribute__((noinline)) sgpu_pas_cached_release(struct sgpu_pas_cached_span *span)
++{
++    if (!span || span->memory.exposed || span->uncertain ||
++        span->memory.bytes > SG_PAS_MAX_BYTES || (span->memory.bytes & (SGPU_PAGE - 1u)) ||
++        span->converted_pages > span->memory.bytes / SGPU_PAGE) return false;
++    if (!span->memory.bytes) return !span->memory.va && !span->memory.pa;
++    if (!span->memory.va || !span->memory.pa ||
++        (span->memory.va & (SGPU_PAGE - 1u)) || (span->memory.pa & (SGPU_PAGE - 1u)) ||
++        span->memory.pa > 0x100000000ull - span->memory.bytes ||
++        span->memory.va > ~(vm_offset_t)0 - span->memory.bytes) return false;
++    while (span->converted_pages) {
++        uint32_t off = (span->converted_pages - 1u) * SGPU_PAGE;
++        if (!sgpu_pas_cached_views(&span->memory, off, 0x44)) {
++            span->uncertain = true;
++            return false;
++        }
++        span->uncertain = true;
++        if (!pmap_santoni_pas_cache_control((ppnum_t)((span->memory.pa + off) >> 12),
++                VM_WIMG_WCOMB, VM_WIMG_DEFAULT) ||
++            !sgpu_pas_cached_views(&span->memory, off, 0xff)) return false;
++        span->converted_pages--;
++        span->uncertain = false;
++    }
++    return sgpu_pas_release(&span->memory);
++}
++
++struct sgpu_pas_cache_trial {
++    struct sgpu_pas_cached_span metadata, image;
++    uint32_t forward_error, cleanup_error;
++    bool attempted;
++};
++static struct sgpu_pas_cache_trial sgpu_cache_trial;
++
++static void __attribute__((noinline)) sgpu_pas_cache_trial_run(struct sgpu_pas_cache_trial *trial)
++{
++    if (!trial || trial->attempted) return;
++    trial->attempted = true;
++    if (trial->metadata.memory.va || trial->metadata.memory.pa || trial->metadata.memory.bytes ||
++        trial->metadata.memory.exposed || trial->metadata.converted_pages || trial->metadata.uncertain ||
++        trial->image.memory.va || trial->image.memory.pa || trial->image.memory.bytes ||
++        trial->image.memory.exposed || trial->image.converted_pages || trial->image.uncertain ||
++        trial->forward_error || trial->cleanup_error) {
++        if (!trial->forward_error) trial->forward_error = 6;
++        return; /* unknown prior ownership must never be freed */
++    }
++    if (!sgpu_pas_allocate(&trial->metadata.memory, 8192, SGPU_PAGE)) {
++        trial->forward_error = 1;
++    } else if (!sgpu_pas_allocate(&trial->image.memory, 8192, 0x100000)) {
++        trial->forward_error = 2;
++    } else if (!sgpu_pas_cached_prepare(&trial->metadata)) {
++        trial->forward_error = 3;
++    } else if (!sgpu_pas_cached_prepare(&trial->image)) {
++        trial->forward_error = 4;
++    } else {
++        struct sgpu_pas_cached_span *spans[2] = {&trial->metadata, &trial->image};
++        for (unsigned i = 0; i < 2; i++) {
++            for (uint32_t off = 0; off < spans[i]->memory.bytes; off += SGPU_PAGE) {
++                volatile uint8_t *owned = (volatile uint8_t *)(spans[i]->memory.va + off);
++                const volatile uint8_t *alias = (const volatile uint8_t *)(vm_offset_t)phystokv(spans[i]->memory.pa + off);
++                *owned = (uint8_t)(0xa0u + i + off / SGPU_PAGE);
++                __asm__ volatile("dsb sy" ::: "memory");
++                if (*alias != *owned) {
++                    if (!trial->forward_error) trial->forward_error = 5;
++                    trial->metadata.uncertain = trial->image.uncertain = true;
++                    goto cleanup;
++                }
++            }
++        }
++    }
++cleanup:
++    /* Each cleanup is independent; the first failure is immutable. No exposed
++     * or uncertain span is touched or freed, even when the other release works. */
++    if (!sgpu_pas_cached_release(&trial->image)) trial->cleanup_error = 1;
++    if (!sgpu_pas_cached_release(&trial->metadata) && !trial->cleanup_error) trial->cleanup_error = 2;
++}
++
++static bool __attribute__((noinline)) sgpu_pas_cache_preflight(uint32_t mode)
++{
++    uint32_t enabled = 0, zap = 0, scm = 0;
++    if (mode != 3) return false;
++    (void)PE_parse_boot_argn("santonigpu_cache", &enabled, sizeof(enabled));
++    if (enabled != 1) return false;
++    (void)PE_parse_boot_argn("santonigpu_zap", &zap, sizeof(zap));
++    (void)PE_parse_boot_argn("santonigpu_scm", &scm, sizeof(scm));
++    if (zap != 1 || scm != 0) {
++        printf("SANTONI GPU: PAS cache preflight rejected conflicting/missing opt-in; NO SCM\n");
++        return true;
++    }
++    trace(NULL, "before PAS cache preflight; owned test spans, NO SCM", 8192, 8192, 0x100000);
++    sgpu_pas_cache_trial_run(&sgpu_cache_trial);
++    printf("SANTONI GPU: PAS CACHE RESULT pass=%u forward=%u cleanup=%u retained=%u uncertain=%u; NO SCM, NO GPU CONTINUATION\n",
++        !sgpu_cache_trial.forward_error && !sgpu_cache_trial.cleanup_error ? 1u : 0u,
++        sgpu_cache_trial.forward_error, sgpu_cache_trial.cleanup_error,
++        sgpu_cache_trial.metadata.memory.bytes + sgpu_cache_trial.image.memory.bytes,
++        sgpu_cache_trial.metadata.uncertain || sgpu_cache_trial.image.uncertain ? 1u : 0u);
++    return true;
++}
++
+ /* SCM query policy: platform calls stay behind this adapter's callbacks.
+  * Verified source: msm-4.9 drivers/soc/qcom/scm.c:382-479,555-590,
+  * 638-699,1138-1162 and include/soc/qcom/scm.h:47-75. Resume returned
+  * x0..x6 after INTERRUPTED; restart the original frame after terminal EBUSY.
+  * qcom_scm.c:165-174 checks cmd7 availability before querying PAS support.
+  * adreno-gpulist.h:219-228 selects a506_zap for A505; msm8953-gpu.dtsi:16-17
+  * associates that firmware family with ID13. Santoni acceptance is UNPROVEN.
+  * Only scalar capability queries are allowed. No PAS load/auth/reset or PA.
+  */
+@@ -597,18 +763,22 @@
+     printf("SANTONI GPU: %s old=%08x wrote=%08x got=%08x elapsed=%u budget=%u saved=%u\n",
+         label, f->old, f->written, f->got, f->elapsed_us, f->budget_us, f->saved_count);
+ }
+
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
++    if (sgpu_pas_cache_preflight(sg.mode)) {
++        thread_terminate_self();
++        return;
++    }
+     if (sgpu_scm_capability_probe(sg.mode)) {
+         thread_terminate_self();
+         return;
+     }
+     sgpu_zap_allocation_preflight(sg.mode);
+     const void *firmware = NULL;
+     unsigned int firmware_size = 0;
+     DTEntry chosen;
+     if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess)
+--- a/osfmk/arm/pmap/pmap.c
++++ b/osfmk/arm/pmap/pmap.c
+@@ -10607,18 +10607,111 @@
+-	unsigned int cacheattr)
++	unsigned int cacheattr)
+ {
+ #if XNU_MONITOR
+-	pmap_set_cache_attributes_ppl(pn, cacheattr);
++	pmap_set_cache_attributes_ppl(pn, cacheattr);
+ #else
+-	pmap_set_cache_attributes_internal(pn, cacheattr);
++	pmap_set_cache_attributes_internal(pn, cacheattr);
+ #endif
+ }
+
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++bool pmap_santoni_pas_cache_control(ppnum_t, unsigned int, unsigned int);
++
++/* pmap_ttne() deliberately panics on a block in MACH_ASSERT builds. This
++ * bounded read-only variant rejects such an aperture without attempting to
++ * demote it. The kernel aperture's parent tables are fixed at bootstrap. */
++static pt_entry_t *
++pmap_santoni_pas_aperture_pte(vm_map_address_t va)
++{
++	const pt_attr_t *attr = pmap_get_pt_attr(kernel_pmap);
++	if (!attr || !kernel_pmap->tte || va < kernel_pmap->min || va >= kernel_pmap->max ||
++	    attr->pta_root_level > PMAP_TT_L3_LEVEL || attr->pta_max_level != PMAP_TT_L3_LEVEL ||
++	    pt_attr_page_size(attr) != 4096) {
++		return PT_ENTRY_NULL;
++	}
++	tt_entry_t *table = kernel_pmap->tte;
++	for (unsigned level = attr->pta_root_level; level <= PMAP_TT_L3_LEVEL; level++) {
++		tt_entry_t *entry = &table[ttn_index(attr, va, level)];
++		if (level == PMAP_TT_L3_LEVEL) {
++			return (pt_entry_t *)entry;
++		}
++		if ((*entry & (ARM_TTE_TYPE_MASK | ARM_TTE_VALID)) !=
++		    (ARM_TTE_TYPE_TABLE | ARM_TTE_VALID)) {
++			return PT_ENTRY_NULL;
++		}
++		pmap_paddr_t next = *entry & ARM_TTE_TABLE_MASK;
++		if (!next || !pa_valid(next)) {
++			return PT_ENTRY_NULL;
++		}
++		table = (tt_entry_t *)phystokv(next);
++	}
++	return PT_ENTRY_NULL;
++}
++
++/* PAS callers must own and wire the page. Unlike the ordinary non-PPL cache
++ * API, this also updates the physical aperture. Refuse blocks, hints and
++ * unexpected attributes before any mutation; never split a live mapping.
++ * Both a query (expected == replacement) and a transition are checked.
++ * Based on pmap_set_cache_attributes_priv/update_cache_attributes_locked;
++ * this entry is deliberately separate from unrelated callers' policy. */
++bool __attribute__((noinline))
++pmap_santoni_pas_cache_control(ppnum_t pn, unsigned int expected, unsigned int replacement)
++{
++	pmap_paddr_t pa = ptoa(pn);
++	if (!pn || !pa_valid(pa) || PAGE_SIZE != 4096 || ARM_PGBYTES != 4096 ||
++	    (expected != VM_WIMG_DEFAULT && expected != VM_WIMG_WCOMB) ||
++	    (replacement != VM_WIMG_DEFAULT && replacement != VM_WIMG_WCOMB)) {
++		return false;
++	}
++	unsigned int pai = pa_index(pa);
++	pvh_lock(pai);
++	vm_offset_t kva = phystokv(pa);
++	pt_entry_t *pte = pmap_santoni_pas_aperture_pte(kva);
++	pt_entry_t mask = ARM_PTE_ATTRINDXMASK | ARM_PTE_SHMASK;
++	pt_entry_t wanted = wimg_to_pte(expected, pa) & mask;
++	bool valid = pte && ((*pte & (ARM_TTE_TYPE_MASK | ARM_TTE_VALID)) == ARM_PTE_TYPE) &&
++	    !(*pte & ARM_PTE_HINT_MASK) && pte_to_pa(*pte) == pa &&
++	    ((*pte & mask) == wanted) &&
++	    ((*pte & ARM_PTE_APMASK) == ARM_PTE_AP(AP_RWNA)) &&
++	    ((pmap_cache_attributes(pn) & VM_WIMG_MASK) == expected);
++	if (!valid || expected == replacement) {
++		pvh_unlock(pai);
++		return valid;
++	}
++	pp_attr_t previous, updated;
++	bool changed = false;
++	for (unsigned retry = 0; retry < 64; retry++) {
++		previous = pp_attr_table[pai];
++		updated = (previous & ~PP_ATTR_WIMG_MASK) | PP_ATTR_WIMG(replacement & VM_WIMG_MASK);
++		if (OSCompareAndSwap16(previous, updated, &pp_attr_table[pai])) {
++			changed = true;
++			break;
++		}
++	}
++	if (!changed) {
++		pvh_unlock(pai);
++		return false;
++	}
++	pt_entry_t entry = (*pte & ~mask) | wimg_to_pte(replacement, pa);
++	write_pte_strong(pte, entry);
++	flush_mmu_tlb_region_asid_async(kva, PAGE_SIZE, kernel_pmap, true);
++	/* The existing helper updates every tracked CPU alias under the PVH lock.
++	 * On Santoni (__ARM_PTE_PHYSMAP__ is unset) its aperture branch is absent;
++	 * the explicit update above and final sync cover that otherwise-stale view. */
++	(void)pmap_update_cache_attributes_locked(pn, replacement, true);
++	sync_tlb_flush();
++	valid = (*pte == entry) && ((pmap_cache_attributes(pn) & VM_WIMG_MASK) == replacement);
++	pvh_unlock(pai);
++	pmap_sync_wimg(pn, expected, replacement);
++	return valid;
++}
++#endif
++
+ /**
+  * Updates the page numbered ppnum to have attribute specified by attributes.
+  * If a TLB flush is necessary, it will be performed if perform_tlbi is true.
+  * The necessity of the TLB flush is returned in case this function is called
+  * in a batched manner and the TLB flush is intended to be done at a different
+  * timing.
+  *
+  * @param ppnum Page Number of the page to be updated.
+  * @param attributes The new cache attributes.
+--- a/osfmk/arm64/arm_vm_init.c
++++ b/osfmk/arm64/arm_vm_init.c
+@@ -1595,19 +1595,28 @@
+
+-	// Will be handed back to VM layer through ml_static_mfree() in arm_vm_prot_finalize()
++	// Will be handed back to VM layer through ml_static_mfree() in arm_vm_prot_finalize()
+-	arm_vm_physmap_slide(temp_ptov_table, gVirtBase, segLOWEST - gVirtBase, AP_RWNA,
++	arm_vm_physmap_slide(temp_ptov_table, gVirtBase, segLOWEST - gVirtBase, AP_RWNA,
+-	    ARM64_GRANULE_ALLOW_BLOCK | ARM64_GRANULE_ALLOW_HINT);
++	    ARM64_GRANULE_ALLOW_BLOCK | ARM64_GRANULE_ALLOW_HINT);
+
+-	arm_vm_page_granular_RWNX(end_kern, phystokv(args->topOfKernelData) - end_kern,
++	arm_vm_page_granular_RWNX(end_kern, phystokv(args->topOfKernelData) - end_kern,
+-	    ARM64_GRANULE_ALLOW_BLOCK | ARM64_GRANULE_ALLOW_HINT); /* Device Tree (if not locked down), RAM Disk (if present), bootArgs */
++	    ARM64_GRANULE_ALLOW_BLOCK | ARM64_GRANULE_ALLOW_HINT); /* Device Tree (if not locked down), RAM Disk (if present), bootArgs */
+
+-	arm_vm_physmap_slide(temp_ptov_table, (args->topOfKernelData - gPhysBase + gVirtBase),
++	arm_vm_physmap_slide(temp_ptov_table, (args->topOfKernelData - gPhysBase + gVirtBase),
+-	    real_avail_end - args->topOfKernelData, AP_RWNA, ARM64_GRANULE_ALLOW_BLOCK | ARM64_GRANULE_ALLOW_HINT); // rest of physmem
++	    real_avail_end - args->topOfKernelData, AP_RWNA,
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++	    /* PAS-owned pages need independently changeable physical-aperture
++	     * attributes. Build ordinary RAM as unhinted leaves before kva_active;
++	     * never split a live block. Reclaimed static segments are not changed
++	     * here and must be rejected by the checked PAS cache helper. */
++	    0);
++#else
++	    ARM64_GRANULE_ALLOW_BLOCK | ARM64_GRANULE_ALLOW_HINT);
++#endif
+
+-	assert((temp_ptov_table[ptov_index - 1].va + temp_ptov_table[ptov_index - 1].len) <= physmap_end);
++	assert((temp_ptov_table[ptov_index - 1].va + temp_ptov_table[ptov_index - 1].len) <= physmap_end);
+
+-	// Sort in descending order of segment length.  LUT traversal is linear, so largest (most likely used)
++	// Sort in descending order of segment length.  LUT traversal is linear, so largest (most likely used)
+-	// segments should be placed earliest in the table to optimize lookup performance.
++	// segments should be placed earliest in the table to optimize lookup performance.
+-	qsort(temp_ptov_table, PTOV_TABLE_SIZE, sizeof(temp_ptov_table[0]), cmp_ptov_entries);
++	qsort(temp_ptov_table, PTOV_TABLE_SIZE, sizeof(temp_ptov_table[0]), cmp_ptov_entries);
+
+-	memcpy(ptov_table, temp_ptov_table, sizeof(ptov_table));
++	memcpy(ptov_table, temp_ptov_table, sizeof(ptov_table));
+ }

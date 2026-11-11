@@ -1,0 +1,696 @@
+diff --git a/bsd/conf/files b/bsd/conf/files
+index 031c5cb..7761688 100644
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -112,6 +112,8 @@ bsd/dev/sweet_i2c1.c			standard
+ bsd/dev/sweet_cpufreq.c			standard
+ bsd/dev/santoni_sdhci.c			standard
+ bsd/dev/santoni_gpu.c			standard
++bsd/dev/santoni_gpu_launch.c		standard
++bsd/dev/santoni_gpu_launch_core.c		standard
+ bsd/dev/santoni_gpu_core.c		standard
+ bsd/dev/sweet_rpmh.c			standard
+ bsd/dev/sweet_spmi.c			standard
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+index 6fdd9d8..7c66d55 100644
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -25,6 +25,7 @@
+ #include <vm/pmap.h>
+ #include <arm/memory_types.h>
+ #include "santoni_gpu_core.h"
++#include "santoni_gpu_launch.h"
+ 
+ extern vm_offset_t ml_io_map(vm_offset_t, vm_size_t);
+ extern void CleanPoC_DcacheRegion_Force(vm_offset_t, size_t);
+@@ -1177,8 +1178,18 @@ static void __attribute__((noinline)) sgpu_session_loop(void)
+ 
+ static void sgpu_kernel_thread(void *arg __unused, wait_result_t result __unused)
+ {
++    if (!santoni_gpu_user_launch_options_ok(sg.mode)) {
++        printf("SANTONI GPU: invalid EL0 launcher role; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
+     printf("SANTONI GPU: worker entered mode=%u; delay 40s before hardware access\n", sg.mode);
+     sgpu_kernel_wait_us(NULL, 40000000u); /* let storage and physical inputs start normally */
++    if (!santoni_gpu_user_launch_worker_ready(sg.mode)) {
++        printf("SANTONI GPU: EL0 launcher not ready; no hardware access\n");
++        thread_terminate_self();
++        return;
++    }
+     printf("SANTONI GPU: worker awake mode=%u; checking payload firmware\n", sg.mode);
+     if (!sgpu_stock_options(sg.mode)) {
+         printf("SANTONI GPU: conflicting/invalid stock transition opt-in; no hardware access\n");
+diff --git a/bsd/dev/santoni_gpu_launch.c b/bsd/dev/santoni_gpu_launch.c
+new file mode 100644
+index 0000000..097656c
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_launch.c
+@@ -0,0 +1,188 @@
++/* Default-off, boot-only EL0 launcher. HFS remains root; no rootfs writes.
++ * This adapter owns CPU executable backing only, never GPU/PAS/SMC memory. */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <sys/param.h>
++#include <sys/systm.h>
++#include <sys/conf.h>
++#include <sys/errno.h>
++#include <sys/proc.h>
++#include <sys/mount_internal.h>
++#include <sys/vnode_internal.h>
++#include <miscfs/devfs/devfs.h>
++#include <vm/vm_kern.h>
++#include <vm/pmap.h>
++#include <pexpert/pexpert.h>
++#include <pexpert/device_tree.h>
++#include "santoni_gpu_launch.h"
++
++extern void CleanPoC_DcacheRegion_Force(vm_offset_t, size_t);
++
++enum { LAUNCH_NEW, LAUNCH_PREPARING, LAUNCH_READY, LAUNCH_FAILED };
++static struct {
++    struct sgpu_launch_report report;
++    struct sgpu_launch_mount mount;
++    uint32_t stage;
++    int error, major;
++    bool attempted, mount_inflight, mounted;
++    void *anchor;
++} launch={.major=-1};
++
++static enum sgpu_launch_role launch_options(uint32_t mode)
++{
++    struct sgpu_launch_options o={.mode=mode};
++    (void)PE_parse_boot_argn("santonigpu_user_exec",&o.enabled,sizeof(o.enabled));
++    if (!o.enabled) return SG_LAUNCH_OFF;
++    (void)PE_parse_boot_argn("santonigpu_stock",&o.stock,sizeof(o.stock));
++    (void)PE_parse_boot_argn("santonigpu_pixels",&o.pixels,sizeof(o.pixels));
++    (void)PE_parse_boot_argn("santonigpu_submit",&o.submit,sizeof(o.submit));
++    (void)PE_parse_boot_argn("santonigpu_session",&o.session,sizeof(o.session));
++    (void)PE_parse_boot_argn("santonigpu_user",&o.user,sizeof(o.user));
++    (void)PE_parse_boot_argn("santonigpu_user_test",&o.user_test,sizeof(o.user_test));
++    (void)PE_parse_boot_argn("santonigpu_zap",&o.zap,sizeof(o.zap));
++    (void)PE_parse_boot_argn("santonigpu_scm",&o.scm,sizeof(o.scm));
++    (void)PE_parse_boot_argn("santonigpu_cache",&o.cache,sizeof(o.cache));
++    enum sgpu_launch_role role=sgpu_launch_role(&o);
++    if (role==SG_LAUNCH_ON) {
++        /* The EL0 wrapper execs /sbin/launchd. Pin the same original init
++         * selection for fallback instead of silently discarding a suffix. */
++        char suffix[64]={0};
++        if (!PE_parse_boot_argn("launchdsuffix",suffix,sizeof(suffix)) ||
++            strcmp(suffix,"release")) return SG_LAUNCH_INVALID;
++    }
++    return role;
++}
++
++bool santoni_gpu_user_launch_options_ok(uint32_t mode)
++{
++    return launch_options(mode)!=SG_LAUNCH_INVALID;
++}
++
++bool santoni_gpu_user_launch_worker_ready(uint32_t mode)
++{
++    enum sgpu_launch_role role=launch_options(mode);
++    if (role==SG_LAUNCH_OFF) return true;
++    return role==SG_LAUNCH_ON && __atomic_load_n(&launch.stage,__ATOMIC_ACQUIRE)==LAUNCH_READY;
++}
++
++static void launch_error(int error)
++{
++    if (!launch.error) launch.error=error;
++    __atomic_store_n(&launch.stage,LAUNCH_FAILED,__ATOMIC_RELEASE);
++}
++
++static bool launch_allocate(void *ctx __unused, uint32_t bytes, uint64_t *out)
++{
++    vm_offset_t kva=0;
++    kern_return_t kr=kmem_alloc_contig(kernel_map,&kva,bytes,0,0,0,
++        KMA_DATA|KMA_NOPAGEWAIT,VM_KERN_MEMORY_IOKIT);
++    *out=kva;
++    return kr==KERN_SUCCESS;
++}
++static uint64_t launch_page_pa(void *ctx __unused, uint64_t kva)
++{
++    return (uint64_t)pmap_find_phys(kernel_pmap,kva)<<12;
++}
++static bool launch_copy(void *ctx __unused, uint64_t kva, const void *data,
++    uint32_t file_bytes, uint32_t span_bytes)
++{
++    bzero((void *)(uintptr_t)kva,span_bytes);
++    memcpy((void *)(uintptr_t)kva,data,file_bytes);
++    /* Publish the copied bytes before the private pager aliases these pages.
++     * User executable mapping and I-cache maintenance remain XNU's job. */
++    CleanPoC_DcacheRegion_Force((vm_offset_t)kva,span_bytes);
++    return true;
++}
++static bool launch_release(void *ctx __unused, uint64_t kva, uint32_t bytes)
++{
++    kmem_free(kernel_map,(vm_offset_t)kva,bytes);
++    return true;
++}
++
++/* The public devfs node API creates its directory path. This isolated
++ * deny-all anchor obtains /dev/sgpu without borrowing the GPU cdev identity.
++ * Its registration/namespace are retained after any publication attempt. */
++static const struct cdevsw launch_anchor_cdevsw={
++    .d_open=eno_opcl,.d_close=eno_opcl,.d_read=eno_rdwrt,.d_write=eno_rdwrt,
++    .d_ioctl=eno_ioctl,.d_stop=eno_stop,.d_reset=eno_reset,.d_ttys=NULL,
++    .d_select=eno_select,.d_mmap=eno_mmap,.d_strategy=eno_strat,
++    .d_reserved_1=eno_getc,.d_reserved_2=eno_putc,.d_type=0
++};
++
++static bool launch_publish(void *ctx __unused, uint64_t kva, uint32_t file_bytes,
++    uint32_t span_bytes)
++{
++    if (launch.major>=0 || launch.anchor || launch.mounted) { launch_error(EBUSY); return false; }
++    launch.major=cdevsw_add(-1,&launch_anchor_cdevsw);
++    if (launch.major<0) { launch_error(ENODEV); return false; }
++    launch.anchor=devfs_make_node(makedev(launch.major,0),DEVFS_CHAR,UID_ROOT,0,
++        0600,"sgpu/.mountpoint");
++    if (!launch.anchor) { launch_error(ENODEV); return false; }
++    launch.mount=(struct sgpu_launch_mount){.kva=kva,.file_bytes=file_bytes,.span_bytes=span_bytes};
++    launch.mount_inflight=true;
++    int error=kernel_mount("mockfs",NULLVP,NULLVP,"/dev/sgpu",&launch.mount,sizeof(launch.mount),
++        MNT_RDONLY|MNT_NOSUID|MNT_NOATIME,0,vfs_context_kernel());
++    launch.mount_inflight=false;
++    if (error) { launch_error(error); return false; }
++    launch.mounted=true;
++    return true;
++}
++
++bool santoni_gpu_user_launch_mount_args(const void *data, struct sgpu_launch_mount *out)
++{
++    if (!out || data!=&launch.mount || !launch.mount_inflight || launch.mounted ||
++        __atomic_load_n(&launch.stage,__ATOMIC_ACQUIRE)!=LAUNCH_PREPARING) return false;
++    *out=launch.mount;
++    return out->kva && out->kva%SGPU_LAUNCH_PAGE==0 &&
++        out->file_bytes==0x4000+251 && out->span_bytes==0x5000;
++}
++
++bool santoni_gpu_user_launch_mount_published(void)
++{
++    return launch.mounted;
++}
++
++const char *santoni_gpu_user_launch_path(void)
++{
++    uint32_t enabled=0,mode=0;
++    (void)PE_parse_boot_argn("santonigpu_user_exec",&enabled,sizeof(enabled));
++    if (!enabled) return NULL; /* no node, allocation, DT or root lookup */
++    (void)PE_parse_boot_argn("santonigpu",&mode,sizeof(mode));
++    if (launch_options(mode)!=SG_LAUNCH_ON || proc_pid(current_proc())!=1 ||
++        page_shift!=12 || page_size!=SGPU_LAUNCH_PAGE) { launch_error(EINVAL); return NULL; }
++    if (launch.attempted) return NULL;
++    launch.attempted=true; /* only PID1 writes this one-shot state */
++    __atomic_store_n(&launch.stage,LAUNCH_PREPARING,__ATOMIC_RELEASE);
++    char fsname[MFSNAMELEN]={0};
++    if (rootvnode) vfs_name(vnode_mount(rootvnode),fsname);
++    if (strcmp(fsname,"hfs")) { launch_error(EINVAL); return NULL; }
++    DTEntry chosen;
++    const void *image=NULL;
++    unsigned int bytes=0;
++    if (SecureDTLookupEntry(NULL,"/chosen",&chosen)!=kSuccess ||
++        SecureDTGetProperty(chosen,"santoni-gpu-el0-probe",&image,&bytes)!=kSuccess) {
++        launch_error(ENOENT); return NULL;
++    }
++    struct sgpu_launch_ops ops={.ctx=NULL,.allocate=launch_allocate,.page_pa=launch_page_pa,
++        .copy=launch_copy,.publish=launch_publish,.release=launch_release};
++    if (!sgpu_launch_prepare(&ops,image,bytes,&launch.report)) {
++        launch_error(launch.error?launch.error:EINVAL);
++        printf("SANTONI GPU: USER LAUNCH prepare failed error=%u errno=%d retained=%u; original init fallback\n",
++            launch.report.error,launch.error,launch.report.retained?1u:0u);
++        return NULL;
++    }
++    return "/dev/sgpu/sbin/launchd";
++}
++
++void santoni_gpu_user_launch_exec_result(int error)
++{
++    if (!launch.attempted || !launch.report.ready || !launch.mounted ||
++        __atomic_load_n(&launch.stage,__ATOMIC_ACQUIRE)!=LAUNCH_PREPARING) return;
++    if (error) {
++        launch_error(error);
++        printf("SANTONI GPU: USER LAUNCH exec failed errno=%d; backing retained; original init fallback\n",error);
++        return;
++    }
++    __atomic_store_n(&launch.stage,LAUNCH_READY,__ATOMIC_RELEASE);
++    printf("SANTONI GPU: USER LAUNCH exec prepared; EL0 result still required; backing retained until reboot\n");
++}
++#endif
+diff --git a/bsd/dev/santoni_gpu_launch.h b/bsd/dev/santoni_gpu_launch.h
+new file mode 100644
+index 0000000..e70158c
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_launch.h
+@@ -0,0 +1,17 @@
++#ifndef SANTONI_GPU_LAUNCH_H
++#define SANTONI_GPU_LAUNCH_H
++#include "santoni_gpu_launch_core.h"
++
++/* Returned storage is one immutable CPU-owned span. The pager receives kva;
++ * first_pa is retained only in kernel-side contract evidence. */
++struct sgpu_launch_mount {
++    uint64_t kva;
++    uint32_t file_bytes, span_bytes;
++};
++bool santoni_gpu_user_launch_options_ok(uint32_t);
++bool santoni_gpu_user_launch_worker_ready(uint32_t);
++const char *santoni_gpu_user_launch_path(void);
++void santoni_gpu_user_launch_exec_result(int);
++bool santoni_gpu_user_launch_mount_args(const void *, struct sgpu_launch_mount *);
++bool santoni_gpu_user_launch_mount_published(void);
++#endif
+diff --git a/bsd/dev/santoni_gpu_launch_core.c b/bsd/dev/santoni_gpu_launch_core.c
+new file mode 100644
+index 0000000..0482f12
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_launch_core.c
+@@ -0,0 +1,147 @@
++/* Portable launch contracts. This is separate from the unchanged GPU core. */
++#include "santoni_gpu_launch_core.h"
++
++static uint32_t launch_u32(const uint8_t *p)
++{
++    return (uint32_t)p[0] | (uint32_t)p[1]<<8 | (uint32_t)p[2]<<16 | (uint32_t)p[3]<<24;
++}
++static uint64_t launch_u64(const uint8_t *p)
++{
++    return launch_u32(p) | (uint64_t)launch_u32(p+4)<<32;
++}
++static uint32_t launch_be32(const uint8_t *p)
++{
++    return (uint32_t)p[3] | (uint32_t)p[2]<<8 | (uint32_t)p[1]<<16 | (uint32_t)p[0]<<24;
++}
++static bool launch_name(const uint8_t *p, const char *s)
++{
++    unsigned i=0;
++    for (;i<16 && s[i];i++) if (p[i]!=(uint8_t)s[i]) return false;
++    for (;i<16;i++) if (p[i]) return false;
++    return true;
++}
++
++enum sgpu_launch_role sgpu_launch_role(const struct sgpu_launch_options *o)
++{
++    if (!o) return SG_LAUNCH_INVALID;
++    if (!o->enabled) return SG_LAUNCH_OFF;
++    if (o->enabled!=1 || o->mode!=3 || o->stock!=1 || o->pixels!=1 ||
++        o->submit!=1 || o->session!=1 || o->user!=1 || o->user_test ||
++        o->zap || o->scm || o->cache) return SG_LAUNCH_INVALID;
++    return SG_LAUNCH_ON;
++}
++
++/* Structural static Mach-O intake; ad-hoc hashes are checked by the delivery
++ * audit and the real XNU exec path. No authenticity/exec acceptance claim. */
++bool sgpu_launch_image(const void *data, uint32_t bytes, uint64_t *entry)
++{
++    const uint8_t *p=data;
++    const uint32_t sizes[5]={72,152,72,288,16};
++    uint32_t offset=32, blob_bytes=0;
++    uint64_t pc=0;
++    if (!p || !entry || bytes<0x4000+20+88 || bytes>SGPU_LAUNCH_MAX) return false;
++    if (launch_u32(p)!=0xfeedfacfu || launch_u32(p+4)!=0x0100000cu ||
++        launch_u32(p+8) || launch_u32(p+12)!=2 || launch_u32(p+16)!=5 ||
++        launch_u32(p+20)!=600 || launch_u32(p+24)!=1 || launch_u32(p+28)) return false;
++    for (unsigned i=0;i<5;i++) {
++        const uint8_t *c=p+offset;
++        if (launch_u32(c+4)!=sizes[i]) return false;
++        if (i==0 || i==1 || i==2) {
++            uint64_t vm=i==0?0:i==1?SGPU_LAUNCH_BASE:SGPU_LAUNCH_BASE+0x4000;
++            uint64_t vmsize=i==0?SGPU_LAUNCH_BASE:0x4000;
++            uint64_t fileoff=i==2?0x4000:0;
++            uint64_t filesize=i==0?0:i==1?0x4000:bytes-0x4000;
++            uint32_t prot=i==0?0:i==1?5:1;
++            const char *name=i==0?"__PAGEZERO":i==1?"__TEXT":"__LINKEDIT";
++            if (launch_u32(c)!=0x19 || !launch_name(c+8,name) ||
++                launch_u64(c+24)!=vm || launch_u64(c+32)!=vmsize ||
++                launch_u64(c+40)!=fileoff || launch_u64(c+48)!=filesize ||
++                launch_u32(c+56)!=prot || launch_u32(c+60)!=prot ||
++                launch_u32(c+64)!=(i==1?1u:0u) || launch_u32(c+68)) return false;
++            if (i==1) {
++                const uint8_t *s=c+72;
++                uint64_t n=launch_u64(s+40);
++                if (!launch_name(s,"__text") || !launch_name(s+16,"__TEXT") ||
++                    launch_u64(s+32)!=SGPU_LAUNCH_BASE+0x400 || !n || n>0x3c00 ||
++                    launch_u32(s+48)!=0x400 || launch_u32(s+52)!=3 ||
++                    launch_u32(s+56) || launch_u32(s+60) || launch_u32(s+64)!=0x80000400u ||
++                    launch_u32(s+68) || launch_u32(s+72) || launch_u32(s+76)) return false;
++                blob_bytes=(uint32_t)n;
++            }
++        } else if (i==3) {
++            if (launch_u32(c)!=5 || launch_u32(c+8)!=6 || launch_u32(c+12)!=68) return false;
++            for (unsigned r=0;r<33;r++) {
++                uint64_t value=launch_u64(c+16+r*8);
++                if (r==32) pc=value;
++                else if (value) return false;
++            }
++            if (launch_u32(c+280) || launch_u32(c+284)) return false;
++        } else if (launch_u32(c)!=0x1d || launch_u32(c+8)!=0x4000 ||
++                   launch_u32(c+12)!=bytes-0x4000) return false;
++        offset+=sizes[i];
++    }
++    if (offset!=632 || pc%4 || pc<SGPU_LAUNCH_BASE+0x400 ||
++        pc>=SGPU_LAUNCH_BASE+0x400+blob_bytes) return false;
++    const uint8_t *sig=p+0x4000;
++    if (bytes!=0x4000+251 || launch_be32(sig)!=0xfade0cc0u || launch_be32(sig+4)!=bytes-0x4000 ||
++        launch_be32(sig+8)!=1 || launch_be32(sig+12) || launch_be32(sig+16)!=20 ||
++        launch_be32(sig+20)!=0xfade0c02u || launch_be32(sig+24)!=bytes-0x4000-20 ||
++        launch_be32(sig+28)!=0x20400 || launch_be32(sig+32)!=2 ||
++        launch_be32(sig+36)!=103 || launch_be32(sig+40)!=88 ||
++        launch_be32(sig+44) || launch_be32(sig+48)!=4 || launch_be32(sig+52)!=0x4000 ||
++        sig[56]!=32 || sig[57]!=2 || sig[58] || sig[59]!=12 ||
++        launch_be32(sig+60) || launch_be32(sig+64) || launch_be32(sig+68) || launch_be32(sig+72) ||
++        launch_u64(sig+76) || launch_u64(sig+84) ||
++        launch_be32(sig+92) || launch_be32(sig+96)!=0x4000 ||
++        launch_be32(sig+100) || launch_be32(sig+104)!=1) return false;
++    const char ident[]="org.sweet.init";
++    for (unsigned i=0;i<sizeof(ident);i++) if (sig[108+i]!=(uint8_t)ident[i]) return false;
++    *entry=pc;
++    return true;
++}
++
++static bool launch_fail(const struct sgpu_launch_ops *o, struct sgpu_launch_report *r,
++    uint32_t error)
++{
++    if (!r->error) r->error=error;
++    if (r->kva && !r->exposed) {
++        if (o->release(o->ctx,r->kva,r->span_bytes)) r->kva=0;
++        else { r->cleanup_error=SG_LAUNCH_CLEANUP; r->retained=true; }
++    }
++    return false;
++}
++
++bool sgpu_launch_prepare(const struct sgpu_launch_ops *o, const void *data, uint32_t bytes,
++    struct sgpu_launch_report *r)
++{
++    if (!r) return false;
++    if (r->kva || r->first_pa || r->entry || r->file_bytes || r->span_bytes ||
++        r->error || r->cleanup_error || r->exposed || r->retained || r->ready) return false;
++    *r=(struct sgpu_launch_report){0};
++    if (!o || !o->allocate || !o->page_pa || !o->copy || !o->publish || !o->release) {
++        r->error=SG_LAUNCH_ARGUMENT; return false;
++    }
++    if (!sgpu_launch_image(data,bytes,&r->entry)) { r->error=SG_LAUNCH_IMAGE; return false; }
++    r->file_bytes=bytes; r->span_bytes=(bytes+SGPU_LAUNCH_PAGE-1)&~(SGPU_LAUNCH_PAGE-1);
++    if (!o->allocate(o->ctx,r->span_bytes,&r->kva)) {
++        /* A failed allocation must not return owned storage. Preserve any
++         * ambiguous nonzero address; do not release an unverified result. */
++        r->error=SG_LAUNCH_ALLOC; r->retained=r->kva!=0; return false;
++    }
++    if (!r->kva || r->kva%SGPU_LAUNCH_PAGE || r->kva>UINT64_MAX-r->span_bytes) {
++        r->error=SG_LAUNCH_ADDRESS; r->retained=r->kva!=0; return false;
++    }
++    for (uint32_t off=0;off<r->span_bytes;off+=SGPU_LAUNCH_PAGE) {
++        uint64_t pa=o->page_pa(o->ctx,r->kva+off);
++        if (!off) r->first_pa=pa;
++        if (!pa || pa%SGPU_LAUNCH_PAGE || r->first_pa>UINT64_MAX-r->span_bytes ||
++            pa!=r->first_pa+off) return launch_fail(o,r,SG_LAUNCH_MAPPING);
++    }
++    if (!o->copy(o->ctx,r->kva,data,bytes,r->span_bytes)) return launch_fail(o,r,SG_LAUNCH_COPY);
++    /* Publication may create vnode/UBC references even when it reports a
++     * later failure. All potentially visible backing survives until reboot. */
++    r->exposed=true; r->retained=true;
++    if (!o->publish(o->ctx,r->kva,bytes,r->span_bytes)) return launch_fail(o,r,SG_LAUNCH_PUBLISH);
++    r->ready=true;
++    return true;
++}
+diff --git a/bsd/dev/santoni_gpu_launch_core.h b/bsd/dev/santoni_gpu_launch_core.h
+new file mode 100644
+index 0000000..ecb4485
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_launch_core.h
+@@ -0,0 +1,41 @@
++/* CPU-only contracts for an explicit temporary EL0 diagnostic launcher.
++ * No GPU, SMC, device addresses or user memory maps are handled here. */
++#ifndef SANTONI_GPU_LAUNCH_CORE_H
++#define SANTONI_GPU_LAUNCH_CORE_H
++#include <stdint.h>
++#include <stdbool.h>
++
++#define SGPU_LAUNCH_PAGE 4096u
++#define SGPU_LAUNCH_MAX 32768u
++#define SGPU_LAUNCH_BASE UINT64_C(0x100000000)
++
++struct sgpu_launch_options {
++    uint32_t mode, enabled, stock, pixels, submit, session, user, user_test;
++    uint32_t zap, scm, cache;
++};
++enum sgpu_launch_role { SG_LAUNCH_OFF, SG_LAUNCH_ON, SG_LAUNCH_INVALID };
++enum sgpu_launch_error {
++    SG_LAUNCH_OK, SG_LAUNCH_ARGUMENT, SG_LAUNCH_IMAGE, SG_LAUNCH_ALLOC,
++    SG_LAUNCH_ADDRESS, SG_LAUNCH_MAPPING, SG_LAUNCH_COPY, SG_LAUNCH_PUBLISH,
++    SG_LAUNCH_CLEANUP
++};
++struct sgpu_launch_report {
++    uint64_t kva, first_pa, entry;
++    uint32_t file_bytes, span_bytes, error, cleanup_error;
++    bool exposed, retained, ready;
++};
++struct sgpu_launch_ops {
++    void *ctx;
++    bool (*allocate)(void *, uint32_t, uint64_t *);
++    uint64_t (*page_pa)(void *, uint64_t);
++    bool (*copy)(void *, uint64_t, const void *, uint32_t, uint32_t);
++    bool (*publish)(void *, uint64_t, uint32_t, uint32_t);
++    bool (*release)(void *, uint64_t, uint32_t);
++};
++enum sgpu_launch_role sgpu_launch_role(const struct sgpu_launch_options *);
++bool sgpu_launch_image(const void *, uint32_t, uint64_t *);
++/* One preparation per zero-initialized report. Reuse is rejected without
++ * erasing the first result or losing potentially exposed storage. */
++bool sgpu_launch_prepare(const struct sgpu_launch_ops *, const void *, uint32_t,
++    struct sgpu_launch_report *);
++#endif
+diff --git a/bsd/kern/kern_exec.c b/bsd/kern/kern_exec.c
+index 68612db..2028423 100644
+--- a/bsd/kern/kern_exec.c
++++ b/bsd/kern/kern_exec.c
+@@ -6725,6 +6725,9 @@ create_unix_stack(vm_map_t map, load_result_t* load_result,
+ }
+ 
+ #include <sys/reboot.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <dev/santoni_gpu_launch.h>
++#endif
+ 
+ /*
+  * load_init_program_at_path
+@@ -6884,6 +6887,17 @@ load_init_program(proc_t p)
+ 	(void) memorystatus_init_at_boot_snapshot();
+ #endif /* CONFIG_MEMORYSTATUS */
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    if (scratch_addr) {
++        const char *probe_path=santoni_gpu_user_launch_path();
++        if (probe_path) {
++            error=load_init_program_at_path(p,(user_addr_t)scratch_addr,probe_path);
++            santoni_gpu_user_launch_exec_result(error);
++            if (!error) return;
++        }
++    }
++#endif
++
+ #if DEBUG || DEVELOPMENT
+ 	/* Check for boot-arg suffix first */
+ 	char launchd_suffix[64];
+diff --git a/bsd/miscfs/mockfs/mockfs.h b/bsd/miscfs/mockfs/mockfs.h
+index 07c91ff..783f8ce 100644
+--- a/bsd/miscfs/mockfs/mockfs.h
++++ b/bsd/miscfs/mockfs/mockfs.h
+@@ -61,6 +61,12 @@ struct mockfs_mount {
+ 	boolean_t       mockfs_physical_memory; /* (valid if memory backed) */
+ 	uint32_t        mockfs_memdev_base;     /* Base page of the backing store (valid if memory backed) */
+ 	uint64_t        mockfs_memdev_size;     /* Size of the backing store (valid if memory backed) */
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    uint64_t        santoni_probe_kva;       /* Owned KVA supplied to the pager */
++    uint32_t        santoni_probe_file_bytes;
++    uint32_t        santoni_probe_span_bytes; /* Whole-page backing, not file EOF */
++    boolean_t       santoni_probe_failed;
++#endif
+ };
+ 
+ typedef struct mockfs_mount * mockfs_mount_t;
+diff --git a/bsd/miscfs/mockfs/mockfs_fsnode.c b/bsd/miscfs/mockfs/mockfs_fsnode.c
+index 55c851c..c5efeed 100644
+--- a/bsd/miscfs/mockfs/mockfs_fsnode.c
++++ b/bsd/miscfs/mockfs/mockfs_fsnode.c
+@@ -78,7 +78,12 @@ mockfs_fsnode_create(mount_t mp, uint8_t type, mockfs_fsnode_t * fsnpp)
+ 		 * For a regular file, size is meaningful, but it will always be equal to the
+ 		 * size of the backing device.
+ 		 */
+-		new_size = mp->mnt_devvp->v_specinfo->si_devsize;
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++        if (mp->mnt_data && ((mockfs_mount_t)mp->mnt_data)->santoni_probe_kva) {
++            new_size=((mockfs_mount_t)mp->mnt_data)->santoni_probe_file_bytes;
++        } else
++#endif
++        new_size = mp->mnt_devvp->v_specinfo->si_devsize;
+ 		break;
+ 	default:
+ 		rvalue = EINVAL;
+@@ -300,6 +305,9 @@ mockfs_fsnode_vnode(mockfs_fsnode_t fsnp, vnode_t * vpp)
+ 	memory_object_control_t ubc_mem_object;
+ 	mockfs_mount_t mockfs_mnt;
+ 	struct vnode_fsparam vnfs_param;
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    vnode_t failed_probe_vp=NULL;
++#endif
+ 
+ 	if ((!fsnp) || (!vpp)) {
+ 		rvalue = EINVAL;
+@@ -309,6 +317,12 @@ mockfs_fsnode_vnode(mockfs_fsnode_t fsnp, vnode_t * vpp)
+ 	mockfs_mnt = ((mockfs_mount_t) fsnp->mnt->mnt_data);
+ 	lck_mtx_lock(&mockfs_mnt->mockfs_mnt_mtx);
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    if (mockfs_mnt->santoni_probe_kva && fsnp->type==MOCKFS_FILE && mockfs_mnt->santoni_probe_failed) {
++        lck_mtx_unlock(&mockfs_mnt->mockfs_mnt_mtx);
++        return EIO;
++    }
++#endif
+ 	if (fsnp->vp) {
+ 		/*
+ 		 * The vnode already exists; this should be easy.
+@@ -341,9 +355,26 @@ mockfs_fsnode_vnode(mockfs_fsnode_t fsnp, vnode_t * vpp)
+ 			 */
+ 			ubc_mem_object = ubc_getobject(fsnp->vp, 0);
+ 
+-			if (!ubc_mem_object) {
+-				panic("mockfs_fsvnode failed to get ubc_mem_object for a new vnode");
+-			}
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++            if (mockfs_mnt->santoni_probe_kva) {
++                /* XNU8796 vm_object.c takes a KVA and resolves its first PA.
++                 * vm_object_populate_with_private subtracts PAGE_SIZE until
++                 * zero. Keep whole-page backing separate from the file EOF. */
++                if (!ubc_mem_object || page_size!=4096 ||
++                    mockfs_mnt->santoni_probe_span_bytes!=0x5000 ||
++                    mockfs_mnt->santoni_probe_file_bytes!=0x4000+251) rvalue=EIO;
++                else if (pager_map_to_phys_contiguous(ubc_mem_object,0,
++                    mockfs_mnt->santoni_probe_kva,mockfs_mnt->santoni_probe_span_bytes)!=KERN_SUCCESS) rvalue=EIO;
++                if (rvalue) {
++                    mockfs_mnt->santoni_probe_failed=TRUE;
++                    failed_probe_vp=fsnp->vp;
++                }
++            } else
++#endif
++            {
++                if (!ubc_mem_object) {
++                    panic("mockfs_fsvnode failed to get ubc_mem_object for a new vnode");
++                }
+ 
+ 			/* memdev counts in 4K pages, independent of the kernel's PAGE_SHIFT. */
+ 			rvalue = pager_map_to_phys_contiguous(ubc_mem_object, 0, ((uint64_t)mockfs_mnt->mockfs_memdev_base << 12), fsnp->size);
+@@ -351,6 +382,7 @@ mockfs_fsnode_vnode(mockfs_fsnode_t fsnp, vnode_t * vpp)
+ 			if (rvalue) {
+ 				panic("mockfs_fsnode_vnode failed to create fictitious pages for a memory-backed device; rvalue = %d", rvalue);
+ 			}
++            }
+ 		}
+ 
+ 		if (!rvalue) {
+@@ -359,6 +391,11 @@ mockfs_fsnode_vnode(mockfs_fsnode_t fsnp, vnode_t * vpp)
+ 	}
+ 
+ 	lck_mtx_unlock(&mockfs_mnt->mockfs_mnt_mtx);
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    /* Reclaim may take this mutex. Drop the failed creation's iocount after
++     * unlocking; the failure latch denies all later executable lookups. */
++    if (failed_probe_vp) vnode_put(failed_probe_vp);
++#endif
+ 
+ done:
+ 	return rvalue;
+diff --git a/bsd/miscfs/mockfs/mockfs_vfsops.c b/bsd/miscfs/mockfs/mockfs_vfsops.c
+index 42d06af..ad9f335 100644
+--- a/bsd/miscfs/mockfs/mockfs_vfsops.c
++++ b/bsd/miscfs/mockfs/mockfs_vfsops.c
+@@ -41,10 +41,48 @@
+ #include <sys/buf.h>
+ #include <mach-o/loader.h>
+ #include <mach-o/fat.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#include <dev/santoni_gpu_launch.h>
++#endif
+ 
+ static LCK_GRP_DECLARE(mockfs_mtx_grp, "mockfs-mutex");
+ 
+ int mockfs_mountroot(mount_t mp, vnode_t rvp, __unused vfs_context_t ctx);
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++static int mockfs_santoni_mount(mount_t mp, vnode_t devvp, user_addr_t data, vfs_context_t ctx)
++{
++    struct sgpu_launch_mount input={0};
++    const uint32_t required=MNT_RDONLY|MNT_NOSUID|MNT_NOATIME;
++    if (!vfs_context_iskernel(ctx) || !(mp->mnt_kern_flag&MNTK_KERNEL_MOUNT) ||
++        (mp->mnt_flag&required)!=required ||
++        (mp->mnt_flag&(MNT_UPDATE|MNT_RELOAD|MNT_ROOTFS|MNT_NOEXEC)) || devvp ||
++        !santoni_gpu_user_launch_mount_args((const void *)(uintptr_t)data,&input)) return EINVAL;
++    mockfs_mount_t m=kalloc_type(struct mockfs_mount,Z_WAITOK|Z_ZERO);
++    if (!m) return ENOMEM;
++    lck_mtx_init(&m->mockfs_mnt_mtx,&mockfs_mtx_grp,LCK_ATTR_NULL);
++    m->mockfs_memory_backed=TRUE;
++    m->santoni_probe_kva=input.kva;
++    m->santoni_probe_file_bytes=input.file_bytes;
++    m->santoni_probe_span_bytes=input.span_bytes;
++    mp->mnt_data=(typeof(mp->mnt_data))m;
++    mockfs_fsnode_t root=NULL,dev=NULL,file=NULL;
++    int error=mockfs_fsnode_create(mp,MOCKFS_ROOT,&root);
++    if (!error) error=mockfs_fsnode_create(mp,MOCKFS_DEV,&dev);
++    if (!error) error=mockfs_fsnode_create(mp,MOCKFS_FILE,&file);
++    if (!error) error=mockfs_fsnode_adopt(root,dev);
++    if (!error) error=mockfs_fsnode_adopt(root,file);
++    if (!error) { m->mockfs_root=root; return 0; }
++    /* No vnode has been requested before returning a successful mount.
++     * Adopt state determines which tree owns the file during cleanup. */
++    if (file && !file->parent) (void)mockfs_fsnode_destroy(file);
++    if (dev && !dev->parent) (void)mockfs_fsnode_destroy(dev);
++    if (root) (void)mockfs_fsnode_destroy(root);
++    mp->mnt_data=NULL;
++    lck_mtx_destroy(&m->mockfs_mnt_mtx,&mockfs_mtx_grp);
++    kfree_type(struct mockfs_mount,m);
++    return error;
++}
++#endif
+ 
+ /*
+  * Functions that are part of the mockfs_vfsops structure.
+@@ -210,6 +248,11 @@ mockfs_unmount(struct mount *mp, int mntflags, __unused vfs_context_t ctx)
+ 
+ 	vflush_flags = 0;
+ 	mockfs_mnt = (mockfs_mount_t) mp->mnt_data;
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    /* Initial failed kernel_mount may need private VFS cleanup. After
++     * publication, retain the mount and owned backing through reboot. */
++    if (mockfs_mnt->santoni_probe_kva && santoni_gpu_user_launch_mount_published()) return EBUSY;
++#endif
+ 
+ 	/*
+ 	 * Reclaim the vnodes for the mount (forcibly, if requested; given that mockfs only support mountroot
+@@ -280,6 +323,9 @@ mockfs_init(__unused struct vfsconf * vfsc)
+ }
+ 
+ struct vfsops mockfs_vfsops = {
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    .vfs_mount = mockfs_santoni_mount,
++#endif
+ 	.vfs_unmount = mockfs_unmount,
+ 	.vfs_root = mockfs_root,
+ 	.vfs_sync = mockfs_sync,
+diff --git a/bsd/miscfs/mockfs/mockfs_vnops.c b/bsd/miscfs/mockfs/mockfs_vnops.c
+index 5dbbbc6..0d1572c 100644
+--- a/bsd/miscfs/mockfs/mockfs_vnops.c
++++ b/bsd/miscfs/mockfs/mockfs_vnops.c
+@@ -175,7 +175,14 @@ mockfs_getattr(struct vnop_getattr_args * ap)
+ 	vap = ap->a_vap;
+ 	bzero(vap, sizeof(*vap));
+ 	VATTR_RETURN(vap, va_nlink, 1); /* Simply assert that someone has at least one link to us */
+-	VATTR_RETURN(vap, va_mode, VREAD | VWRITE | VEXEC);
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    if (((mockfs_mount_t)fsnode->mnt->mnt_data)->santoni_probe_kva) {
++        VATTR_RETURN(vap,va_mode,0500);
++        VATTR_RETURN(vap,va_uid,0);
++        VATTR_RETURN(vap,va_gid,0);
++    } else
++#endif
++    VATTR_RETURN(vap, va_mode, VREAD | VWRITE | VEXEC);
+ 	VATTR_RETURN(vap, va_fileid, fsnode->type);
+ 	VATTR_RETURN(vap, va_total_size, fsnode->size);
+ 	VATTR_RETURN(vap, va_total_alloc, fsnode->size);

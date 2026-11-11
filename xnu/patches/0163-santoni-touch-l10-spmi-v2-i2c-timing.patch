@@ -1,0 +1,177 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -2998,19 +2998,21 @@ santoni_i2c_scl_high(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_in_cfg(tlmm, PIN_SCL, TLMM_PULL_UP);
+ 	for (int i = 0; i < 40; i++) {
+ 		if (tlmm_gpio_get(tlmm, PIN_SCL)) {
+ 			return;
+ 		}
+ 		delay(1);
+ 	}
+ }
+ 
+ static void
+ santoni_i2c_start(vm_offset_t tlmm)
+ {
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	santoni_i2c_scl_high(tlmm);
+-	delay(5);
++	/* tBUF/tSU;STA >= 4.7 us; hold 20 us so the weak 30 uA pull-up
++	 * fully charges the bus before we pull SDA low. */
++	delay(20);
+ 	tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 	delay(5);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+@@ -3023,22 +3026,27 @@ santoni_i2c_write(vm_offset_t tlmm, uint8_t byte)
+ 	for (int i = 7; i >= 0; i--) {
+ 		if ((byte >> i) & 1) {
+ 			tlmm_gpio_in(tlmm, PIN_SDA);
+ 		} else {
+ 			tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 		}
+-		delay(3);
++		/* tSU;DAT >= 250 ns; give 15 us so SDA settles before SCL
++		 * rises.  At 47 kohm pull-up and 100 pF: tau ~= 5 us,
++		 * 15 us covers 3 tau = 95% of VDD = 1.71 V > VIH 1.26 V. */
++		delay(15);
+ 		santoni_i2c_scl_high(tlmm);
+-		delay(3);
++		/* tHIGH >= 4 us; sample after the bus has settled. */
++		delay(15);
+ 		tlmm_gpio_out_low(tlmm, PIN_SCL);
+-		delay(3);
++		/* tLOW >= 4.7 us */
++		delay(15);
+ 	}
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+-	delay(3);
++	delay(15);
+ 	santoni_i2c_scl_high(tlmm);
+-	delay(3);
++	delay(15);
+ 	bool ack = (tlmm_gpio_get(tlmm, PIN_SDA) == 0);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+-	delay(3);
++	delay(15);
+ 	return ack;
+ }
+ 
+@@ -3049,24 +3060,24 @@ santoni_i2c_read(vm_offset_t tlmm, bool ack)
+ 	uint8_t byte = 0;
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	for (int i = 7; i >= 0; i--) {
+-		delay(3);
++		delay(15);
+ 		santoni_i2c_scl_high(tlmm);
+-		delay(3);
++		delay(15);
+ 		if (tlmm_gpio_get(tlmm, PIN_SDA)) {
+ 			byte |= (1U << i);
+ 		}
+ 		tlmm_gpio_out_low(tlmm, PIN_SCL);
+ 	}
+ 	if (ack) {
+ 		tlmm_gpio_out_low(tlmm, PIN_SDA);
+ 	} else {
+ 		tlmm_gpio_in(tlmm, PIN_SDA);
+ 	}
+-	delay(3);
++	delay(15);
+ 	santoni_i2c_scl_high(tlmm);
+-	delay(3);
++	delay(15);
+ 	tlmm_gpio_out_low(tlmm, PIN_SCL);
+-	delay(3);
++	delay(15);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	return byte;
+ }
+@@ -3107,25 +3118,48 @@ santoni_spmi_read(uint16_t addr, uint8_t *out)
+ {
+ 	static vm_offset_t core, obs;
+ 	static int obs_apid = -1;
++	static int arb_ver = 0;        /* 0 = undetected, 1 = v1, 2 = v2+ */
+ 	uint16_t ppid = (addr >> 8) & 0xfffU;
+ 	int apid = -1;
+ 
+ 	if (!core) {
+-		core = ml_io_map(SPMI_CORE_PHYS, 0x1000);
++		/* Map 0x3000 so we can reach the v2 PPID table at +0x2000. */
++		core = ml_io_map(SPMI_CORE_PHYS, 0x3000);
+ 		if (!core) {
+ 			return false;
+ 		}
+-		/* PMIC_ARB_VERSION at +0: 0x2xxxxxxx = v2 arbiter. */
+-		printf("SANTONI SPMI: hw_ver=%#x\n",
+-		    *(volatile uint32_t *)core);
++		uint32_t hw_ver = *(volatile uint32_t *)core;
++		arb_ver = (int)((hw_ver >> 28) >= 2 ? 2 : 1);
++		printf("SANTONI SPMI: hw_ver=%#x arb_ver=%d\n", hw_ver, arb_ver);
+ 	}
+-	for (int i = 0; i < SPMI_APID_MAX; i++) {
+-		uint32_t map = *(volatile uint32_t *)(core + 0x800 + 4 * i);
+-		if (map && ((map >> 8) & 0xfffU) == ppid) {
+-			apid = i;
+-			break;
++
++	if (arb_ver >= 2) {
++		/*
++		 * PM8937/PM8940 SPMI arbiter v2: PPID→APID is a direct 4096-
++		 * entry table at core+0x2000, indexed by PPID (addr bits 19:8).
++		 * Each entry: bit 31 = valid, bits 7:0 = APID.
++		 * See Linux drivers/spmi/spmi-pmic-arb.c
++		 *   pmic_arb_ppid_to_apid_v2().
++		 */
++		uint32_t map = *(volatile uint32_t *)(core + 0x2000 +
++		    (uint32_t)ppid * 4u);
++		if (map & (1u << 31)) {
++			apid = (int)(map & 0xFFu);
+ 		}
++	} else {
++		/*
++		 * v1 arbiter: linear scan of APID→PPID mapping at core+0x800.
++		 */
++		for (int i = 0; i < SPMI_APID_MAX; i++) {
++			uint32_t map = *(volatile uint32_t *)(core + 0x800 +
++			    4 * i);
++			if (map && ((map >> 8) & 0xfffU) == ppid) {
++				apid = i;
++				break;
++			}
++		}
+ 	}
++
+ 	if (apid < 0) {
+ 		return false;
+ 	}
+@@ -4287,12 +4323,13 @@ santoni_keys_thread(__unused void *param, __unused wait_result_t wr)
+ 	santoni_i2c_scl_high(tlmm);
+ 
+ 	/* Power first, then release reset: hold the controller in reset
+-	 * while the rails come up. Bootloader already powers L10/L5;
+-	 * santonirpm=0 (default) skips RPM messaging. */
++	 * while the rails come up.  fastboot boot clears RPM rail votes so
++	 * PM8937 L10 (2.8 V touch VCC) is off; santonirpm=1 (default) asks
++	 * the RPM to enable it.  Pass santonirpm=0 to skip (diagnosis). */
+ 	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 0,
+ 	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
+ 
+-	int rpm_on = 0;
++	int rpm_on = 1;
+ 	(void)PE_parse_boot_argn("santonirpm", &rpm_on, sizeof(rpm_on));
+ 	bool rails_ok = false;
+ 	if (rpm_on) {
+@@ -4311,7 +4348,11 @@ santoni_keys_thread(__unused void *param, __unused wait_result_t wr)
+ 	delay(20 * 1000);
+ 	tlmm_gpio_out_cfg(tlmm, PIN_TOUCH_RST, 1,
+ 	    TLMM_OE | TLMM_DRV_8MA | TLMM_PULL_UP);
+-	delay(100 * 1000);
++	/* FT5435 datasheet: 200 ms min from reset release to I2C ready.
++	 * Use 300 ms to cover L10 rail stabilisation after the RPM vote.
++	 * (0162 used 100 ms: INT going high proved digital logic is alive
++	 * but 100 ms is too short when the rail just powered on cold.) */
++	delay(300 * 1000);
+ 	printf("SANTONI KEYS: touch out of reset (64 cfg=%#x out=%u, "
+ 	    "int=%u)\n", tlmm_cfg_read(tlmm, PIN_TOUCH_RST),
+ 	    (unsigned)tlmm_gpio_get(tlmm, PIN_TOUCH_RST),

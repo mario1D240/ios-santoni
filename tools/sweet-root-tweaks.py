@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """Apply the SWEET bring-up changes to an iOS root made by tools/mkiosroot.sh.
 
-  sudo sweet-root-tweaks.py MOUNTED_ROOT
+  sudo sweet-root-tweaks.py MOUNTED_ROOT [--migrate-extensions]
 
 MOUNTED_ROOT is the HFS+ image mounted read-write (Linux: run
 `fsck.hfsplus -fy` on the image, then `mount -t hfsplus -o loop,force`).
 Run as root (it writes root/mobile owned files). Idempotent. This is what
 turned the plain mkiosroot.sh output into the images that reach the home
-screen (image versions v8-v14 in NOTES.md):
+screen in the inherited root image variants:
 
   launchd.plist   _PanicOnCrash -> _PanicOnCrasX (a crashing daemon must not
                   panic the system); CommCenter jobs removed (no baseband: it
                   crash-loops and Setup blocks on its CoreTelephony XPC)
   containers      /private/var/containers/{Bundle,Data/System,Shared/SystemGroup,Temp}
                   (on iOS they live on the data volume)
-  migration       LastSystemVersion so DataMigration does not run for an hour
-                  on every boot
+  migration       preserved by default; --migrate-extensions explicitly requests
+                  first-boot extension migration. Automatic migration is disabled
+                  after a reported loading-bar regression in the Santoni rebuild.
+  feature flags   ExtensionKit enforce_xpc_cache_code_signing off for extension
+                  definitions whose detached signature needs unavailable trust
+                  caches (the sailfish root setup uses this same override)
   audio           VirtualAudio HAL plug-in disabled (mediaserverd crash)
   MediaToolbox    StartRecorderServer=false (camera filter prewarm calls a
                   NULL OpenGL function without a GPU -> mediaserverd crash loop)
@@ -27,7 +31,7 @@ screen (image versions v8-v14 in NOTES.md):
                   comes from its Hactivation branch, selected by the /chosen
                   security-status properties in tools/mkadt.py
 """
-import glob, os, plistlib, shutil, sys
+import argparse, glob, os, plistlib, shutil, sys
 
 BUILD, VERSION = '20H392', '16.7.16'
 MOBILE = 501
@@ -107,6 +111,54 @@ def activation(root):
     print('data ark', d)
 
 
+def feature_flags(root):
+    directory = os.path.join(root, 'private/var/preferences/FeatureFlags/Domain')
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, 'ExtensionKit.plist')
+    data = load(path) if os.path.exists(path) else {}
+    if not isinstance(data, dict):
+        raise ValueError('ExtensionKit preferences must be a dictionary')
+    policy = data.setdefault('enforce_xpc_cache_code_signing', {})
+    if not isinstance(policy, dict):
+        raise ValueError('ExtensionKit code-signing feature must be a dictionary')
+    policy['Enabled'] = False
+    save(path, data, 0, 0, 0o644, plistlib.FMT_XML)
+    print('feature flag ExtensionKit/enforce_xpc_cache_code_signing off')
+
+
+def migration(root):
+    path = os.path.join(root, 'private/var/mobile/Library/Preferences/com.apple.migration.plist')
+    if os.path.exists(path):
+        data = load(path)
+        if not isinstance(data, dict):
+            raise ValueError('migration preferences must be a dictionary')
+        disposition = data.get('DMUserDataDisposition')
+        synthetic = (data.get('LastSystemVersion') == BUILD and
+                     isinstance(disposition, dict) and
+                     set(disposition) == {'SyntheticDidUpgrade', 'buildVersion'} and
+                     disposition['SyntheticDidUpgrade'] is False and
+                     disposition['buildVersion'] == BUILD)
+        if synthetic:
+            # Exact record written by the previous version of this tool.
+            # Keep unrelated preferences and the existing file's metadata.
+            st = os.stat(path)
+            del data['LastSystemVersion']
+            del data['DMUserDataDisposition']
+            save(path, data, st.st_uid, st.st_gid, st.st_mode & 0o7777)
+            print('removed synthetic completed migration record')
+        elif 'LastSystemVersion' in data:
+            print('preserved existing migration state; no forced migration')
+            return
+    sentinel = os.path.join(root, 'private/var/datamigrator/migrate')
+    os.makedirs(os.path.dirname(sentinel), exist_ok=True)
+    if not os.path.exists(sentinel):
+        with open(sentinel, 'xb'):
+            pass
+        os.chown(sentinel, MOBILE, MOBILE)
+        os.chmod(sentinel, 0o644)
+        print('requested first-boot extension migration')
+
+
 def audio(root):
     src = os.path.join(root, 'Library/Audio/Plug-Ins/HAL/VirtualAudio.plugin')
     dst_dir = os.path.join(root, 'Library/Audio/Plug-Ins/HAL.disabled')
@@ -123,16 +175,21 @@ def audio(root):
 
 
 def main():
-    if len(sys.argv) != 2 or not os.path.isdir(os.path.join(sys.argv[1], 'System/Library/xpc')):
-        sys.exit(__doc__)
-    root = sys.argv[1]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('root')
+    parser.add_argument('--migrate-extensions', action='store_true',
+                        help='explicitly request first-boot DataMigration; default preserves existing migration state')
+    args = parser.parse_args()
+    root = args.root
+    if not os.path.isdir(os.path.join(root, 'System/Library/xpc')):
+        parser.error('mounted root lacks System/Library/xpc')
     launchd(root)
     containers(root)
     activation(root)
+    feature_flags(root)
+    if args.migrate_extensions:
+        migration(root)
     audio(root)
-    merge_pref(root, 'com.apple.migration', {
-        'LastSystemVersion': BUILD,
-        'DMUserDataDisposition': {'SyntheticDidUpgrade': False, 'buildVersion': BUILD}})
     merge_pref(root, 'com.apple.springboard', {
         'BKNoWatchdogs': True,
         'FBLaunchWatchdogExceptions': {'com.apple.purplebuddy': 100.0},

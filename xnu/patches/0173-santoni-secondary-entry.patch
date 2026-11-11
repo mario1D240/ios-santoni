@@ -1,0 +1,180 @@
+Subject: [PATCH 0173] santoni: guard EL2 GIC access and trace secondary startup
+
+The PSCI entry supports EL1/EL2 but used ICC_SRE_EL2 even with GICv2.
+Keep GICv3 registers behind HAS_GIC_V3 and set EL1 virtual CPU identity
+from the physical MPIDR/MIDR. Add cache-line-isolated early
+entry/EL1/CPU-data-lookup markers and visible CPU_ON/timeout diagnostics.
+Preserve targets, startup checks and the original five-second timeout.
+CPU4 entry EL/root cause remains to be confirmed on the device.
+
+diff --git a/osfmk/arm64/start.s b/osfmk/arm64/start.s
+--- a/osfmk/arm64/start.s
++++ b/osfmk/arm64/start.s
+@@ -162,6 +162,19 @@
+ 	b.eq	Lskip_cpu_reset_handler				// Not found
+ 	b		Lcheck_cpu_data_entry	// loop
+ Lfound_cpu_data_entry:
++#if defined(SANTONI)
++	/* Record the registered logical slot found by the physical-ID lookup. */
++	ldrh	w16, [x21, CPU_NUMBER_GS]
++	cmp		w16, #SWEET_SMP_MAX_CPUS
++	b.hs	Lsantoni_skip_lookup_trace
++	adrp	x17, EXT(sweet_secondary_trace)@page
++	add		x17, x17, EXT(sweet_secondary_trace)@pageoff
++	add		x17, x17, x16, lsl #6
++	mov		x2, #0x404
++	str		x2, [x17]
++	dsb		sy
++Lsantoni_skip_lookup_trace:
++#endif
+ 	adrp	x20, EXT(const_boot_args)@page
+ 	add		x20, x20, EXT(const_boot_args)@pageoff
+ 	ldr		x0, [x21, CPU_RESET_HANDLER]		// Call CPU reset handler
+@@ -290,6 +303,22 @@
+ LEXT(sweet_secondary_entry)
+ 	msr		DAIFSet, #0xf
+ 	mrs		x1, CurrentEL
++#if defined(SANTONI)
++	/* Cache-off diagnostic writes, one private 64-byte slot per CPU.
++	 * PSCI x0 is the logical context ID. Reject invalid IDs before writing. */
++	mov		x17, xzr
++	cmp		x0, #SWEET_SMP_MAX_CPUS
++	b.hs	Lsantoni_skip_entry_trace
++	adrp	x17, EXT(sweet_secondary_trace)@page
++	add		x17, x17, EXT(sweet_secondary_trace)@pageoff
++	add		x17, x17, x0, lsl #6
++	orr		x2, x1, #0x100
++	str		x2, [x17]
++	mrs		x2, MPIDR_EL1
++	str		x2, [x17, #8]
++	dsb		sy
++Lsantoni_skip_entry_trace:
++#endif
+ 	cmp		x1, #0x4
+ 	b.eq	Lsweet_secondary_el1
+ 	cmp		x1, #0x8
+@@ -306,11 +335,19 @@
+ 	mov		x1, #3
+ 	msr		CNTHCTL_EL2, x1
+ 	msr		CNTVOFF_EL2, xzr
++	/* EL1 reads the virtual identity registers while EL2 is enabled. Keep
++	 * MPIDR/MIDR equal to this physical CPU before dropping to the kernel. */
++	mrs		x1, MPIDR_EL1
++	msr		VMPIDR_EL2, x1
++	mrs		x1, MIDR_EL1
++	msr		VPIDR_EL2, x1
++#if HAS_GIC_V3
+ 	/* Permit ICC_SRE_EL1 and GIC CPU interface system-register access. */
+ 	mrs		x1, ICC_SRE_EL2
+ 	orr		x1, x1, #1
+ 	orr		x1, x1, #8
+ 	msr		ICC_SRE_EL2, x1
++#endif /* HAS_GIC_V3: Cortex-A53/GICv2 must not access ICC_* registers. */
+ 	/* Known Armv8 SCTLR RES1 bits, M/C/I off, little endian. */
+ 	MOV64	x1, 0x30d00800
+ 	msr		SCTLR_EL1, x1
+@@ -320,13 +357,36 @@
+ 	msr		ELR_EL2, x1
+ 	mov		x1, #0x3c5			// DAIF masked, AArch64 EL1h
+ 	msr		SPSR_EL2, x1
++#if defined(SANTONI)
++	cbz		x17, Lsantoni_skip_eret_trace
++	mov		x2, #0x208
++	str		x2, [x17]
++	dsb		sy
++Lsantoni_skip_eret_trace:
++#endif
+ 	eret
+ Lsweet_secondary_bad_el:
+ 	b		.
+ Lsweet_secondary_el1:
++#if defined(SANTONI)
++	cbz		x17, Lsantoni_skip_el1_trace
++	mov		x2, #0x304
++	str		x2, [x17]
++	dsb		sy
++Lsantoni_skip_el1_trace:
++#endif
+ 	/* x0 is deliberately unused; reset_vector selects CPU data by MPIDR. */
+ 	msr		SPSel, #1
+ 	b		EXT(LowResetVectorBase)
++#if defined(SANTONI)
++	/* C++ shares this layout: stage, MPIDR, padding, 64-byte aligned. */
++	.section __DATA,__data
++	.align 6
++	.globl EXT(sweet_secondary_trace)
++LEXT(sweet_secondary_trace)
++	.space (SWEET_SMP_MAX_CPUS * 64), 0
++	.text
++#endif
+ #endif /* SWEET */
+ 
+ 	.align 2
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -16,12 +16,24 @@
+ #include <kern/processor.h>
+ #include <kern/thread.h>
+ #include <mach/mach_time.h>
++#include <arm/caches_internal.h>
+ #include <pexpert/pexpert.h>
+ 
+ extern "C" void sweet_secondary_entry(void);
+ extern "C" boolean_t sweet_cpu_signal_is_enabled(unsigned int cpu);
+ extern "C" uint32_t sweet_gic_cpu_iface(unsigned int cpu);
+ extern "C" vm_offset_t gicd_base;
++
++#if defined(SANTONI)
++/* Matches the assembly's private cache-line slot; no neighboring CPU writes. */
++struct sweet_cpu_reset_trace {
++	volatile uint64_t stage;
++	volatile uint64_t mpidr;
++	uint64_t padding[6];
++} __attribute__((aligned(64)));
++static_assert(sizeof(sweet_cpu_reset_trace) == 64, "reset trace slot layout");
++extern "C" sweet_cpu_reset_trace sweet_secondary_trace[SWEET_SMP_MAX_CPUS];
++#endif
+ 
+ class SweetCPU;
+ static SweetCPU *sweet_cpus[MAX_CPUS];
+@@ -164,6 +176,18 @@
+ 		while (__atomic_load_n(&cpu->initialized, __ATOMIC_ACQUIRE) == 0 ||
+ 		    !sweet_cpu_signal_is_enabled(i)) {
+ 			if (mach_absolute_time() > deadline) {
++#if defined(SANTONI)
++				sweet_cpu_reset_trace *trace = &sweet_secondary_trace[i];
++				/* The reset CPU writes with caches off. Drop the reader's clean
++				 * cached copy before inspecting its physical progress markers. */
++				flush_dcache64((addr64_t)(uintptr_t)trace, sizeof(*trace), FALSE);
++				kprintf("SWEET CPU: startup detail cpu=%u target=0x%x init=%u sgi=%u reset=0x%llx reset_mpidr=0x%llx\n",
++				    i, topology->cpus[i].phys_id,
++				    __atomic_load_n(&cpu->initialized, __ATOMIC_ACQUIRE),
++				    sweet_cpu_signal_is_enabled(i) ? 1u : 0u,
++				    (unsigned long long)__atomic_load_n(&trace->stage, __ATOMIC_ACQUIRE),
++				    (unsigned long long)trace->mpidr);
++#endif
+ 				IOLog("SWEET CPU: cpu=%u mpidr=0x%x NOT alive after 5s\n",
+ 				    i, topology->cpus[i].phys_id);
+ 				panic("SWEET CPU: cpu=%u startup timeout (reset/MMU/GIC/SGI)", i);
+@@ -265,11 +289,18 @@
+ 		panic("SWEET CPU: cpu=%u unsupported restart", getCPUNumber());
+ 	}
+ 	vm_offset_t entry = ml_static_vtop((vm_offset_t)&sweet_secondary_entry);
+-	IOLog("SWEET CPU: cpu=%u CPU_ON target=0x%x entry_pa=0x%llx context=%u\n",
++#if defined(SANTONI)
++	sweet_cpu_reset_trace *trace = &sweet_secondary_trace[getCPUNumber()];
++	trace->stage = 0;
++	trace->mpidr = 0;
++	/* Write the reset value to RAM before firmware starts the cache-off CPU. */
++	CleanPoC_DcacheRegion_Force((vm_offset_t)trace, sizeof(*trace));
++#endif
++	kprintf("SWEET CPU: cpu=%u CPU_ON target=0x%x entry_pa=0x%llx context=%u\n",
+ 	    getCPUNumber(), cpu->phys_id, (uint64_t)entry, getCPUNumber());
+ 	__builtin_arm_dsb(DSB_SY);
+ 	int32_t rc = sweet_psci_cpu_on(cpu->phys_id, entry, getCPUNumber());
+-	IOLog("SWEET CPU: cpu=%u PSCI CPU_ON rc=%d\n", getCPUNumber(), rc);
++	kprintf("SWEET CPU: cpu=%u PSCI CPU_ON rc=%d\n", getCPUNumber(), rc);
+ 	/* cpu_start() discards PE_cpu_start's return; do not silently carry on. */
+ 	if (rc != 0) {
+ 		panic("SWEET CPU: cpu=%u NOT alive: PSCI CPU_ON rc=%d", getCPUNumber(), rc);

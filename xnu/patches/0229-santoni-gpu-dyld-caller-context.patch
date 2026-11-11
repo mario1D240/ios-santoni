@@ -1,0 +1,71 @@
+diff --git a/bsd/kern/sweet_amfi.c b/bsd/kern/sweet_amfi.c
+index 87c96db..cc16b9b 100644
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -27,6 +27,7 @@
+ #include <kern/startup.h>
+ #include <libkern/amfi/amfi.h>
+ #include <mach/kern_return.h>
++#include <pexpert/pexpert.h>
+ #include <sys/codesign.h>
+ #include <sys/errno.h>
+ #include <sys/mount.h>
+@@ -380,9 +381,28 @@ static int __attribute__((noinline))
+ sweet_santoni_dyld_syscall(struct proc *process, int call, user_addr_t arg)
+ {
+     uint64_t args[2],flags;
+-    if(call!=90 || !(flags=santoni_gpu_graphics_dyld_flags(process)))return ENOPOLICY;
+-    if(copyin(arg,args,sizeof(args))!=0 || !args[1])return EFAULT;
+-    return copyout(&flags,(user_addr_t)args[1],sizeof(flags));
++    if(call!=90)return ENOPOLICY;
++    flags=santoni_gpu_graphics_dyld_flags(process);
++    int error=ENOPOLICY;
++    unsigned stage=1;
++    if(flags) {
++        stage=2;
++        if(copyin(arg,args,sizeof(args))!=0)error=EFAULT;
++        else if(!args[1]) {stage=3;error=EFAULT;}
++        else {stage=4;error=copyout(&flags,(user_addr_t)args[1],sizeof(flags));}
++    }
++    /* One fixed scalar line per selector90 query, only with explicit renderer
++     * opt-in. No user pointers/strings; printk's return cannot change policy.
++     * stage1=denied,2=copyin failed,3=null output,4=copyout attempted. */
++    int renderer=0;
++    PE_parse_boot_argn("santonigpu_renderer",&renderer,sizeof(renderer));
++    if(renderer==1) {
++        int pid=process?proc_pid(process):0;
++        unsigned uid=process?proc_getuid(process):~0u;
++        printf("SANTONI GPU: dyld syscall90 pid=%d uid=%u flags=%llx stage=%u error=%d\n",
++            pid,uid,(unsigned long long)flags,stage,error);
++    }
++    return error;
+ }
+
+ static const struct mac_policy_ops sweet_santoni_dyld_mac_ops = {
+diff --git a/iokit/Kernel/arm/SantoniGraphics.cpp b/iokit/Kernel/arm/SantoniGraphics.cpp
+index 6d487cf..f9ec453 100644
+--- a/iokit/Kernel/arm/SantoniGraphics.cpp
++++ b/iokit/Kernel/arm/SantoniGraphics.cpp
+@@ -52,7 +52,12 @@ static struct {
+ extern "C" {
+ /* Platform adapter only. XNU8796 proc.h returns the executable vnode with an
+  * iocount; vnode_lookup() likewise requires a matching vnode_put(). Names and
+- * argv are mutable and are not used as renderer authorization. */
++ * argv are mutable and are not used as renderer authorization. Resolve and
++ * revalidate the current path on every admission: caching the first vnode or
++ * its attributes would admit stale identity/permissions after replacement.
++ * Use the calling thread's context for lookup and getattr; these VFS calls
++ * may sleep and must remain outside gfx.lock. Early-dyld lock causality is
++ * unproven; the syscall diagnostic reports actual policy/copy outcomes. */
+ static bool __attribute__((noinline)) gfx_renderer_task(task_t owner)
+ {
+     proc_t process=current_proc();
+@@ -60,7 +65,7 @@ static bool __attribute__((noinline)) gfx_renderer_task(task_t owner)
+         proc_pid(process)<=0 || proc_getuid(process)!=501)return false;
+     vnode_t executable=proc_getexecutablevnode(process),expected=nullptr;
+     if(!executable)return false;
+-    vfs_context_t context=vfs_context_kernel();
++    vfs_context_t context=vfs_context_current();
+     bool allowed=false;
+     struct vnode_attr attributes;
+     VATTR_INIT(&attributes);

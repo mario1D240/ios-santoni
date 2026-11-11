@@ -18,3 +18,13 @@ __pycache__/
 --dump
 video_frames/
 video_frames_2/
+
+# Local working notes and scratch assets
+scratch/
+/NOTES.md
+/HANDOFF.md
+/OVERNIGHT_REPORT.md
+/.continue-here.md
+/.gemini/
+
+*session*.md

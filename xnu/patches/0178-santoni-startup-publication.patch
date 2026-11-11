@@ -1,0 +1,39 @@
+Subject: [PATCH 0178] santoni: publish every reset record and the initial context
+
+The cache-off reset scanner reads all registered CPU records, not just
+the target. A dirty boot-CPU phys_id can still look like BSS zero and
+alias CPU4. Publish every registered record before the physical kick.
+Also publish the first thread and saved stack context; cleaning the
+CPU-data pointer alone does not publish its pointees. Keep the final
+DSB and existing metadata publication. Non-Santoni SWEET is unchanged.
+This closes source-level handoff gaps; hardware causality is pending.
+
+diff --git a/osfmk/arm64/cpu.c b/osfmk/arm64/cpu.c
+--- a/osfmk/arm64/cpu.c
++++ b/osfmk/arm64/cpu.c
+@@ -931,7 +931,25 @@
+ 		 * Use VA range cleans to PoC, including on coherent-I/O builds. */
+ 		extern uint8_t bootstrap_pagetables[BOOTSTRAP_TABLE_SIZE];
+ 		CleanPoC_DcacheRegion_Force((vm_offset_t)CpuDataEntries, sizeof(CpuDataEntries));
++#if defined(SANTONI)
++		/* reset_vector scans every registered CPU record with caches off. In
++		 * particular, a dirty boot-CPU phys_id=0x100 must not look like the
++		 * BSS value zero and steal CPU4's legitimate physical-zero match. */
++		for (unsigned int index = 0; index < MAX_CPUS; index++) {
++			cpu_data_t *registered = CpuDataEntries[index].cpu_data_vaddr;
++			if (registered != NULL) {
++				CleanPoC_DcacheRegion_Force((vm_offset_t)registered, sizeof(*registered));
++			}
++		}
++		/* Publish the first context too: cleaning its CPU-data pointer does
++		 * not publish the pointed-to thread or the saved LR/SP on its stack. */
++		CleanPoC_DcacheRegion_Force((vm_offset_t)first_thread, sizeof(*first_thread));
++		if (first_thread->kernel_stack != 0) {
++			CleanPoC_DcacheRegion_Force(first_thread->kernel_stack, kernel_stack_size);
++		}
++#else
+ 		CleanPoC_DcacheRegion_Force((vm_offset_t)cpu_data_ptr, sizeof(cpu_data_t));
++#endif
+ 		CleanPoC_DcacheRegion_Force((vm_offset_t)&ResetHandlerData, sizeof(ResetHandlerData));
+ 		CleanPoC_DcacheRegion_Force((vm_offset_t)BootArgs, sizeof(*BootArgs));
+ 		CleanPoC_DcacheRegion_Force((vm_offset_t)&sysreg_restore, sizeof(sysreg_restore));

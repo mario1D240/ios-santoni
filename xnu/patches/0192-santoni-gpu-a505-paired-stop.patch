@@ -1,0 +1,89 @@
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -93,7 +93,8 @@
+ #define SG_INT_MASK 0xe0u
+ #define SG_INT_STATUS 0x1384u
+ #define SG_RESET 0x10cu
+-#define SG_ME_HALT (1u << 28)
++/* adreno_dispatch.c: A5xx CP/PFP stop requests are bits0|1, not A3xx bit28. */
++#define SG_CP_STOP_MASK 3u
+ #define SG_CLOCK_CNTL 0x19cu
+ #define SG_ISDB_CNT 0x14ccu
+ #define SG_BUSY_MASK 0xfffffffeu
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -250,6 +250,22 @@
+     return false;
+ }
+ 
++static bool __attribute__((noinline)) sgpu_a505_halt(struct probe *p, uint32_t site)
++{
++    /* Preserve inherited fields as the vendor A5xx fault-stop path does.
++     * Echo rejection is a conservative diagnostic gate, not an idle proof. */
++    uint32_t old = read32(p, SG_GPU, SG_ME_CNTL);
++    uint32_t written = old | SG_CP_STOP_MASK;
++    write32(p, SG_GPU, SG_ME_CNTL, written);
++    uint32_t got = read32(p, SG_GPU, SG_ME_CNTL);
++    /* 1=handoff, 2=after reset, 3=cleanup, 4=after recovery reset. No pause. */
++    trace(p, "A505 CP halt site/old/got", site, old, got);
++    if ((got & SG_CP_STOP_MASK) == SG_CP_STOP_MASK) return true;
++    sgpu_failure(p, SG_FAIL_READBACK, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK,
++        SG_CP_STOP_MASK, old, written, got, 0, 0);
++    return false;
++}
++
+ static bool __attribute__((noinline)) checked_write64(struct probe *p, enum sgpu_block b, uint32_t off, uint64_t value)
+ {
+     uint64_t old = p->ops->read64(p->ops->ctx, b, off);
+@@ -632,7 +648,7 @@
+     write32(p, SG_GPU, SG_PFP_BASE + 4, 0);
+     p->dma_exposed = true; /* ME may fetch immediately; never free after this */
+     p->commands_started = true;
+-    if (!checked_write32(p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, 0)) return false;
++    if (!checked_write32(p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, 0)) return false;
+     if (!consume(p, 9)) return false;
+     *wptr = 9;
+     trace(p, "ME_INIT consumed; firmware versions", fw->pm4_version, fw->pfp_version, 9);
+@@ -785,7 +801,7 @@
+     if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+         report->error = SG_BUSY; goto done;
+     }
+-    if (!checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT)) {
++    if (!sgpu_a505_halt(&p, 1)) {
+         report->error = SG_FAULT; goto done;
+     }
+     if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+@@ -796,7 +812,7 @@
+     (void)read32(&p, SG_GPU, SG_RESET);
+     wait_us(&p, 2);
+     write32(&p, SG_GPU, SG_RESET, 0);
+-    if (!checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) ||
++    if (!sgpu_a505_halt(&p, 2) ||
+         !checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
+         report->error = SG_FAULT; goto done;
+     }
+@@ -841,8 +857,8 @@
+     report->smmu_restored = !smmu.changed;
+     if (p.gpu_live && p.gpu_owned) {
+         faults(&p);
+-        stopped = checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) &&
+-            poll(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT, 10000) &&
++        stopped = sgpu_a505_halt(&p, 3) &&
++            poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000) &&
+             poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
+         if (!stopped && p.commands_started) {
+             /* A soft reset is vendor-supported on A505, not the A530v1 exception. */
+@@ -850,9 +866,9 @@
+             (void)read32(&p, SG_GPU, SG_RESET);
+             wait_us(&p, 2);
+             write32(&p, SG_GPU, SG_RESET, 0);
+-            stopped = checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) &&
++            stopped = sgpu_a505_halt(&p, 4) &&
+                 poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000) &&
+-                poll(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT, 10000);
++                poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000);
+         }
+     } else if (p.gpu_live) {
+         /* A register-only probe or inherited busy engine is not ours to reset.

@@ -13,7 +13,9 @@
 # The volume is journaled (XNU replays the journal after a panic; Linux only
 # mounts it read-write with -o force and leaves the journal empty). SWEET
 # additions: /System/Library/Caches/com.apple.dyld hard-links the SystemOS
-# cryptex shared cache (ignition_level=1 looks there), and
+# cryptex shared cache (ignition_level=1 looks there),
+# /private/preboot/<boot-manifest-hash>/usr/standalone/firmware is the bindfs
+# source that /sbin/mount -P 1 mounts over /usr/standalone/firmware, and
 # /private/var/keybags/systembag.kb is the plain-plist system keybag that
 # keybagd reads with /defaults/no-effaceable-storage (tools/mkadt.py).
 set -euo pipefail
@@ -70,6 +72,16 @@ copy() {
 copy "$work/os/root" "$work/root"
 copy "$work/sysos/root" "$work/root/private/preboot/Cryptexes/OS"
 copy "$work/appos/root" "$work/root/private/preboot/Cryptexes/App"
+
+# /sbin/mount -P 1 bind-mounts /private/preboot/<boot-manifest-hash>/usr/
+# standalone/firmware over /usr/standalone/firmware and exits 74 (EX_IOERR) if
+# that bind fails, which panics launchd's mount-phase-1 boot task. The hash is
+# the ADT's /chosen/boot-manifest-hash (tools/mkadt.py: SHA-384 of "santoni
+# boot manifest"), printed by /sbin/mount as upper-case hex; the volume is
+# case-sensitive, so create that exact name.
+pbhash=$(python3 -c 'import hashlib; print(hashlib.sha384(b"santoni boot manifest").hexdigest().upper())')
+sudo install -d -o 0 -g 0 -m 0755 \
+	"$work/root/private/preboot/$pbhash/usr/standalone/firmware"
 
 # Shared cache where dyld looks at ignition level 1: hard links, no extra space.
 dsc=private/preboot/Cryptexes/OS/System/Library/Caches/com.apple.dyld

@@ -1,0 +1,35 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -313,9 +313,9 @@
+     if ((s->matching && (s->smr & BIT(31))) &&
+         !(s->s2cr & (3u << 16)) && (s->s2cr & 0xffu)) return false;
+     s->changed = true;
+-    write32(p, SG_SMMU, SG_S2CR0, BIT(16)); /* FAULT while CB is replaced; never bypass */
++    write32(p, SG_SMMU, SG_S2CR0, SG_S2CR_FAULT); /* FAULT while CB is replaced; never bypass */
+     write32(p, SG_SMMU, SG_CB, 0);
+-    if (read32(p, SG_SMMU, SG_S2CR0) != BIT(16) || (read32(p, SG_SMMU, SG_CB) & 1u))
++    if (read32(p, SG_SMMU, SG_S2CR0) != SG_S2CR_FAULT || (read32(p, SG_SMMU, SG_CB) & 1u))
+         return false;
+     write32(p, SG_SMMU, SG_GR1_CBA2R0, 1); /* AArch64 context */
+     write32(p, SG_SMMU, SG_GR1_CBAR0, BIT(16) | 0xf300u);
+@@ -355,7 +355,7 @@
+ static bool smmu_restore(struct probe *p, struct smmu_saved *s)
+ {
+     if (!s->changed) return true;
+-    write32(p, SG_SMMU, SG_S2CR0, BIT(16));
++    write32(p, SG_SMMU, SG_S2CR0, SG_S2CR_FAULT);
+     write32(p, SG_SMMU, SG_CB, 0);
+     write32(p, SG_SMMU, SG_CB_TLBIASID, 1);
+     write32(p, SG_SMMU, SG_CB_TLBSYNC, 0);
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -92,6 +92,7 @@
+ #define SG_CB 0x8000u
+ #define SG_SMR0 0x800u
+ #define SG_S2CR0 0xc00u
++#define SG_S2CR_FAULT (2u << 16) /* arm_smmu_s2cr_type: TRANS=0, BYPASS=1, FAULT=2 */
+ #define SG_GR1_CBAR0 0x1000u
+ #define SG_GR1_CBA2R0 0x1800u
+ #define SG_CB_TTBCR2 (SG_CB + 0x10u)

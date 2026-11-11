@@ -1,0 +1,4368 @@
+{
+  "success": true,
+  "rows": [
+    {
+      "name": "O0",
+      "mutant": false,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d40c7f21c312db19e64b34a8a7630197a3b96c1cb404bea5b511859cd65dab1d",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev/santoni_gpu_ir3.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/O0"
+      ],
+      "runs": [
+        {
+          "case": 0,
+          "kind": 0,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 1,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 2,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 3,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 46,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 47,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 48,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 49,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 50,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 51,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 52,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 53,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 54,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 55,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 56,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 57,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 58,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 59,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 60,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 61,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 62,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 63,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 64,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 65,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 66,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 67,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 68,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 69,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 70,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 71,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 72,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 73,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 74,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 75,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 76,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 77,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 78,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 79,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 80,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 81,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 82,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 83,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 84,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 85,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "O2",
+      "mutant": false,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d40c7f21c312db19e64b34a8a7630197a3b96c1cb404bea5b511859cd65dab1d",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev/santoni_gpu_ir3.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/O2"
+      ],
+      "runs": [
+        {
+          "case": 0,
+          "kind": 0,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 1,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 2,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 3,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 46,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 47,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 48,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 49,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 50,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 51,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 52,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 53,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 54,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 55,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 56,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 57,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 58,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 59,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 60,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 61,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 62,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 63,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 64,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 65,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 66,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 67,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 68,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 69,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 70,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 71,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 72,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 73,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 74,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 75,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 76,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 77,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 78,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 79,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 80,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 81,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 82,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 83,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 84,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 85,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "ubsan",
+      "mutant": false,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d40c7f21c312db19e64b34a8a7630197a3b96c1cb404bea5b511859cd65dab1d",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev/santoni_gpu_ir3.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/ubsan"
+      ],
+      "runs": [
+        {
+          "case": 0,
+          "kind": 0,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 1,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 2,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 3,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 0,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 1,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 2,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 3,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 4,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 5,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 6,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 7,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 8,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 9,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 10,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 11,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 12,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 13,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 14,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 15,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 16,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 17,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 18,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 19,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 20,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 21,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 22,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 23,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 24,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 25,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 26,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 27,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 28,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 29,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 30,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 31,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 32,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 33,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 34,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 35,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 36,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 37,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 38,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 39,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 40,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 41,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 42,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 43,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 44,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 45,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 46,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 47,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 48,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 49,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 50,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 51,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 52,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 53,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 54,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 55,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 56,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 57,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 58,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 59,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 60,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 61,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 62,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 63,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 64,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 65,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 66,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 67,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 68,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 69,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 70,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 71,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 72,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 73,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 74,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 75,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 76,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 77,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 78,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 79,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 80,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 81,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 82,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 83,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 84,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        },
+        {
+          "case": 85,
+          "kind": 4,
+          "exit": 0,
+          "stdout": "PASS bounded actual IR3 v4; GPU/hardware/production admission absent\n",
+          "stderr": ""
+        }
+      ]
+    },
+    {
+      "name": "constant-read-mask-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "838da15ac7e17542c4e36793c3f20b6353a344a8c1477c782bf58a748d37e6f3",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/constant-read-mask.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/constant-read-mask-O0"
+      ],
+      "runs": [
+        {
+          "case": 46,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:141: int main(int, char **): assertion \"result.constant_scalars==2048 && result.steps==5 && result.constant_reads[31]==(UINT64_C(15)<<60)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "constant-read-mask-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "838da15ac7e17542c4e36793c3f20b6353a344a8c1477c782bf58a748d37e6f3",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/constant-read-mask.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/constant-read-mask-O2"
+      ],
+      "runs": [
+        {
+          "case": 46,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:141: int main(int, char **): assertion \"result.constant_scalars==2048 && result.steps==5 && result.constant_reads[31]==(UINT64_C(15)<<60)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "constant-read-mask-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "838da15ac7e17542c4e36793c3f20b6353a344a8c1477c782bf58a748d37e6f3",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/constant-read-mask.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/constant-read-mask-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 46,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:141: int main(int, char **): assertion \"result.constant_scalars==2048 && result.steps==5 && result.constant_reads[31]==(UINT64_C(15)<<60)\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "coordinate-war-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e56e4e46a0d09dab57e043ec913636e91cd5d37f34d56ee16aebf0718b10db71",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/coordinate-war.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/coordinate-war-O0"
+      ],
+      "runs": [
+        {
+          "case": 78,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case78: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "coordinate-war-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e56e4e46a0d09dab57e043ec913636e91cd5d37f34d56ee16aebf0718b10db71",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/coordinate-war.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/coordinate-war-O2"
+      ],
+      "runs": [
+        {
+          "case": 78,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case78: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "coordinate-war-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e56e4e46a0d09dab57e043ec913636e91cd5d37f34d56ee16aebf0718b10db71",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/coordinate-war.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/coordinate-war-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 78,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case78: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "late-coordinate-war-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e56e4e46a0d09dab57e043ec913636e91cd5d37f34d56ee16aebf0718b10db71",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/late-coordinate-war.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/late-coordinate-war-O0"
+      ],
+      "runs": [
+        {
+          "case": 85,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case85: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "late-coordinate-war-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e56e4e46a0d09dab57e043ec913636e91cd5d37f34d56ee16aebf0718b10db71",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/late-coordinate-war.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/late-coordinate-war-O2"
+      ],
+      "runs": [
+        {
+          "case": 85,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case85: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "late-coordinate-war-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e56e4e46a0d09dab57e043ec913636e91cd5d37f34d56ee16aebf0718b10db71",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/late-coordinate-war.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/late-coordinate-war-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 85,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case85: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "pending-read-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "640e86bf063643b923419b824f913eb96985f69762bebfbd763a5c4bda45c6ca",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/pending-read.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/pending-read-O0"
+      ],
+      "runs": [
+        {
+          "case": 2,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case2: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "pending-read-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "640e86bf063643b923419b824f913eb96985f69762bebfbd763a5c4bda45c6ca",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/pending-read.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/pending-read-O2"
+      ],
+      "runs": [
+        {
+          "case": 2,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case2: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "pending-read-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "640e86bf063643b923419b824f913eb96985f69762bebfbd763a5c4bda45c6ca",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/pending-read.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/pending-read-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 2,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case2: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "end-pending-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "339e9193445e607aa5f798ca2d01cdb57e62c43e8089b0c61b9a1372fb9fdd27",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/end-pending.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/end-pending-O0"
+      ],
+      "runs": [
+        {
+          "case": 70,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case70: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "end-pending-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "339e9193445e607aa5f798ca2d01cdb57e62c43e8089b0c61b9a1372fb9fdd27",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/end-pending.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/end-pending-O2"
+      ],
+      "runs": [
+        {
+          "case": 70,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case70: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "end-pending-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "339e9193445e607aa5f798ca2d01cdb57e62c43e8089b0c61b9a1372fb9fdd27",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/end-pending.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/end-pending-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 70,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case70: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "input-release-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d52dd8a1c38ed4256d0e8da6298bc4f4f97ea9a84c70dc604532d3c157e84add",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/input-release.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/input-release-O0"
+      ],
+      "runs": [
+        {
+          "case": 3,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case3: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "input-release-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d52dd8a1c38ed4256d0e8da6298bc4f4f97ea9a84c70dc604532d3c157e84add",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/input-release.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/input-release-O2"
+      ],
+      "runs": [
+        {
+          "case": 3,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case3: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "input-release-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d52dd8a1c38ed4256d0e8da6298bc4f4f97ea9a84c70dc604532d3c157e84add",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/input-release.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/input-release-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 3,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case3: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "early-release-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e37cbbbda00521ecb312663ef23234cd5167b807e3bc077fa7bc48399d3ac8ad",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/early-release.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/early-release-O0"
+      ],
+      "runs": [
+        {
+          "case": 4,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case4: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "early-release-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e37cbbbda00521ecb312663ef23234cd5167b807e3bc077fa7bc48399d3ac8ad",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/early-release.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/early-release-O2"
+      ],
+      "runs": [
+        {
+          "case": 4,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case4: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "early-release-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "e37cbbbda00521ecb312663ef23234cd5167b807e3bc077fa7bc48399d3ac8ad",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/early-release.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/early-release-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 4,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case4: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "varying-bound-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d55c0a50d3310496a10a3c76a9889a66e9ee2f95949a67210ab1e4e7ee3ba3e9",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-bound.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-bound-O0"
+      ],
+      "runs": [
+        {
+          "case": 5,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case5: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "varying-bound-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d55c0a50d3310496a10a3c76a9889a66e9ee2f95949a67210ab1e4e7ee3ba3e9",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-bound.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-bound-O2"
+      ],
+      "runs": [
+        {
+          "case": 5,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case5: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "varying-bound-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d55c0a50d3310496a10a3c76a9889a66e9ee2f95949a67210ab1e4e7ee3ba3e9",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-bound.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-bound-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 5,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case5: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "varying-limit-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "79142ba38e960a12ebfea9bf600c723f9d9926c6f05718dfc4789c6351a03a9d",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-limit.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-limit-O0"
+      ],
+      "runs": [
+        {
+          "case": 7,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case7: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "varying-limit-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "79142ba38e960a12ebfea9bf600c723f9d9926c6f05718dfc4789c6351a03a9d",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-limit.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-limit-O2"
+      ],
+      "runs": [
+        {
+          "case": 7,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case7: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "varying-limit-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "79142ba38e960a12ebfea9bf600c723f9d9926c6f05718dfc4789c6351a03a9d",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-limit.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/varying-limit-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 7,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case7: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "integer-tag-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "5b675e533ebb8f7c4601e7f6e719560c8c3967c315df92bb505ba776ef892a77",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/integer-tag.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/integer-tag-O0"
+      ],
+      "runs": [
+        {
+          "case": 11,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case11: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "integer-tag-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "5b675e533ebb8f7c4601e7f6e719560c8c3967c315df92bb505ba776ef892a77",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/integer-tag.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/integer-tag-O2"
+      ],
+      "runs": [
+        {
+          "case": 11,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case11: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "integer-tag-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "5b675e533ebb8f7c4601e7f6e719560c8c3967c315df92bb505ba776ef892a77",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/integer-tag.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/integer-tag-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 11,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case11: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "bary-pair-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "720741a3975612abaf2dda58bc3efbb03928b25dbcccac47c2a8a72d51695b50",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/bary-pair.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/bary-pair-O0"
+      ],
+      "runs": [
+        {
+          "case": 8,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case8: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "bary-pair-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "720741a3975612abaf2dda58bc3efbb03928b25dbcccac47c2a8a72d51695b50",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/bary-pair.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/bary-pair-O2"
+      ],
+      "runs": [
+        {
+          "case": 8,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case8: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "bary-pair-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "720741a3975612abaf2dda58bc3efbb03928b25dbcccac47c2a8a72d51695b50",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/bary-pair.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/bary-pair-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 8,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case8: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "sam-timing-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "3bde87738305b8105a27899755ae376adb65bf25c0adbe19f4470566bc9787ef",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/sam-timing.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/sam-timing-O0"
+      ],
+      "runs": [
+        {
+          "case": 18,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case18: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "sam-timing-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "3bde87738305b8105a27899755ae376adb65bf25c0adbe19f4470566bc9787ef",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/sam-timing.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/sam-timing-O2"
+      ],
+      "runs": [
+        {
+          "case": 18,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case18: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "sam-timing-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "3bde87738305b8105a27899755ae376adb65bf25c0adbe19f4470566bc9787ef",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/sam-timing.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/sam-timing-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 18,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case18: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "repeat-timing-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "42b04764f21598c766009e4634dfe0b2843725069759bf89a431e59600f6590b",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/repeat-timing.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/repeat-timing-O0"
+      ],
+      "runs": [
+        {
+          "case": 74,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case74: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "repeat-timing-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "42b04764f21598c766009e4634dfe0b2843725069759bf89a431e59600f6590b",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/repeat-timing.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/repeat-timing-O2"
+      ],
+      "runs": [
+        {
+          "case": 74,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case74: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "repeat-timing-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "42b04764f21598c766009e4634dfe0b2843725069759bf89a431e59600f6590b",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/repeat-timing.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/repeat-timing-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 74,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case74: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mul-destination-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "6dfdb4beb1255af94279a52d93ad0c2683c537c902c283fde2a70b0aedf57a0f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-destination-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-destination-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 19,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case19: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mul-destination-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "6dfdb4beb1255af94279a52d93ad0c2683c537c902c283fde2a70b0aedf57a0f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-destination-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-destination-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 19,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case19: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mul-destination-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "6dfdb4beb1255af94279a52d93ad0c2683c537c902c283fde2a70b0aedf57a0f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-destination-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-destination-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 19,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case19: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mul-source-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "689d77d89bd5e891cd98e66c6cd7e971597492f41d24850ef3b1beee82e00fbd",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-source-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-source-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 20,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case20: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mul-source-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "689d77d89bd5e891cd98e66c6cd7e971597492f41d24850ef3b1beee82e00fbd",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-source-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-source-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 20,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case20: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mul-source-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "689d77d89bd5e891cd98e66c6cd7e971597492f41d24850ef3b1beee82e00fbd",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-source-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mul-source-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 20,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case20: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-destination-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "756bd4893fa5b9e8ba2d03abc7ca3326e981dc348c36958d0b6494c9ed8772c8",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-destination-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-destination-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 40,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case40: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-destination-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "756bd4893fa5b9e8ba2d03abc7ca3326e981dc348c36958d0b6494c9ed8772c8",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-destination-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-destination-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 40,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case40: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-destination-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "756bd4893fa5b9e8ba2d03abc7ca3326e981dc348c36958d0b6494c9ed8772c8",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-destination-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-destination-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 40,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case40: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source2-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "ce63c6d869cba797895241e69b55e778c4a40ae356adfb0f6ebd53fd612fd210",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source2-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source2-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 43,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case43: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source2-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "ce63c6d869cba797895241e69b55e778c4a40ae356adfb0f6ebd53fd612fd210",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source2-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source2-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 43,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case43: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source2-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "ce63c6d869cba797895241e69b55e778c4a40ae356adfb0f6ebd53fd612fd210",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source2-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source2-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 43,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case43: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source1-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "4354c9937d35c69a2acac00bdd4e161bdaf2c6bc8ecc8b7a78e5d6e112c9779a",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source1-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source1-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 44,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case44: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source1-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "4354c9937d35c69a2acac00bdd4e161bdaf2c6bc8ecc8b7a78e5d6e112c9779a",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source1-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source1-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 44,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case44: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source1-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "4354c9937d35c69a2acac00bdd4e161bdaf2c6bc8ecc8b7a78e5d6e112c9779a",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source1-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source1-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 44,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case44: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source3-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "0a12955ebd6e58c872d7c64b22290ed3e479ae407403144001e3854b4f20717f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source3-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source3-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 45,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case45: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source3-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "0a12955ebd6e58c872d7c64b22290ed3e479ae407403144001e3854b4f20717f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source3-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source3-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 45,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case45: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "mad-source3-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "0a12955ebd6e58c872d7c64b22290ed3e479ae407403144001e3854b4f20717f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source3-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/mad-source3-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 45,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case45: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "cat3-constant-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "ff8879ca1de7e1d7e31a37adf39879b95a19e854722d51086a11b4546feaabed",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat3-constant-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat3-constant-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 41,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case41: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "cat3-constant-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "ff8879ca1de7e1d7e31a37adf39879b95a19e854722d51086a11b4546feaabed",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat3-constant-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat3-constant-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 41,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case41: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "cat3-constant-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "ff8879ca1de7e1d7e31a37adf39879b95a19e854722d51086a11b4546feaabed",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat3-constant-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat3-constant-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 41,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case41: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "cat2-constant-repeat-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "b6402d5dbe591dd7a9db4727ed0fc3d26e3c82779209c2738a4324c4f90eaa0f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat2-constant-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat2-constant-repeat-O0"
+      ],
+      "runs": [
+        {
+          "case": 50,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case50: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "cat2-constant-repeat-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "b6402d5dbe591dd7a9db4727ed0fc3d26e3c82779209c2738a4324c4f90eaa0f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat2-constant-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat2-constant-repeat-O2"
+      ],
+      "runs": [
+        {
+          "case": 50,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case50: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "cat2-constant-repeat-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "b6402d5dbe591dd7a9db4727ed0fc3d26e3c82779209c2738a4324c4f90eaa0f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat2-constant-repeat.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/cat2-constant-repeat-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 50,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case50: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-half-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "0fb73a22501a9c3c6e5f44ceab8db50ad516aeb58ef9f059848d6937f851807a",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-half.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-half-O0"
+      ],
+      "runs": [
+        {
+          "case": 21,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case21: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-half-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "0fb73a22501a9c3c6e5f44ceab8db50ad516aeb58ef9f059848d6937f851807a",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-half.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-half-O2"
+      ],
+      "runs": [
+        {
+          "case": 21,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case21: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-half-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "0fb73a22501a9c3c6e5f44ceab8db50ad516aeb58ef9f059848d6937f851807a",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-half.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-half-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 21,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case21: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-index-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "6593ccffe2d9a9eba0a7a82eae593a524fb2370aa80f869ef0c602ca2c733ee1",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-index.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-index-O0"
+      ],
+      "runs": [
+        {
+          "case": 22,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case22: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-index-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "6593ccffe2d9a9eba0a7a82eae593a524fb2370aa80f869ef0c602ca2c733ee1",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-index.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-index-O2"
+      ],
+      "runs": [
+        {
+          "case": 22,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case22: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-index-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "6593ccffe2d9a9eba0a7a82eae593a524fb2370aa80f869ef0c602ca2c733ee1",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-index.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-index-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 22,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case22: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-modifier-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "9ac3e130823cb5e1d00351b55d20f27c7f0f5b5f6b279c4474a1fe0db78a380f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-modifier.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-modifier-O0"
+      ],
+      "runs": [
+        {
+          "case": 23,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case23: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-modifier-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "9ac3e130823cb5e1d00351b55d20f27c7f0f5b5f6b279c4474a1fe0db78a380f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-modifier.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-modifier-O2"
+      ],
+      "runs": [
+        {
+          "case": 23,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case23: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "flut-modifier-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "9ac3e130823cb5e1d00351b55d20f27c7f0f5b5f6b279c4474a1fe0db78a380f",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-modifier.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/flut-modifier-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 23,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case23: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "padding-O0",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d6d356a05588a9f7b2df5571bc1f3b7f5ccc41b0794648d9b42ba606755e12f7",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O0",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/padding.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/padding-O0"
+      ],
+      "runs": [
+        {
+          "case": 29,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case29: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "padding-O2",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d6d356a05588a9f7b2df5571bc1f3b7f5ccc41b0794648d9b42ba606755e12f7",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/padding.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/padding-O2"
+      ],
+      "runs": [
+        {
+          "case": 29,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case29: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    },
+    {
+      "name": "padding-ubsan",
+      "mutant": true,
+      "compile_exit": 0,
+      "compile_stderr": "",
+      "source_sha256": "d6d356a05588a9f7b2df5571bc1f3b7f5ccc41b0794648d9b42ba606755e12f7",
+      "command": [
+        "clang",
+        "-std=c11",
+        "-O2",
+        "-fsanitize=undefined",
+        "-fno-sanitize-recover=all",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DARM64_BOARD_CONFIG_SANTONI",
+        "-I${HOST_TMP}/ir3-raster-zf0z6acr/source/bsd/dev",
+        "-I${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests",
+        "${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/padding.c",
+        "-o",
+        "${HOST_TMP}/ir3-raster-zf0z6acr/padding-ubsan"
+      ],
+      "runs": [
+        {
+          "case": 29,
+          "kind": 4,
+          "exit": -6,
+          "stdout": "",
+          "stderr": "case29: accepted=1 expected=0\n${PROJECT_ROOT}/out/gles-aligned-20261108-95NGl4/raster-promotion-staging/project/tests/test_santoni_gpu_ir3.c:121: int main(int, char **): assertion \"accepted==good\" failed\n"
+        }
+      ]
+    }
+  ],
+  "source_sha256": {
+    "bsd/dev/santoni_gpu_ir3.c": "d40c7f21c312db19e64b34a8a7630197a3b96c1cb404bea5b511859cd65dab1d",
+    "bsd/dev/santoni_gpu_ir3.h": "cf21e9d0c1f95f7d1210a3353bfadef1d8272d8a91a21baad5f407e504a368b9",
+    "bsd/dev/santoni_gpu_ir3_rules.h": "e80c199a518a6b020193afff88d1224fed6b1980bac782bd5ba95c21ea0b3528"
+  },
+  "inputs_sha256": {
+    "tests/test_santoni_gpu_ir3.py": "9dbc6ce09acaf36e79ad491bca5dd2cd3b4a4aa7ec407fbac2b0d485d0c07f75",
+    "tests/test_santoni_gpu_ir3.c": "b11b0b8be4380b07095dc35e02eb54ffccb7786fba19c054ee4389970bf2ef2b",
+    "tests/santoni_gpu_ir3_captured.h": "3a4a5c7001ccbe66cfd96900eda5f5359992df3ad0d2525968853a0b32ec6f90",
+    "tests/reconstruct_santoni_touch.py": "c249ccf32a2114774ca7ce9e0ef5ba19bc1196d2c6ce795f59ddcc6f5b29ae48"
+  },
+  "native_executions": 270,
+  "compiled_rejected_mutants": 75,
+  "hardware_verified": false,
+  "public_metadata_redaction": {
+    "scope": "absolute host paths only",
+    "original_receipt_sha256": "62f9a4f4c368074e18f546a916e6d9b85ac8e2dc829f134838cc192cf5d795fb",
+    "results_and_source_input_hashes_preserved": true,
+    "path_placeholders": [
+      "${PROJECT_ROOT}",
+      "${HOST_TMP}",
+      "${HOST_HOME}"
+    ]
+  }
+}

@@ -1,0 +1,39 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -422,7 +422,7 @@
+-static bool smmu_start(struct probe *p, struct smmu_saved *s)
++static bool __attribute__((noinline)) sgpu_smmu_start(struct probe *p, struct smmu_saved *s)
+ {
+     uint32_t id0 = read32(p, SG_SMMU, 0x20), id1 = read32(p, SG_SMMU, 0x24);
+     uint32_t id2 = read32(p, SG_SMMU, 0x28);
+     trace(p, "SMMU ID0/ID1/ID2", id0, id1, id2);
+     uint32_t bytes = (1u << (((id1 >> 28) & 7u) + 1)) * 8192u;
+     if (!(id0 & BIT(30)) || !(id2 & BIT(12)) || (id1 & BIT(31)) ||
+@@ -510,7 +510,7 @@
+-static bool smmu_restore(struct probe *p, struct smmu_saved *s)
++static bool __attribute__((noinline)) sgpu_smmu_restore(struct probe *p, struct smmu_saved *s)
+ {
+     if (!s->changed) return true;
+     if (!checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, SG_S2CR_FAULT) ||
+         !checked_write32(p, SG_SMMU, SG_CB, 1, 0)) return false;
+     write32(p, SG_SMMU, SG_CB_TLBIASID, 1);
+     write32(p, SG_SMMU, SG_CB_TLBSYNC, 0);
+@@ -805,7 +805,7 @@
+         report->error = SG_FAULT; goto done;
+     }
+     ops->clean(ops->ctx, p.memory.va, SGPU_POOL_BYTES);
+-    if (!smmu_start(&p, &smmu)) {
++    if (!sgpu_smmu_start(&p, &smmu)) {
+         if (!report->error) report->error = SG_BAD_SMMU;
+         goto done;
+     }
+@@ -869,7 +869,7 @@
+     if (p.gpu_live) faults(&p); /* post-idle faults must also invalidate success */
+     report->gpu_quiescent = p.gpu_live && stopped;
+     /* An uncertain engine keeps its contained translations and power. */
+-    if (stopped && smmu.changed) report->smmu_restored = smmu_restore(&p, &smmu);
++    if (stopped && smmu.changed) report->smmu_restored = sgpu_smmu_restore(&p, &smmu);
+     report->memory_retained = p.dma_exposed;
+     if (p.memory.va && !p.dma_exposed) ops->release(ops->ctx, &p.memory);
+     report->restored = stopped && report->smmu_restored && sgpu_restore_power(&p);

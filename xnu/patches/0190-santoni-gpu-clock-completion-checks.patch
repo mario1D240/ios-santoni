@@ -1,0 +1,86 @@
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -94,6 +94,8 @@
+ #define SG_INT_STATUS 0x1384u
+ #define SG_RESET 0x10cu
+ #define SG_ME_HALT (1u << 28)
++#define SG_CLOCK_CNTL 0x19cu
++#define SG_ISDB_CNT 0x14ccu
+ #define SG_BUSY_MASK 0xfffffffeu
+ /* A5xx error IRQs: RBBM 1..7, CP_HW_ERROR 9, ATB/hang/UCHE 22..25.
+  * Idle, CP software/completion/timestamp and debug interrupts are not errors. */
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -362,7 +362,7 @@
+-static bool restore_power(struct probe *p)
++static bool __attribute__((noinline)) sgpu_restore_power(struct probe *p)
+ {
+     while (p->saved_count) {
+         struct saved_reg r = p->saved[p->saved_count - 1];
+         uint32_t now = read32(p, r.block, r.off);
+         uint32_t written = (now & ~r.mask) | (r.value & r.mask);
+         write32(p, r.block, r.off, written);
+@@ -382,6 +382,10 @@
+             /* A firmware vote may keep it powered, but never spin forever. */
+             if (!poll(p, SG_CC, r.off, BIT(31), r.value & BIT(31), 10000)) return false;
+         }
++        /* ROOT_EN echo is not ROOT_OFF completion. Keep the final journal
++         * entry until the inherited root status is acknowledged. */
++        if (r.block == SG_CC && r.off == CC_CMD && (r.mask & 2u) &&
++            !poll(p, SG_CC, CC_CMD, BIT(31), r.value & BIT(31), 10000)) return false;
+         p->saved_count--;
+     }
+     return true;
+@@ -544,7 +548,9 @@
+-static void a505_init(struct probe *p, uint32_t pfp_version)
++static bool __attribute__((noinline)) sgpu_a505_init(struct probe *p, uint32_t pfp_version)
+ {
++    /* A50x regulator path: halt SP input before changing HWCG, then release it. */
++    if (!checked_write32(p, SG_GPU, SG_CLOCK_CNTL, ~0u, 0x55)) return false;
+     /* A50x (ONE SP) HWCG values, not the A530 multi-SP table. */
+     static const uint32_t hwcg[][2] = {
+         {0x1a0,0x02222222},{0x1b0,0x02222220},{0x1c0,0xf3cf},{0x1d0,0x80},
+         {0x128,0x22222222},{0x138,0x22222222},{0x148,0x2222},
+         {0x2c0,0x77777777},{0x2d0,0x77777777},{0x2e0,0x7777},
+@@ -562,7 +568,10 @@
+         {0x194,0x4000},{0x184,0x200},{0x248,0x2222}
+     };
+     for (unsigned i = 0; i < COUNT(hwcg); i++) write32(p, SG_GPU, hwcg[i][0], hwcg[i][1]);
+-    write32(p, SG_GPU, 0x19c, 0x55); /* RBBM_CLOCK_CNTL */
++    /* a5xx_hwcg_set(A505, true): finish top-level HWCG and ISDB. The low
++     * byte is now zero, releasing every SP-input halt control without GPMU. */
++    if (!checked_write32(p, SG_GPU, SG_CLOCK_CNTL, ~0u, 0xaaa8aa00u) ||
++        !checked_write32(p, SG_GPU, SG_ISDB_CNT, ~0u, 0x182u)) return false;
+     static const uint32_t regs[][2] = {
+         {0xc124,3}, {0x24c,1}, /* VBIF RR, RBBM AHB error reporting */
+         {0x3a58,2}, /* UCHE_CACHE_WAYS */
+@@ -587,6 +596,7 @@
+         0x3814,0x3904,0x3984,0x3a00,0x3b04,0x3c04};
+     for (unsigned i = 0; i < COUNT(addr); i++) write32(p, SG_GPU, addr[i], 1);
+     /* No GPMU/SPTP-PC on this catalog entry; no A530 RBCCU/SP power recipe. */
++    return true;
+ }
+ 
+ static bool consume(struct probe *p, uint32_t words)
+@@ -798,7 +808,9 @@
+         if (!report->error) report->error = SG_BAD_SMMU;
+         goto done;
+     }
+-    a505_init(&p, fw.pfp_version);
++    if (!sgpu_a505_init(&p, fw.pfp_version)) {
++        report->error = SG_FAULT; goto done;
++    }
+     report->stage = SG_COMMANDS;
+     trace(&p, "before ME_INIT/owned marker commands", SGPU_RING_VA, SGPU_MARKER_VA, 0);
+     uint32_t wptr = 0;
+@@ -860,7 +872,7 @@
+     if (stopped && smmu.changed) report->smmu_restored = smmu_restore(&p, &smmu);
+     report->memory_retained = p.dma_exposed;
+     if (p.memory.va && !p.dma_exposed) ops->release(ops->ctx, &p.memory);
+-    report->restored = stopped && report->smmu_restored && restore_power(&p);
++    report->restored = stopped && report->smmu_restored && sgpu_restore_power(&p);
+     report->power_pending = p.saved_count;
+     if (!report->restored) {
+         trace(&p, "rollback incomplete; bounded DMA retained", report->error, report->stage,

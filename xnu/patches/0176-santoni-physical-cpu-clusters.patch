@@ -1,0 +1,59 @@
+Subject: [PATCH 0176] santoni: expose both physical cache domains to the scheduler
+
+MSM8937 has Aff1=0/1 A53 clusters with separate L2 caches/clocks.
+Do not classify all eight as the older Apple flat-Aff0 topology.
+Keep HAS_CLUSTER=0 (no Apple control registers) and AMP disabled;
+use two ordinary SMP psets. santoniflat=1 retains old grouping for A/B.
+No CPU count, GPIO, clocks, voltage or coherency-register writes.
+
+diff --git a/pexpert/pexpert/arm64/board_config.h b/pexpert/pexpert/arm64/board_config.h
+--- a/pexpert/pexpert/arm64/board_config.h
++++ b/pexpert/pexpert/arm64/board_config.h
+@@ -113,7 +113,7 @@
+ 
+ #define MAX_L2_CLINE                   6
+ #define MAX_CPUS                       8
+-#define MAX_CPU_CLUSTERS               1
++#define MAX_CPU_CLUSTERS               2
+ 
+ #define CORE_NCTRS                     8
+ #endif  /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/pexpert/pexpert/arm64/SANTONI.h b/pexpert/pexpert/arm64/SANTONI.h
+--- a/pexpert/pexpert/arm64/SANTONI.h
++++ b/pexpert/pexpert/arm64/SANTONI.h
+@@ -3,6 +3,9 @@
+ 
+ #define NO_MONITOR                    1
+ #define NO_ECORE                      1
++/* Two Qualcomm cache domains, not Apple cluster-control hardware/AMP. */
++#define HAS_CLUSTER                   0
++#undef __ARM_AMP__
+ 
+ #define SANTONI                       1
+ #define SWEET                         1
+diff --git a/osfmk/arm64/machine_routines.c b/osfmk/arm64/machine_routines.c
+--- a/osfmk/arm64/machine_routines.c
++++ b/osfmk/arm64/machine_routines.c
+@@ -953,6 +953,10 @@
+ 	int64_t cluster_max_cpu_phys_id[MAX_CPU_CLUSTER_PHY_ID + 1];
+ 	const boolean_t cpus_boot_arg_present = PE_parse_boot_argn("cpus", &cpu_boot_arg, sizeof(cpu_boot_arg));
+ 	const boolean_t cpumask_boot_arg_present = PE_parse_boot_argn("cpumask", &cpumask_boot_arg, sizeof(cpumask_boot_arg));
++#if defined(SANTONI)
++	int santoni_flat = 0; /* diagnostic opt-out: retain the old single pset */
++	(void)PE_parse_boot_argn("santoniflat", &santoni_flat, sizeof(santoni_flat));
++#endif
+ 
+ #if defined(SWEET)
+ 	/* Opt in to SMP: cpus=N (N <= SWEET_SMP_MAX_CPUS; cores 6-7 are the A76s). */
+@@ -1047,7 +1051,10 @@
+ 		 * on the value provided by EDT. Instead, use the MPIDR value to see if we have
+ 		 * seen this exact cluster before. If so, then reuse that cluster ID for this CPU.
+ 		 */
+-#if HAS_CLUSTER
++#if defined(SANTONI)
++		/* Aff1 is the real cache domain on MSM8937; both are SMP A53s. */
++		uint32_t phys_cluster_id = santoni_flat ? 0u : (cpu->phys_id >> 8) & 0xffu;
++#elif HAS_CLUSTER
+ 		uint32_t phys_cluster_id = MPIDR_CLUSTER_ID(cpu->phys_id);
+ #else
+ 		uint32_t phys_cluster_id = (cpu->cluster_type == CLUSTER_TYPE_P);

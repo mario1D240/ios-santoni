@@ -1,0 +1,108 @@
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -44,6 +44,7 @@
+     struct saved_reg saved[32];
+     uint32_t saved_count;
+     bool gpu_live, smmu_live, dma_exposed, restoring, gpu_owned, gx_touched, commands_started;
++    bool gpu_resumed;
+ };
+ 
+ static uint32_t little32(const uint8_t *p)
+@@ -564,7 +565,8 @@
+-static bool __attribute__((noinline)) sgpu_a505_init(struct probe *p, uint32_t pfp_version)
++static bool __attribute__((noinline)) sgpu_a505_resume(struct probe *p)
+ {
++    p->gpu_resumed = false;
+     /* A50x regulator path: halt SP input before changing HWCG, then release it. */
+     if (!checked_write32(p, SG_GPU, SG_CLOCK_CNTL, ~0u, 0x55)) return false;
+     /* A50x (ONE SP) HWCG values, not the A530 multi-SP table. */
+     static const uint32_t hwcg[][2] = {
+         {0x1a0,0x02222222},{0x1b0,0x02222220},{0x1c0,0xf3cf},{0x1d0,0x80},
+@@ -585,6 +587,13 @@
+      * byte is now zero, releasing every SP-input halt control without GPMU. */
+     if (!checked_write32(p, SG_GPU, SG_CLOCK_CNTL, ~0u, 0xaaa8aa00u) ||
+         !checked_write32(p, SG_GPU, SG_ISDB_CNT, ~0u, 0x182u)) return false;
++    p->gpu_resumed = true;
++    return true;
++}
++
++static void __attribute__((noinline)) sgpu_a505_init(struct probe *p, uint32_t pfp_version)
++{
++    /* Register configuration follows checked resume, reset and translation setup. */
+     static const uint32_t regs[][2] = {
+         {0xc124,3}, {0x24c,1}, /* VBIF RR, RBBM AHB error reporting */
+         {0x3a58,2}, /* UCHE_CACHE_WAYS */
+@@ -609,7 +618,6 @@
+         0x3814,0x3904,0x3984,0x3a00,0x3b04,0x3c04};
+     for (unsigned i = 0; i < COUNT(addr); i++) write32(p, SG_GPU, addr[i], 1);
+     /* No GPMU/SPTP-PC on this catalog entry; no A530 RBCCU/SP power recipe. */
+-    return true;
+ }
+ 
+ static bool consume(struct probe *p, uint32_t words)
+@@ -801,6 +809,14 @@
+     if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
+         report->error = SG_BUSY; goto done;
+     }
++    /* kgsl_pwrctrl_enable's A50x callback precedes CP/MMU work. Cold-domain
++     * ownership and both immediate idle checks above still gate every write. */
++    if (!sgpu_a505_resume(&p)) {
++        report->error = SG_FAULT; goto done;
++    }
++    if (!poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000)) {
++        report->error = SG_BUSY; goto done;
++    }
+     if (!sgpu_a505_halt(&p, 1)) {
+         report->error = SG_FAULT; goto done;
+     }
+@@ -810,11 +826,14 @@
+         report->error = SG_BUSY; goto done;
+     }
+     p.gpu_owned = true; /* reset only after the immediate idle/halt handoff checks */
++    p.gpu_resumed = false;
+     write32(&p, SG_GPU, SG_RESET, 1);
+     (void)read32(&p, SG_GPU, SG_RESET);
+     wait_us(&p, 2);
+     write32(&p, SG_GPU, SG_RESET, 0);
+-    if (!sgpu_a505_halt(&p, 2) ||
++    /* adreno.c _soft_reset re-enables A50x regulators immediately afterward. */
++    if (!sgpu_a505_resume(&p) ||
++        !sgpu_a505_halt(&p, 2) ||
+         !checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
+         report->error = SG_FAULT; goto done;
+     }
+@@ -821,9 +840,7 @@
+         if (!report->error) report->error = SG_BAD_SMMU;
+         goto done;
+     }
+-    if (!sgpu_a505_init(&p, fw.pfp_version)) {
+-        report->error = SG_FAULT; goto done;
+-    }
++    sgpu_a505_init(&p, fw.pfp_version);
+     report->stage = SG_COMMANDS;
+     trace(&p, "before ME_INIT/owned marker commands", SGPU_RING_VA, SGPU_MARKER_VA, 0);
+     uint32_t wptr = 0;
+@@ -857,16 +874,20 @@
+     report->smmu_restored = !smmu.changed;
+     if (p.gpu_live && p.gpu_owned) {
+         faults(&p);
+-        stopped = sgpu_a505_halt(&p, 3) &&
++        /* Failed post-reset resume must not grant further CP access/teardown. */
++        stopped = p.gpu_resumed && sgpu_a505_halt(&p, 3) &&
+             poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000) &&
+             poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
+         if (!stopped && p.commands_started) {
+             /* A soft reset is vendor-supported on A505, not the A530v1 exception. */
++            p.gpu_resumed = false;
+             write32(&p, SG_GPU, SG_RESET, 1);
+             (void)read32(&p, SG_GPU, SG_RESET);
+             wait_us(&p, 2);
+             write32(&p, SG_GPU, SG_RESET, 0);
+-            stopped = sgpu_a505_halt(&p, 4) &&
++            stopped = sgpu_a505_resume(&p) &&
++                checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0) &&
++                sgpu_a505_halt(&p, 4) &&
+                 poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000) &&
+                 poll(&p, SG_GPU, SG_ME_CNTL, SG_CP_STOP_MASK, SG_CP_STOP_MASK, 10000);
+         }

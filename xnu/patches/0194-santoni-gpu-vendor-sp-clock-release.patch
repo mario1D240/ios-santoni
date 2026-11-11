@@ -1,0 +1,55 @@
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -98,5 +98,7 @@
+ #define SG_CLOCK_CNTL 0x19cu
+ #define SG_ISDB_CNT 0x14ccu
++/* A50x regulator_enable releases SP input clocks with a low-byte RMW. */
++#define SG_SP_INPUT_CLOCK_MASK 0xffu
+ #define SG_BUSY_MASK 0xfffffffeu
+ /* A5xx error IRQs: RBBM 1..7, CP_HW_ERROR 9, ATB/hang/UCHE 22..25.
+  * Idle, CP software/completion/timestamp and debug interrupts are not errors. */
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -562,6 +562,24 @@
+     return true;
+ }
+ 
++static bool __attribute__((noinline)) sgpu_a505_sp_release(struct probe *p)
++{
++    /* adreno_a5xx.c regulator_enable / kgsl_regrmw: preserve the observed
++     * top-level state, clear only the documented SP-input low byte. Do not
++     * guess why a requested HWCG policy bit may read differently on A505. */
++    uint32_t old = read32(p, SG_GPU, SG_CLOCK_CNTL);
++    uint32_t written = old & ~SG_SP_INPUT_CLOCK_MASK;
++    write32(p, SG_GPU, SG_CLOCK_CNTL, written);
++    uint32_t got = read32(p, SG_GPU, SG_CLOCK_CNTL);
++    trace(p, "A505 SP release old/written/got", old, written, got);
++    /* Full final echo checks EVERY upper bit as well as low-byte release.
++     * This is not proof that all initially requested HWCG policy bits stuck. */
++    if (got == written && !(got & SG_SP_INPUT_CLOCK_MASK)) return true;
++    sgpu_failure(p, SG_FAIL_READBACK, SG_GPU, SG_CLOCK_CNTL, ~0u,
++        written, old, written, got, 0, 0);
++    return false;
++}
++
+ static bool __attribute__((noinline)) sgpu_a505_resume(struct probe *p)
+ {
+     p->gpu_resumed = false;
+@@ -583,10 +601,11 @@
+         {0x194,0x4000},{0x184,0x200},{0x248,0x2222}
+     };
+     for (unsigned i = 0; i < COUNT(hwcg); i++) write32(p, SG_GPU, hwcg[i][0], hwcg[i][1]);
+-    /* a5xx_hwcg_set(A505, true): finish top-level HWCG and ISDB. The low
+-     * byte is now zero, releasing every SP-input halt control without GPMU. */
+-    if (!checked_write32(p, SG_GPU, SG_CLOCK_CNTL, ~0u, 0xaaa8aa00u) ||
+-        !checked_write32(p, SG_GPU, SG_ISDB_CNT, ~0u, 0x182u)) return false;
++    /* Keep the vendor HWCG policy write, then ISDB, then its distinct RMW
++     * release. Policy request is not a specified whole-word echo contract. */
++    write32(p, SG_GPU, SG_CLOCK_CNTL, 0xaaa8aa00u);
++    if (!checked_write32(p, SG_GPU, SG_ISDB_CNT, ~0u, 0x182u) ||
++        !sgpu_a505_sp_release(p)) return false;
+     p->gpu_resumed = true;
+     return true;
+ }

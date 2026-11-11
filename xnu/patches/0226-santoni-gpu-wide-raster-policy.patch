@@ -1,0 +1,2615 @@
+diff --git a/bsd/conf/files b/bsd/conf/files
+--- a/bsd/conf/files
++++ b/bsd/conf/files
+@@ -117,6 +117,11 @@
+ bsd/dev/santoni_gpu_core.c		standard
+ bsd/dev/santoni_gpu_graphics.c		standard
+ bsd/dev/santoni_gpu_pm4.c			standard
++bsd/dev/santoni_gpu_vm.c			standard
++bsd/dev/santoni_gpu_ir3.c			standard
++bsd/dev/santoni_gpu_descriptors.c		standard
++bsd/dev/santoni_gpu_raster.c		standard
++bsd/dev/santoni_gpu_raster_batch.c		standard
+ bsd/dev/sweet_rpmh.c			standard
+ bsd/dev/sweet_spmi.c			standard
+ bsd/dev/sweet_usb.c			standard
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -1371,6 +1371,44 @@
+     return true;
+ }
+
++/* Distinct private17-page wide-VM backing. This is kernel-owned RAM, never
++ * an ADT/PAS address or an alias into the public BO/command pools. A failed
++ * attempted handoff is retained through reboot, regardless of ready status. */
++static vm_offset_t sgpu_graphics_vm_kva;
++static bool sgpu_graphics_vm_attempted,sgpu_graphics_vm_retained;
++static struct gvm_memory sgpu_graphics_vm_owned;
++static bool __attribute__((noinline)) sgpu_graphics_vm_owns(void *context,const struct gvm_memory *memory)
++{
++    (void)context;
++    if(!memory || !sgpu_graphics_vm_retained || memory->cookie!=(uintptr_t)&sgpu_graphics_vm_owned ||
++        memory->va!=(uint8_t *)sgpu_graphics_vm_kva || memory->bytes!=GVM_TABLE_PAGES*SGPU_PAGE)return false;
++    for(unsigned i=0;i<GVM_TABLE_PAGES;i++)if(memory->pa[i]!=sgpu_graphics_vm_owned.pa[i])return false;
++    return true;
++}
++static uint64_t __attribute__((noinline)) sgpu_graphics_vm_page(void *context,const struct gvm_memory *memory,uint32_t page)
++{
++    if(page>=GVM_TABLE_PAGES || !sgpu_graphics_vm_owns(context,memory))return 0;
++    return (uint64_t)pmap_find_phys(kernel_pmap,(vm_offset_t)memory->va+page*SGPU_PAGE)<<12;
++}
++static bool __attribute__((noinline)) sgpu_graphics_vm_reserved(void *context,uint64_t pa)
++{(void)context;return sgpu_graphics_hw_legacy_reserved(pa);}
++static bool __attribute__((noinline)) sgpu_graphics_vm_begin(void)
++{
++    if(sgpu_graphics_enabled!=1 || sg.mode!=3 || sgpu_graphics_vm_attempted ||
++        page_shift!=12 || page_size!=SGPU_PAGE)return false;
++    sgpu_graphics_vm_attempted=true;
++    if(kmem_alloc(kernel_map,&sgpu_graphics_vm_kva,GVM_TABLE_PAGES*SGPU_PAGE,
++        KMA_DATA|KMA_ZERO,VM_KERN_MEMORY_IOKIT)!=KERN_SUCCESS)return false;
++    sgpu_graphics_vm_owned=(struct gvm_memory){.va=(uint8_t *)sgpu_graphics_vm_kva,
++        .cookie=(uintptr_t)&sgpu_graphics_vm_owned,.bytes=GVM_TABLE_PAGES*SGPU_PAGE};
++    for(unsigned i=0;i<GVM_TABLE_PAGES;i++)
++        sgpu_graphics_vm_owned.pa[i]=(uint64_t)pmap_find_phys(kernel_pmap,sgpu_graphics_vm_kva+i*SGPU_PAGE)<<12;
++    struct gvm_ops memory_ops={.owned_private=sgpu_graphics_vm_owns,.page_pa=sgpu_graphics_vm_page,
++        .reserved_pa=sgpu_graphics_vm_reserved};
++    sgpu_graphics_vm_retained=true; /* precedes every potentially exposed call */
++    return sgpu_graphics_hw_begin_vm(sg.mode,sgpu_graphics_enabled,&sgpu_graphics_vm_owned,&memory_ops);
++}
++
+ static void __attribute__((noinline)) sgpu_render_worker(const struct sgpu_ops *ops,
+     const uint8_t *firmware, size_t bytes, struct sgpu_report *boot)
+ {
+@@ -1397,7 +1435,7 @@
+         sgpu_render_allocation_retained ? (SGPU_RENDER_TABLE_PAGES + SGPU_RENDER_LIVE_PAGES)*SGPU_PAGE : 0u,
+         boot->memory_retained ? SGPU_POOL_BYTES : 0u);
+     if (sgpu_graphics_enabled==1) {
+-        graphics_ready=passed && sgpu_graphics_hw_begin(sg.mode,sgpu_graphics_enabled);
++        graphics_ready=passed && sgpu_graphics_vm_begin();
+         struct sgpu_graphics_hw_result graphics={0};
+         sgpu_graphics_hw_snapshot(&graphics);
+         sgpu_failure_summary("GRAPHICS FIRST_FAIL",&graphics.failure);
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -2935,6 +2935,9 @@
+  * The original UI-copy producer must remain absent while this VM is owned. */
+ static struct {
+     bool initialized,failed,exposed;
++    bool wide;
++    struct gvm vm;
++    uint64_t vm_root[512];
+     uint32_t error,wptr,pending;
+     struct sgpu_report report;
+     struct sgpu_render_memory owned;
+@@ -2951,15 +2954,35 @@
+ }
+ bool __attribute__((noinline)) sgpu_graphics_hw_ready(void)
+ {return sgpu_graphics_hw.initialized && !sgpu_graphics_hw.failed;}
+-bool __attribute__((noinline)) sgpu_graphics_hw_reserved(uint64_t pa)
++bool __attribute__((noinline)) sgpu_graphics_hw_legacy_reserved(uint64_t pa)
+ {
+     for (unsigned i=0;i<SGPU_POOL_PAGES;i++)if(pa==sgpu_graphics_hw.old_pa[i])return true;
+     for (unsigned i=0;i<SGPU_RENDER_TABLE_PAGES;i++)if(pa==sgpu_graphics_hw.owned.table_pa[i])return true;
+     for (unsigned i=0;i<SGPU_RENDER_LIVE_PAGES;i++)if(pa==sgpu_graphics_hw.owned_pa[i])return true;
+     return false;
+ }
++bool __attribute__((noinline)) sgpu_graphics_hw_reserved(uint64_t pa)
++{
++    if(sgpu_graphics_hw_legacy_reserved(pa))return true;
++    if(sgpu_graphics_hw.wide)for(unsigned i=0;i<GVM_TABLE_PAGES;i++)
++        if(pa==sgpu_graphics_hw.vm.memory.pa[i])return true;
++    return false;
++}
++uint32_t __attribute__((noinline)) sgpu_graphics_hw_vm_profile(void)
++{return sgpu_graphics_hw.wide?SGPU_GRAPHICS_VM_WIDE:SGPU_GRAPHICS_VM_LEGACY;}
++static uint32_t __attribute__((noinline)) sgpu_graphics_hw_base(void)
++{return sgpu_graphics_hw.wide?GVM_BASE:SGPU_RENDER_VA;}
++static uint32_t __attribute__((noinline)) sgpu_graphics_hw_pages(void)
++{return sgpu_graphics_hw.wide?GVM_PAGES:SGPU_RENDER_MAX_PAGES;}
++static uint64_t *__attribute__((noinline)) sgpu_graphics_hw_expected_ptes(void)
++{return sgpu_graphics_hw.wide?sgpu_graphics_hw.vm.ptes:sgpu_graphics_hw.ptes;}
++static uint64_t *__attribute__((noinline)) sgpu_graphics_hw_live_ptes(void)
++{return (uint64_t *)(void *)(sgpu_graphics_hw.wide?sgpu_graphics_hw.vm.memory.va:sgpu_graphics_hw.owned.tables+2*SGPU_PAGE);}
++static uint8_t *__attribute__((noinline)) sgpu_graphics_hw_fence_va(void)
++{return sgpu_graphics_hw.wide?sgpu_graphics_hw.vm.memory.va+GVM_FENCE_PAGE*SGPU_PAGE:sgpu_graphics_hw.owned.tables+6*SGPU_PAGE;}
+ static bool __attribute__((noinline)) sgpu_graphics_hw_tables(void)
+ {
++    if(sgpu_graphics_hw.wide && !gvm_verify(&sgpu_graphics_hw.vm))return false;
+     const struct sgpu_memory *old=&session_core.p.memory;
+     const struct sgpu_render_memory *m=&sgpu_render_live.arena.memory,*saved=&sgpu_graphics_hw.owned;
+     if (old->va!=sgpu_graphics_hw.old_va || m->tables!=saved->tables || m->pixels!=saved->pixels ||
+@@ -3028,7 +3051,8 @@
+         !sgpu_graphics_hw_state(wptr,0,0x1127,0) || !sgpu_graphics_hw_tables())return sgpu_graphics_hw_fail(SG_BAD_SMMU);
+     return true;
+ }
+-bool __attribute__((noinline)) sgpu_graphics_hw_begin(uint32_t mode,uint32_t enabled)
++static bool __attribute__((noinline)) sgpu_graphics_hw_begin_owned(uint32_t mode,uint32_t enabled,
++    const struct gvm_memory *memory,const struct gvm_ops *vm_ops)
+ {
+     struct probe *p=&session_core.p;struct sgpu_render_memory *m=&sgpu_render_live.arena.memory;
+     if (mode!=3 || enabled!=1 || sgpu_graphics_hw.initialized || sgpu_graphics_hw.failed ||
+@@ -3053,51 +3077,93 @@
+     memcpy(sgpu_graphics_hw.new_l2,m->tables+SGPU_PAGE,SGPU_PAGE);
+     memcpy(sgpu_graphics_hw.ptes,m->tables+2*SGPU_PAGE,sizeof(sgpu_graphics_hw.ptes));
+     sgpu_graphics_hw.wptr=sgpu_render_live.result.wptr;
++    if(memory) {
++        /* Fresh private tables/fence must never alias retained boot/legacy
++         * CPU state. PAs are checked again by gvm on every handoff boundary. */
++        if(!vm_ops || sgpu_render_overlap(memory->va,memory->bytes,p->memory.va,SGPU_POOL_BYTES) ||
++            sgpu_render_overlap(memory->va,memory->bytes,m->tables,SGPU_RENDER_TABLE_PAGES*SGPU_PAGE) ||
++            sgpu_render_overlap(memory->va,memory->bytes,m->pixels,m->pages*SGPU_PAGE) ||
++            sgpu_render_overlap(memory->va,memory->bytes,&sgpu_graphics_hw,sizeof(sgpu_graphics_hw))) {
++            sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;
++        }
++        for(unsigned i=0;i<GVM_TABLE_PAGES;i++)if(sgpu_graphics_hw_legacy_reserved(memory->pa[i])) {
++            sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;
++        }
++        if(!gvm_prepare(&sgpu_graphics_hw.vm,memory,vm_ops) ||
++            !gvm_propose_l2(&sgpu_graphics_hw.vm,(const uint64_t *)(const void *)(p->memory.va+SGPU_PAGE),sgpu_graphics_hw.vm_root)) {
++            sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;
++        }
++        sgpu_graphics_hw.wide=true;
++    }
+     if (!sgpu_graphics_hw_stop())goto done;
+     uint64_t *l3=(uint64_t *)(void *)(m->tables+2*SGPU_PAGE);
+-    for (unsigned i=1;i<SGPU_RENDER_MAX_PAGES;i++)l3[i]=sgpu_graphics_hw.ptes[i]=0;
+-    *(uint32_t *)(void *)(m->tables+6*SGPU_PAGE)=0;
++    if(sgpu_graphics_hw.wide) {
++        /* Keep the live legacy8MiB tables/pixels. Publish ONLY the sixteen
++         * previously empty L2 slots after CP stop/SID0 fault/CB disable. */
++        struct gvm *v=&sgpu_graphics_hw.vm;
++        p->ops->clean(p->ops->ctx,v->memory.va,v->memory.bytes);
++        if(!sgpu_graphics_hw_tables() || !sgpu_graphics_hw_state(sgpu_graphics_hw.wptr,3,0x1126,SG_S2CR_FAULT) ||
++            !gvm_propose_l2(v,(const uint64_t *)(const void *)(p->memory.va+SGPU_PAGE),sgpu_graphics_hw.vm_root)) {
++            sgpu_graphics_hw_fail(SG_BAD_MEMORY);goto done;
++        }
++        uint64_t *root=(uint64_t *)(void *)(p->memory.va+SGPU_PAGE);
++        for(unsigned i=0;i<GVM_L3_PAGES;i++)
++            root[GVM_L2_FIRST+i]=sgpu_graphics_hw.old_l2[GVM_L2_FIRST+i]=sgpu_graphics_hw.vm_root[GVM_L2_FIRST+i];
++        p->ops->clean(p->ops->ctx,root,SGPU_PAGE);
++    } else {
++        for (unsigned i=1;i<SGPU_RENDER_MAX_PAGES;i++)l3[i]=sgpu_graphics_hw.ptes[i]=0;
++        *(uint32_t *)(void *)(m->tables+6*SGPU_PAGE)=0;
++    }
+     /* Shader memory stores must not modify the CPU-owned command ring. */
+     unsigned ring=(SGPU_RING_VA-SGPU_VA_BASE)/SGPU_PAGE;
+     uint64_t *old_l3=(uint64_t *)(void *)(p->memory.va+2*SGPU_PAGE);
+     old_l3[ring]=sgpu_graphics_hw.old_l3[ring]=(old_l3[ring]&0x0000fffffffff000ull)|PTE_RO;
+     p->ops->clean(p->ops->ctx,old_l3,SGPU_PAGE);
+-    p->ops->clean(p->ops->ctx,l3,4*SGPU_PAGE);
+-    p->ops->clean(p->ops->ctx,m->tables+6*SGPU_PAGE,64);
++    if(!sgpu_graphics_hw.wide) {
++        p->ops->clean(p->ops->ctx,l3,4*SGPU_PAGE);
++        p->ops->clean(p->ops->ctx,m->tables+6*SGPU_PAGE,64);
++    }
+     if (!sgpu_graphics_hw_resume())goto done;
+     sgpu_graphics_hw.initialized=ok=true;
+ done:
+     p->report=saved_report;return ok;
+ }
++bool __attribute__((noinline)) sgpu_graphics_hw_begin(uint32_t mode,uint32_t enabled)
++{return sgpu_graphics_hw_begin_owned(mode,enabled,NULL,NULL);}
++bool __attribute__((noinline)) sgpu_graphics_hw_begin_vm(uint32_t mode,uint32_t enabled,
++    const struct gvm_memory *memory,const struct gvm_ops *ops)
++{return memory && ops && sgpu_graphics_hw_begin_owned(mode,enabled,memory,ops);}
+ uint64_t __attribute__((noinline)) sgpu_graphics_hw_pte(uint32_t va)
+ {
+-    if (!sgpu_graphics_hw_ready() || va<SGPU_RENDER_VA || (va&(SGPU_PAGE-1)) ||
+-        va-SGPU_RENDER_VA>=SGPU_RENDER_MAX_PAGES*SGPU_PAGE)return ~0ull;
+-    return ((const uint64_t *)(const void *)(sgpu_graphics_hw.owned.tables+2*SGPU_PAGE))[(va-SGPU_RENDER_VA)/SGPU_PAGE];
++    uint32_t base=sgpu_graphics_hw_base(),pages=sgpu_graphics_hw_pages();
++    if (!sgpu_graphics_hw_ready() || va<base || (va&(SGPU_PAGE-1)) || va-base>=pages*SGPU_PAGE)return ~0ull;
++    return sgpu_graphics_hw_live_ptes()[(va-base)/SGPU_PAGE];
+ }
+ static bool __attribute__((noinline)) sgpu_graphics_hw_change(uint32_t va,const uint64_t *pa,
+     uint32_t pages,uint64_t attrs,uint32_t guard)
+ {
+-    if (!sgpu_graphics_hw_ready() || sgpu_graphics_hw.pending || !pages || va<SGPU_RENDER_VA+SGPU_PAGE ||
+-        (va&(SGPU_PAGE-1)) || pages>=SGPU_RENDER_MAX_PAGES ||
+-        va-SGPU_RENDER_VA>(SGPU_RENDER_MAX_PAGES-pages-1)*SGPU_PAGE || guard!=va+pages*SGPU_PAGE ||
++    uint32_t base=sgpu_graphics_hw_base(),limit=sgpu_graphics_hw_pages();
++    uint64_t *expected=sgpu_graphics_hw_expected_ptes();
++    if (!sgpu_graphics_hw_ready() || sgpu_graphics_hw.pending || !pages || va<base+SGPU_PAGE ||
++        (va&(SGPU_PAGE-1)) || pages>=limit ||
++        va-base>(limit-pages-1)*SGPU_PAGE || guard!=va+pages*SGPU_PAGE ||
+         (pa && attrs!=PTE_RO && attrs!=PTE_RW))return false;
+-    uint32_t first=(va-SGPU_RENDER_VA)/SGPU_PAGE;
+-    if(sgpu_graphics_hw.ptes[first+pages])return false;
++    uint32_t first=(va-base)/SGPU_PAGE;
++    if(expected[first+pages])return false;
+     for(unsigned i=0;i<pages;i++) {
+         if(pa) {
+-            if(sgpu_graphics_hw.ptes[first+i] || (pa[i]&(SGPU_PAGE-1)) || pa[i]<SGPU_DMA_MIN ||
++            if(expected[first+i] || (pa[i]&(SGPU_PAGE-1)) || pa[i]<SGPU_DMA_MIN ||
+                 pa[i]>SGPU_DMA_END-SGPU_PAGE || sgpu_graphics_hw_reserved(pa[i]))return false;
+             for(unsigned j=0;j<i;j++)if(pa[j]==pa[i])return false;
+-            for(unsigned j=0;j<SGPU_RENDER_MAX_PAGES;j++)
+-                if((sgpu_graphics_hw.ptes[j]&0x0000fffffffff000ull)==pa[i])return false;
+-        } else if(!sgpu_graphics_hw.ptes[first+i])return false;
++            for(unsigned j=0;j<limit;j++)
++                if((expected[j]&0x0000fffffffff000ull)==pa[i])return false;
++        } else if(!expected[first+i])return false;
+     }
+     struct probe *p=&session_core.p;struct sgpu_report *saved=p->report;p->report=&sgpu_graphics_hw.report;
+     bool ok=false;if(!sgpu_graphics_hw_stop())goto done;
+-    uint64_t *l3=(uint64_t *)(void *)(sgpu_graphics_hw.owned.tables+2*SGPU_PAGE);
+-    for(unsigned i=0;i<pages;i++)l3[first+i]=sgpu_graphics_hw.ptes[first+i]=pa?pa[i]|attrs:0;
+-    p->ops->clean(p->ops->ctx,l3,4*SGPU_PAGE);
++    uint64_t *l3=sgpu_graphics_hw_live_ptes();
++    for(unsigned i=0;i<pages;i++)l3[first+i]=expected[first+i]=pa?pa[i]|attrs:0;
++    p->ops->clean(p->ops->ctx,l3,limit*8);
+     ok=sgpu_graphics_hw_resume();
+ done:
+     p->report=saved;return ok;
+@@ -3107,15 +3173,15 @@
+ bool __attribute__((noinline)) sgpu_graphics_hw_unmap(uint32_t va,uint32_t pages,uint32_t guard)
+ {return sgpu_graphics_hw_change(va,NULL,pages,0,guard);}
+ uint64_t __attribute__((noinline)) sgpu_graphics_hw_fence_pa(void)
+-{return sgpu_graphics_hw_ready()?sgpu_graphics_hw.owned.table_pa[6]:0;}
++{return sgpu_graphics_hw_ready()?(sgpu_graphics_hw.wide?sgpu_graphics_hw.vm.memory.pa[GVM_FENCE_PAGE]:sgpu_graphics_hw.owned.table_pa[6]):0;}
+ void __attribute__((noinline)) sgpu_graphics_hw_clean(const void *address,uint32_t bytes)
+ {if(sgpu_graphics_hw_ready() && address && bytes)session_core.ops.clean(session_core.ops.ctx,address,bytes);}
+ void __attribute__((noinline)) sgpu_graphics_hw_invalidate(const void *address,uint32_t bytes)
+ {if(sgpu_graphics_hw_ready() && address && bytes)session_core.ops.invalidate(session_core.ops.ctx,address,bytes);}
+ void __attribute__((noinline)) sgpu_graphics_hw_invalidate_fence(void)
+-{if(sgpu_graphics_hw_ready())session_core.ops.invalidate(session_core.ops.ctx,sgpu_graphics_hw.owned.tables+6*SGPU_PAGE,64);}
++{if(sgpu_graphics_hw_ready())session_core.ops.invalidate(session_core.ops.ctx,sgpu_graphics_hw_fence_va(),64);}
+ uint32_t __attribute__((noinline)) sgpu_graphics_hw_fence(void)
+-{return sgpu_graphics_hw_ready()?*(volatile uint32_t *)(void *)(sgpu_graphics_hw.owned.tables+6*SGPU_PAGE):~0u;}
++{return sgpu_graphics_hw_ready()?*(volatile uint32_t *)(void *)sgpu_graphics_hw_fence_va():~0u;}
+ bool __attribute__((noinline)) sgpu_graphics_hw_faulted(void)
+ {
+     if(!sgpu_graphics_hw_ready())return true;
+@@ -3137,16 +3203,17 @@
+ {
+     if(!sgpu_graphics_hw_ready() || !cmd || !count || count>SGPU_GRAPHICS_IBS || !sequence || sgpu_graphics_hw.pending)return false;
+     uint32_t out[SGPU_GRAPHICS_IBS*4+8],n=0;
++    uint32_t base=sgpu_graphics_hw_base(),limit=sgpu_graphics_hw_pages();
++    const uint64_t *expected=sgpu_graphics_hw_expected_ptes();
+     for(unsigned i=0;i<count;i++) {
+         if(!cmd[i].bytes || (cmd[i].bytes|cmd[i].gpu_va)&3 || cmd[i].bytes>SGPU_GRAPHICS_IB_BYTES ||
+-            cmd[i].gpu_va<SGPU_RENDER_VA+SGPU_PAGE ||
+-            cmd[i].gpu_va-SGPU_RENDER_VA>SGPU_RENDER_MAX_PAGES*SGPU_PAGE-cmd[i].bytes)return false;
+-        uint32_t first=(cmd[i].gpu_va-SGPU_RENDER_VA)/SGPU_PAGE,last=(cmd[i].gpu_va-SGPU_RENDER_VA+cmd[i].bytes-1)/SGPU_PAGE;
+-        for(unsigned j=first;j<=last;j++)if((sgpu_graphics_hw.ptes[j]&~0x0000fffffffff000ull)!=PTE_RO)return false;
++            cmd[i].gpu_va<base+SGPU_PAGE || cmd[i].gpu_va-base>limit*SGPU_PAGE-cmd[i].bytes)return false;
++        uint32_t first=(cmd[i].gpu_va-base)/SGPU_PAGE,last=(cmd[i].gpu_va-base+cmd[i].bytes-1)/SGPU_PAGE;
++        for(unsigned j=first;j<=last;j++)if((expected[j]&~0x0000fffffffff000ull)!=PTE_RO)return false;
+         out[n++]=sgpu_packet7(0x3f,3);out[n++]=cmd[i].gpu_va;out[n++]=0;out[n++]=cmd[i].bytes/4;
+     }
+     /* Same existing CACHE_FLUSH_TS event, into the kernel-owned private fence. */
+-    out[n++]=sgpu_packet7(0x46,4);out[n++]=4;out[n++]=SGPU_RENDER_VA;out[n++]=0;out[n++]=sequence;
++    out[n++]=sgpu_packet7(0x46,4);out[n++]=4;out[n++]=base;out[n++]=0;out[n++]=sequence;
+     out[n++]=sgpu_packet7(0x26,0);
+     struct probe *p=&session_core.p;struct sgpu_report *saved=p->report;p->report=&sgpu_graphics_hw.report;
+     bool ok=false;
+diff --git a/bsd/dev/santoni_gpu_descriptor_fields.h b/bsd/dev/santoni_gpu_descriptor_fields.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_descriptor_fields.h
+@@ -0,0 +1,39 @@
++/* Generated from pinned Mesa A5xx XML; fields are not an admission policy. */
++#define D_SAMP_MIPFILTER_LINEAR_NEAR(v) (((v)[0]>>0u)&UINT32_C(0x1))
++#define D_SAMP_XY_MAG(v) (((v)[0]>>1u)&UINT32_C(0x3))
++#define D_SAMP_XY_MIN(v) (((v)[0]>>3u)&UINT32_C(0x3))
++#define D_SAMP_WRAP_S(v) (((v)[0]>>5u)&UINT32_C(0x7))
++#define D_SAMP_WRAP_T(v) (((v)[0]>>8u)&UINT32_C(0x7))
++#define D_SAMP_WRAP_R(v) (((v)[0]>>11u)&UINT32_C(0x7))
++#define D_SAMP_ANISO(v) (((v)[0]>>14u)&UINT32_C(0x7))
++#define D_SAMP_LOD_BIAS(v) (((v)[0]>>19u)&UINT32_C(0x1fff))
++#define D_SAMP_COMPARE_FUNC(v) (((v)[1]>>1u)&UINT32_C(0x7))
++#define D_SAMP_CUBEMAPSEAMLESSFILTOFF(v) (((v)[1]>>4u)&UINT32_C(0x1))
++#define D_SAMP_UNNORM_COORDS(v) (((v)[1]>>5u)&UINT32_C(0x1))
++#define D_SAMP_MIPFILTER_LINEAR_FAR(v) (((v)[1]>>6u)&UINT32_C(0x1))
++#define D_SAMP_MAX_LOD(v) (((v)[1]>>8u)&UINT32_C(0xfff))
++#define D_SAMP_MIN_LOD(v) (((v)[1]>>20u)&UINT32_C(0xfff))
++#define D_SAMP_BCOLOR_OFFSET(v) (((v)[2]>>7u)&UINT32_C(0x1ffffff))
++#define D_TEX_TILE_MODE(v) (((v)[0]>>0u)&UINT32_C(0x3))
++#define D_TEX_SRGB(v) (((v)[0]>>2u)&UINT32_C(0x1))
++#define D_TEX_SWIZ_X(v) (((v)[0]>>4u)&UINT32_C(0x7))
++#define D_TEX_SWIZ_Y(v) (((v)[0]>>7u)&UINT32_C(0x7))
++#define D_TEX_SWIZ_Z(v) (((v)[0]>>10u)&UINT32_C(0x7))
++#define D_TEX_SWIZ_W(v) (((v)[0]>>13u)&UINT32_C(0x7))
++#define D_TEX_MIPLVLS(v) (((v)[0]>>16u)&UINT32_C(0xf))
++#define D_TEX_SAMPLES(v) (((v)[0]>>20u)&UINT32_C(0x3))
++#define D_TEX_FMT(v) (((v)[0]>>22u)&UINT32_C(0xff))
++#define D_TEX_SWAP(v) (((v)[0]>>30u)&UINT32_C(0x3))
++#define D_TEX_WIDTH(v) (((v)[1]>>0u)&UINT32_C(0x7fff))
++#define D_TEX_HEIGHT(v) (((v)[1]>>15u)&UINT32_C(0x7fff))
++#define D_TEX_BUFFER(v) (((v)[2]>>4u)&UINT32_C(0x1))
++#define D_TEX_PITCHALIGN(v) (((v)[2]>>0u)&UINT32_C(0xf))
++#define D_TEX_PITCH(v) (((v)[2]>>7u)&UINT32_C(0x3fffff))
++#define D_TEX_TYPE(v) (((v)[2]>>29u)&UINT32_C(0x7))
++#define D_TEX_ARRAY_PITCH(v) (((v)[3]>>0u)&UINT32_C(0x3fff))
++#define D_TEX_MIN_LAYERSZ(v) (((v)[3]>>23u)&UINT32_C(0xf))
++#define D_TEX_TILE_ALL(v) (((v)[3]>>27u)&UINT32_C(0x1))
++#define D_TEX_FLAG(v) (((v)[3]>>28u)&UINT32_C(0x1))
++#define D_TEX_BASE_LO(v) (((v)[4]>>5u)&UINT32_C(0x7ffffff))
++#define D_TEX_BASE_HI(v) (((v)[5]>>0u)&UINT32_C(0x1ffff))
++#define D_TEX_DEPTH(v) (((v)[5]>>17u)&UINT32_C(0x1fff))
+diff --git a/bsd/dev/santoni_gpu_descriptors.c b/bsd/dev/santoni_gpu_descriptors.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_descriptors.c
+@@ -0,0 +1,52 @@
++#include "santoni_gpu_descriptors.h"
++#include <stddef.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#define SGPU_DESCRIPTOR_FN __attribute__((noinline))
++#include "santoni_gpu_descriptor_fields.h"
++bool SGPU_DESCRIPTOR_FN sgpu_sampler_subset(const uint32_t *words,uint32_t count)
++{
++    if(!words || ((uintptr_t)words&3) || count!=4 || words[3])return false;
++    /* Mesa fd5_texture.c limits non-mipmap LOD to 0.125 = 32/256 so HW
++     * can select min/mag filtering at level0. No border/compare/aniso/mipmap
++     * mode or unknown field is admitted in this initial two-dimensional path. */
++    if(words[0]&~UINT32_C(0x3ffe) || words[1]&~UINT32_C(0xffffff10) ||
++        words[2]&127u || D_SAMP_XY_MAG(words)>1 || D_SAMP_XY_MIN(words)>1 ||
++        D_SAMP_WRAP_S(words)>2 || D_SAMP_WRAP_T(words)>2 || D_SAMP_WRAP_R(words)>2 ||
++        D_SAMP_MIN_LOD(words)>D_SAMP_MAX_LOD(words) || D_SAMP_MAX_LOD(words)>32 ||
++        D_SAMP_BCOLOR_OFFSET(words)>31)return false;
++    return true;
++}
++bool SGPU_DESCRIPTOR_FN sgpu_texture_subset(const uint32_t *words,uint32_t count,const struct sgpu_descriptor_range *ranges,uint32_t nr,
++    struct sgpu_texture_result *result)
++{
++    if(!words || ((uintptr_t)words&3) || count!=12 || !ranges || !nr || nr>64 || !result)return false;
++    /* Field offsets/shifts are from a5xx.xml; the only pixel format here is
++     * TFMT5_8_8_8_8_UNORM =0x30. Limits below are engineering scope, not a
++     * claim of every hardware-supported tiling/format/filter combination. */
++    if(D_TEX_TILE_MODE(words) || D_TEX_MIPLVLS(words) || D_TEX_SAMPLES(words) || D_TEX_FMT(words)!=0x30 ||
++        (words[0]&8u) || D_TEX_SWIZ_X(words)>5 || D_TEX_SWIZ_Y(words)>5 || D_TEX_SWIZ_Z(words)>5 || D_TEX_SWIZ_W(words)>5 ||
++        (words[1]&0xc0000000u) || (words[2]&0x70u) || D_TEX_BUFFER(words) || D_TEX_TYPE(words)!=1 ||
++        (words[3]&~0x3fffu) || (words[4]&31u) || words[5]!=(1u<<17))return false;
++    for(unsigned i=6;i<12;i++)if(words[i])return false;
++    uint32_t width=D_TEX_WIDTH(words),height=D_TEX_HEIGHT(words),pitch=D_TEX_PITCH(words),align=D_TEX_PITCHALIGN(words);
++    uint64_t layer=(uint64_t)D_TEX_ARRAY_PITCH(words)<<12;
++    if(!width || !height || width>4096 || height>4096 || align>6 || pitch<(uint64_t)width*4 ||
++        pitch&((64u<<align)-1) || !layer || layer>UINT32_MAX || (uint64_t)pitch*height>layer)return false;
++    uint32_t va=words[4];
++    if(!va || (uint64_t)va+layer>UINT64_C(0x100000000))return false;
++    const struct sgpu_descriptor_range *owned=NULL;
++    for(uint32_t i=0;i<nr;i++) {
++        const struct sgpu_descriptor_range *r=&ranges[i];
++        if(!r->handle || !r->gpu_va || (r->gpu_va&4095) || !r->bytes ||
++            (uint64_t)r->gpu_va+r->bytes>UINT64_C(0x100000000))return false;
++        for(uint32_t j=0;j<i;j++)if((uint64_t)r->gpu_va<(uint64_t)ranges[j].gpu_va+ranges[j].bytes &&
++            (uint64_t)ranges[j].gpu_va<(uint64_t)r->gpu_va+r->bytes)return false;
++        if(va>=r->gpu_va && va-r->gpu_va<=r->bytes && layer<=r->bytes-(va-r->gpu_va)) {
++            if(owned)return false; /* ambiguous supplied ownership is refused */
++            owned=r;
++        }
++    }
++    if(!owned)return false;
++    struct sgpu_texture_result checked={owned->handle,va,width,height,pitch,(uint32_t)layer};*result=checked;return true;
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/bsd/dev/santoni_gpu_descriptors.h b/bsd/dev/santoni_gpu_descriptors.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_descriptors.h
+@@ -0,0 +1,12 @@
++#ifndef SANTONI_DESCRIPTOR_SUBSET_H
++#define SANTONI_DESCRIPTOR_SUBSET_H
++#include <stdbool.h>
++#include <stdint.h>
++struct sgpu_descriptor_range {uint32_t handle,gpu_va,bytes;};
++struct sgpu_texture_result {uint32_t handle,gpu_va,width,height,pitch,layer_bytes;};
++/* Initial bounded linear, single-layer/mip RGBA8 profile only. Caller must
++ * supply exclusively same-owner public readable ranges, never private fences
++ * or kernel buffers. This does not authorize state uploads or raster commands. */
++bool sgpu_sampler_subset(const uint32_t *,uint32_t);
++bool sgpu_texture_subset(const uint32_t *,uint32_t,const struct sgpu_descriptor_range *,uint32_t,struct sgpu_texture_result *);
++#endif
+diff --git a/bsd/dev/santoni_gpu_graphics.c b/bsd/dev/santoni_gpu_graphics.c
+--- a/bsd/dev/santoni_gpu_graphics.c
++++ b/bsd/dev/santoni_gpu_graphics.c
+@@ -9,6 +9,8 @@
+ #define CLIENT_PTE_RO (CLIENT_PTE_FLAGS|(3ull<<6))
+ #define CLIENT_PTE_RW (CLIENT_PTE_FLAGS|(1ull<<6))
+ #define CLIENT_FN __attribute__((noinline))
++_Static_assert(SGPU_GRAPHICS_WIDE_VA==0x02000000u,"separate Santoni guest VA");
++_Static_assert(SGPU_GRAPHICS_MAX_PAGES+SGPU_GRAPHICS_BOS+1u<=SGPU_GRAPHICS_WIDE_PAGES,"owned buffers and guards fit");
+
+ static bool CLIENT_FN sgpu_graphics_admitted(const struct sgpu_graphics *c, uint64_t owner)
+ {
+@@ -35,20 +37,26 @@
+ {
+     if (!c || !owner || !ops || !ops->ready || !ops->allocate || !ops->release ||
+         !ops->page_pa || !ops->reserved_pa || !ops->map || !ops->unmap || !ops->pte ||
+-        !ops->clean || !ops->invalidate || !ops->prepare_ibs || !ops->validate_ib || !ops->publish ||
++        !ops->clean || !ops->invalidate || !ops->prepare_ibs || (!ops->validate_ib && !ops->validate_ibs) || !ops->publish ||
+         !ops->invalidate_fence || !ops->fence || !ops->faulted || !ops->idle ||
+-        !ops->now_us || !ops->wait_us || !ops->ready(ops->ctx)) return false;
++        !ops->now_us || !ops->wait_us || ops->vm_profile>SGPU_GRAPHICS_VM_WIDE || !ops->ready(ops->ctx)) return false;
++    bool wide=ops->vm_profile==SGPU_GRAPHICS_VM_WIDE;
++    uint32_t base=wide?SGPU_GRAPHICS_WIDE_VA:SGPU_RENDER_VA;
++    uint32_t va_pages=wide?SGPU_GRAPHICS_WIDE_PAGES:SGPU_RENDER_MAX_PAGES;
+     /* Caller supplies fresh, zeroed state. Reinitialization could lose leases. */
+     if (c->initialized || c->retained_pages || c->owner ||
+         (ops->fence_pa&(SGPU_PAGE-1)) || ops->fence_pa<SGPU_DMA_MIN ||
+         ops->fence_pa>SGPU_DMA_END-SGPU_PAGE || !ops->reserved_pa(ops->ctx,ops->fence_pa) ||
+         !ops->idle(ops->ctx) || ops->faulted(ops->ctx) ||
+-        ops->pte(ops->ctx,SGPU_RENDER_VA)!=(ops->fence_pa|CLIENT_PTE_RW)) return false;
+-    for (uint32_t i=1;i<SGPU_RENDER_MAX_PAGES;i++)
+-        if (ops->pte(ops->ctx,SGPU_RENDER_VA+i*SGPU_PAGE)) return false;
++        ops->pte(ops->ctx,base)!=(ops->fence_pa|CLIENT_PTE_RW)) return false;
++    for (uint32_t i=1;i<va_pages;i++)
++        if (ops->pte(ops->ctx,base+i*SGPU_PAGE)) return false;
+     ops->invalidate_fence(ops->ctx);
+     if (ops->fence(ops->ctx)) return false;
+     memset(c,0,sizeof(*c));c->ops=*ops;c->owner=owner;
++    c->va_base=base;c->va_pages=va_pages;
++    c->physical_pages=wide?SGPU_GRAPHICS_MAX_PAGES:SGPU_GRAPHICS_PAGES;
++    c->bo_bytes=wide?SGPU_GRAPHICS_WIDE_BO_BYTES:SGPU_RENDER_BO_BYTES;
+     c->next_handle=1;c->va_used[0]=2;c->initialized=true;
+     return true;
+ }
+@@ -69,7 +77,7 @@
+ {
+     if (!m->va || ((uintptr_t)m->va&(SGPU_PAGE-1)) || !m->pa ||
+         ((uintptr_t)m->pa&7) || !m->cookie ||
+-        m->pages!=pages || pages>SGPU_GRAPHICS_PAGES) return false;
++        m->pages!=pages || pages>c->physical_pages) return false;
+     uintptr_t va=(uintptr_t)m->va,pa=(uintptr_t)m->pa;
+     uintptr_t length=(uintptr_t)pages*SGPU_PAGE,pa_length=(uintptr_t)pages*8;
+     if (va>UINTPTR_MAX-length || pa>UINTPTR_MAX-pa_length ||
+@@ -83,7 +91,7 @@
+         if ((pa&(SGPU_PAGE-1)) || pa<SGPU_DMA_MIN || pa>SGPU_DMA_END-SGPU_PAGE ||
+             c->ops.page_pa(c->ops.ctx,m,i)!=pa || c->ops.reserved_pa(c->ops.ctx,pa)) return false;
+         for (uint32_t j=0;j<i;j++) if (m->pa[j]==pa) return false;
+-        for (uint32_t j=0;j<SGPU_GRAPHICS_PAGES;j++)
++        for (uint32_t j=0;j<c->physical_pages;j++)
+             if (c->physical_used[j] && c->pa[j]==pa) return false;
+     }
+     return true;
+@@ -91,15 +99,15 @@
+ static uint32_t CLIENT_FN sgpu_graphics_allocate(struct sgpu_graphics *c,
+     uint32_t bytes, uint32_t flags, bool private_ib)
+ {
+-    if (!bytes || bytes>SGPU_RENDER_BO_BYTES || (flags!=SGPU_GRAPHICS_RO && flags!=SGPU_GRAPHICS_RW) ||
++    if (!bytes || bytes>c->bo_bytes || (flags!=SGPU_GRAPHICS_RO && flags!=SGPU_GRAPHICS_RW) ||
+         c->active || !c->next_handle || c->next_handle==UINT32_MAX) return 0;
+     if (!c->ops.ready(c->ops.ctx)) {sgpu_graphics_fail(c,SG_GRAPHICS_OFF);return 0;}
+     uint32_t pages=(bytes+SGPU_PAGE-1)/SGPU_PAGE;
+     unsigned slot=0;
+     while (slot<SGPU_GRAPHICS_BOS && c->bo[slot].live) slot++;
+-    uint32_t first=sgpu_graphics_run(c->va_used,SGPU_RENDER_MAX_PAGES,1,pages+1);
+-    uint32_t physical=sgpu_graphics_run(c->physical_used,SGPU_GRAPHICS_PAGES,0,pages);
+-    if (slot==SGPU_GRAPHICS_BOS || first==SGPU_RENDER_MAX_PAGES || physical==SGPU_GRAPHICS_PAGES) return 0;
++    uint32_t first=sgpu_graphics_run(c->va_used,c->va_pages,1,pages+1);
++    uint32_t physical=sgpu_graphics_run(c->physical_used,c->physical_pages,0,pages);
++    if (slot==SGPU_GRAPHICS_BOS || first==c->va_pages || physical==c->physical_pages) return 0;
+     struct sgpu_graphics_memory m={0};
+     if (!c->ops.allocate(c->ops.ctx,pages*SGPU_PAGE,private_ib,&m)) return 0;
+     if (!sgpu_graphics_memory_valid(c,&m,pages)) {c->ops.release(c->ops.ctx,&m);return 0;}
+@@ -114,7 +122,7 @@
+     memset(m.va,0,pages*SGPU_PAGE);
+     c->ops.clean(c->ops.ctx,m.va,pages*SGPU_PAGE);
+     if (!c->ops.ready(c->ops.ctx)) {sgpu_graphics_fail(c,SG_GRAPHICS_OFF);return 0;}
+-    uint32_t va=SGPU_RENDER_VA+first*SGPU_PAGE,guard=va+pages*SGPU_PAGE;
++    uint32_t va=c->va_base+first*SGPU_PAGE,guard=va+pages*SGPU_PAGE;
+     /* Preserve owned backing before the first potentially live map callback. */
+     b->exposed=true;
+     uint64_t attr=flags==SGPU_GRAPHICS_RO?CLIENT_PTE_RO:CLIENT_PTE_RW;
+@@ -138,7 +146,7 @@
+     for (unsigned i=0;i<SGPU_GRAPHICS_BOS;i++) {
+         const struct sgpu_graphics_bo *b=&c->bo[i];
+         if (b->live && !b->private_ib && b->handle==handle) {
+-            *out=(struct sgpu_graphics_range){handle,SGPU_RENDER_VA+b->first*SGPU_PAGE,b->bytes,b->flags};
++            *out=(struct sgpu_graphics_range){handle,c->va_base+b->first*SGPU_PAGE,b->bytes,b->flags};
+             return true;
+         }
+     }
+@@ -147,7 +155,7 @@
+ static bool CLIENT_FN sgpu_graphics_bo_valid(struct sgpu_graphics *c, struct sgpu_graphics_bo *b)
+ {
+     uint64_t attr=b->flags==SGPU_GRAPHICS_RO?CLIENT_PTE_RO:CLIENT_PTE_RW;
+-    uint32_t va=SGPU_RENDER_VA+b->first*SGPU_PAGE;
++    uint32_t va=c->va_base+b->first*SGPU_PAGE;
+     for (uint32_t i=0;i<b->pages;i++)
+         if (c->ops.page_pa(c->ops.ctx,&b->memory,i)!=c->pa[b->physical+i] ||
+             c->ops.pte(c->ops.ctx,va+i*SGPU_PAGE)!=(c->pa[b->physical+i]|attr))
+@@ -169,7 +177,7 @@
+ {
+     if (c->active || b->quarantine) return false;
+     if (!c->ops.ready(c->ops.ctx)) return sgpu_graphics_fail(c,SG_GRAPHICS_OFF);
+-    uint32_t va=SGPU_RENDER_VA+b->first*SGPU_PAGE;
++    uint32_t va=c->va_base+b->first*SGPU_PAGE;
+     if (!c->ops.unmap(c->ops.ctx,va,b->pages,va+b->pages*SGPU_PAGE)) return sgpu_graphics_fail(c,SG_GRAPHICS_UNMAP);
+     for (uint32_t i=0;i<=b->pages;i++)
+         if (c->ops.pte(c->ops.ctx,va+i*SGPU_PAGE)) return sgpu_graphics_fail(c,SG_GRAPHICS_UNMAP);
+@@ -231,14 +239,18 @@
+              * execute interval must also be immutable; they can be relocated
+              * within this one private copy. Root offsets/lengths stay bounded. */
+             memcpy(snapshot->memory.va,source->memory.va,source->bytes);
+-            snapshots[index]=(struct sgpu_graphics_snapshot){SGPU_RENDER_VA+source->first*SGPU_PAGE,
+-                SGPU_RENDER_VA+snapshot->first*SGPU_PAGE,source->bytes,(uint32_t *)(void *)snapshot->memory.va};
++            snapshots[index]=(struct sgpu_graphics_snapshot){c->va_base+source->first*SGPU_PAGE,
++                c->va_base+snapshot->first*SGPU_PAGE,source->bytes,(uint32_t *)(void *)snapshot->memory.va};
+         }
+         command_snapshot[i]=index;
+         commands[i]=(struct sgpu_graphics_command){snapshots[index].gpu_va+input[i].offset,input[i].bytes};
+     }
+     if (!c->ops.prepare_ibs(c->ops.ctx,snapshots,c->snapshot_count,commands,ni,ranges,nb)) {sgpu_graphics_drop_snapshots(c);return 0;}
+-    for (uint32_t i=0;i<ni;i++) {
++    if(c->ops.validate_ibs) {
++        if(!c->ops.validate_ibs(c->ops.ctx,snapshots,c->snapshot_count,commands,ni,ranges,nb)) {
++            sgpu_graphics_drop_snapshots(c);return 0;
++        }
++    } else for (uint32_t i=0;i<ni;i++) {
+         struct sgpu_graphics_bo *snapshot=sgpu_graphics_lookup(c,c->snapshots[command_snapshot[i]]);
+         if (!c->ops.validate_ib(c->ops.ctx,(const uint32_t *)(const void *)(snapshot->memory.va+input[i].offset),
+             input[i].bytes/4,ranges,nb)) {sgpu_graphics_drop_snapshots(c);return 0;}
+@@ -262,7 +274,11 @@
+         struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,c->snapshots[i]);
+         if (!sgpu_graphics_bo_valid(c,b)) return 0;
+     }
+-    for (uint32_t i=0;i<ni;i++) {
++    if(c->ops.validate_ibs) {
++        if(!c->ops.validate_ibs(c->ops.ctx,snapshots,c->snapshot_count,commands,ni,ranges,nb)) {
++            sgpu_graphics_fail(c,SG_GRAPHICS_COMMAND);return 0;
++        }
++    } else for (uint32_t i=0;i<ni;i++) {
+         struct sgpu_graphics_bo *b=sgpu_graphics_lookup(c,c->snapshots[command_snapshot[i]]);
+         if (!c->ops.validate_ib(c->ops.ctx,(const uint32_t *)(const void *)(b->memory.va+input[i].offset),
+             input[i].bytes/4,ranges,nb)) {sgpu_graphics_fail(c,SG_GRAPHICS_COMMAND);return 0;}
+diff --git a/bsd/dev/santoni_gpu_graphics.h b/bsd/dev/santoni_gpu_graphics.h
+--- a/bsd/dev/santoni_gpu_graphics.h
++++ b/bsd/dev/santoni_gpu_graphics.h
+@@ -9,6 +9,18 @@
+ #define SGPU_GRAPHICS_IBS 8u
+ #define SGPU_GRAPHICS_IB_BYTES (16u*SGPU_PAGE)
+ #define SGPU_GRAPHICS_PAGES SGPU_RENDER_LIVE_PAGES
++#define SGPU_GRAPHICS_VM_LEGACY 0u
++#define SGPU_GRAPHICS_VM_WIDE 1u
++/* Engineering guest-VA geometry derived from the programmed Santoni4K,
++ * 512-entry L3/2MiB L2 layout. Not a physical/TZ/DTS allocation. Retain
++ * the tested8MiB render aperture and all SGPU_RENDER_* limits unchanged. */
++#define SGPU_GRAPHICS_WIDE_BYTES (32u*1024u*1024u)
++#define SGPU_GRAPHICS_WIDE_VA ((SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE+SGPU_GRAPHICS_WIDE_BYTES-1)&~(SGPU_GRAPHICS_WIDE_BYTES-1))
++#define SGPU_GRAPHICS_WIDE_PAGES (SGPU_GRAPHICS_WIDE_BYTES/SGPU_PAGE)
++#define SGPU_GRAPHICS_PRIVATE_PAGES (SGPU_GRAPHICS_IBS*SGPU_GRAPHICS_IB_BYTES/SGPU_PAGE)
++#define SGPU_GRAPHICS_WIDE_PUBLIC_PAGES (24u*1024u*1024u/SGPU_PAGE)
++#define SGPU_GRAPHICS_MAX_PAGES (SGPU_GRAPHICS_WIDE_PUBLIC_PAGES+SGPU_GRAPHICS_PRIVATE_PAGES)
++#define SGPU_GRAPHICS_WIDE_BO_BYTES (8u*1024u*1024u)
+ #define SGPU_GRAPHICS_RO 1u
+ #define SGPU_GRAPHICS_RW 2u
+ #define SGPU_GRAPHICS_WAIT_READS 2001u
+@@ -38,6 +50,7 @@
+ };
+ struct sgpu_graphics_ops {
+     void *ctx;
++    uint32_t vm_profile; /* exact LEGACY0 or WIDE1, no caller-defined addresses */
+     uint64_t fence_pa; /* fresh owned page, writable GPU / read-only user view */
+     /* The adapter must enforce explicit opt-in, one owner and the same mutex
+      * as all GPU producers. A ready callback does not certify hardware. */
+@@ -71,6 +84,12 @@
+      * This generic contract itself does not authorize raw Mesa commands. */
+     bool (*validate_ib)(void *, const uint32_t *, uint32_t,
+                         const struct sgpu_graphics_range *, uint32_t);
++    /* Optional replacement for the legacy one-root validator. Ordered raster
++     * policies MUST use this complete, immutable submission view and reset
++     * their state on EACH invocation (before and after cache callbacks). */
++    bool (*validate_ibs)(void *,const struct sgpu_graphics_snapshot *,uint32_t,
++                        const struct sgpu_graphics_command *,uint32_t,
++                        const struct sgpu_graphics_range *,uint32_t);
+     bool (*publish)(void *, const struct sgpu_graphics_command *, uint32_t, uint32_t);
+     void (*invalidate_fence)(void *);
+     uint32_t (*fence)(void *);
+@@ -83,8 +102,9 @@
+     struct sgpu_graphics_ops ops;
+     uint64_t owner;
+     struct sgpu_graphics_bo bo[SGPU_GRAPHICS_BOS];
+-    uint64_t pa[SGPU_GRAPHICS_PAGES];
+-    uint8_t physical_used[SGPU_GRAPHICS_PAGES], va_used[SGPU_RENDER_MAX_PAGES];
++    uint64_t pa[SGPU_GRAPHICS_MAX_PAGES];
++    uint8_t physical_used[SGPU_GRAPHICS_MAX_PAGES], va_used[SGPU_GRAPHICS_WIDE_PAGES];
++    uint32_t va_base,va_pages,physical_pages,bo_bytes;
+     uint32_t next_handle, submitted, completed, active, error, retained_pages;
+     uint32_t snapshots[SGPU_GRAPHICS_IBS], snapshot_count;
+     bool initialized, closed, quarantined;
+diff --git a/bsd/dev/santoni_gpu_graphics_hw.h b/bsd/dev/santoni_gpu_graphics_hw.h
+--- a/bsd/dev/santoni_gpu_graphics_hw.h
++++ b/bsd/dev/santoni_gpu_graphics_hw.h
+@@ -2,6 +2,7 @@
+ #ifndef SANTONI_GPU_GRAPHICS_HW_H
+ #define SANTONI_GPU_GRAPHICS_HW_H
+ #include "santoni_gpu_graphics.h"
++#include "santoni_gpu_vm.h"
+ struct sgpu_graphics_hw_result {
+     uint32_t error,wptr,pending;
+     bool ready,failed,exposed;
+@@ -9,6 +10,9 @@
+ };
+ bool santoni_gpu_graphics_worker_ready(void);
+ bool sgpu_graphics_hw_begin(uint32_t,uint32_t);
++bool sgpu_graphics_hw_begin_vm(uint32_t,uint32_t,const struct gvm_memory *,const struct gvm_ops *);
++uint32_t sgpu_graphics_hw_vm_profile(void);
++bool sgpu_graphics_hw_legacy_reserved(uint64_t);
+ bool sgpu_graphics_hw_ready(void);
+ bool sgpu_graphics_hw_map(uint32_t,const uint64_t *,uint32_t,uint64_t,uint32_t);
+ bool sgpu_graphics_hw_unmap(uint32_t,uint32_t,uint32_t);
+diff --git a/bsd/dev/santoni_gpu_ir3.c b/bsd/dev/santoni_gpu_ir3.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_ir3.c
+@@ -0,0 +1,181 @@
++#include "santoni_gpu_ir3.h"
++#include <stddef.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#define SGPU_IR3_FN __attribute__((noinline))
++#include "santoni_gpu_ir3_rules.h"
++#define IR3_MAX_INSTRUCTIONS 1024u
++/* Mesa ir3-common.xml: GPR61 is a0.*, GPR62 is p0.*. Neither special
++ * bank is admitted. Remaining r63.* forms are refused as well. */
++#define IR3_SCALARS (61u*4u)
++struct execution {
++    struct sgpu_ir3_result r;
++    uint64_t pending[4],borrowed[4];
++    uint32_t alu_ready[IR3_SCALARS],sam_ready[IR3_SCALARS];
++};
++enum access {READ_ALU,READ_SAM,WRITE_ALU,WRITE_SAM};
++static bool SGPU_IR3_FN sgpu_ir3_reg(struct execution *e,uint32_t scalar,uint32_t count,enum access access)
++{
++    struct sgpu_ir3_result *r=&e->r;
++    if(!count || scalar>=IR3_SCALARS || count>IR3_SCALARS-scalar)return false;
++    for(uint32_t i=0;i<count;i++) {
++        uint32_t s=scalar+i;uint64_t bit=UINT64_C(1)<<(s%64);
++        /* ir3_legalize.c: outstanding SAM destinations need SY before reads
++         * OR writes (including a second SAM). NOPs/END without SY do not
++         * substitute for that wait. Never publish a result on failure. */
++        if(e->pending[s/64]&bit)return false;
++        if(access==WRITE_ALU || access==WRITE_SAM) {
++            /* ir3_legalize.c needs_ss_or_sy_war: SAM need not have consumed
++             * its coordinate registers yet. Only an explicit SY in this
++             * subset releases them; arbitrary intervening NOPs do not. */
++            if(e->borrowed[s/64]&bit)return false;
++            r->defined[s/64]|=bit;r->written[s/64]|=bit;
++            if(access==WRITE_SAM) {
++                e->pending[s/64]|=bit;e->alu_ready[s]=e->sam_ready[s]=0;
++            } else {
++                /* Pinned A5xx ir3_compiler.c/ir3_delay.c: 3 intervening
++                 * cycles ALU->ALU, 6 ALU->SAM. Conservatively do not use
++                 * MAD source2's late-read optimization. Repeats are actual
++                 * scalar cycles, not a single destination footprint check. */
++                e->alu_ready[s]=r->steps+4;e->sam_ready[s]=r->steps+7;
++            }
++        } else {
++            if(!(r->defined[s/64]&bit))return false;
++            if(r->steps<(access==READ_SAM?e->sam_ready[s]:e->alu_ready[s]))return false;
++            if(!(r->written[s/64]&bit))r->input_reads[s/64]|=bit;
++        }
++    }
++    uint32_t registers=(scalar+count+3)/4;
++    if(r->registers<registers)r->registers=registers;
++    return true;
++}
++static bool SGPU_IR3_FN sgpu_ir3_constant(struct sgpu_ir3_result *r,const struct sgpu_ir3_limits *l,uint32_t scalar)
++{
++    if(scalar>=l->constant_scalars)return false;
++    r->constant_reads[scalar/64]|=UINT64_C(1)<<(scalar%64);
++    if(r->constant_scalars<scalar+1)r->constant_scalars=scalar+1;
++    return true;
++}
++static bool SGPU_IR3_FN sgpu_ir3_full_type(uint32_t type) {return type==1 || type==3 || type==5;}
++static bool SGPU_IR3_FN sgpu_ir3_src2(struct execution *e,const struct sgpu_ir3_limits *l,uint32_t value,uint32_t increment)
++{
++    /* ir3-common.xml #multisrc-gpr/const. Relative, integer immediate,
++     * half and undocumented constant bit13 are refused. ABSNEG/LAST remain
++     * supported only on previously admitted direct register forms. */
++    uint32_t mode=value&0x3fffu;
++    if((mode&0x3c00u)==0 || (mode&0x3c00u)==0x400u)
++        return !(mode&0x300u) && sgpu_ir3_reg(e,(mode&255u)+increment,1,READ_ALU);
++    if((mode&0x3800u)==0x1000u)
++        return sgpu_ir3_constant(&e->r,l,(mode&0x7ffu)+increment);
++    /* Exact observed full-precision FLUT lookup1=.5. Do not strip bit10,
++     * modifiers or high lookup bits and accidentally admit a different
++     * encoding. ir3_rpt.c supports incrementing immediates ONLY for BARY/
++     * FLAT; MUL FLUT must not carry an incrementing-source flag. */
++    return value==0x2801u && !increment;
++}
++static bool SGPU_IR3_FN sgpu_ir3_src3(struct execution *e,const struct sgpu_ir3_limits *l,uint32_t value,uint32_t increment)
++{
++    /* ir3-cat3.xml: GPR may carry LAST bit10; direct constants use bit12
++     * and must have bit11 clear. Addition is on decoded scalar indices,
++     * never encoded words (which could wrap into relative/special banks). */
++    if((value&0x1b00u)==0)return sgpu_ir3_reg(e,(value&255u)+increment,1,READ_ALU);
++    return (value&0x1800u)==0x1000u && sgpu_ir3_constant(&e->r,l,(value&0x7ffu)+increment);
++}
++static bool SGPU_IR3_FN sgpu_ir3_pending(const struct execution *e)
++{return e->pending[0] || e->pending[1] || e->pending[2] || e->pending[3];}
++static void SGPU_IR3_FN sgpu_ir3_synchronize(struct execution *e)
++{
++    for(unsigned i=0;i<4;i++)e->pending[i]=e->borrowed[i]=0;
++    e->r.synchronizations++;
++}
++bool SGPU_IR3_FN sgpu_ir3_subset(const uint32_t *words,uint32_t available,const struct sgpu_ir3_limits *limits,struct sgpu_ir3_result *result)
++{
++    if(!words || ((uintptr_t)words&3) || !limits || !result || available<128 ||
++        limits->constant_scalars>2048 || limits->samplers>16 || limits->textures>16 ||
++        limits->varying_scalars>128 || (limits->inputs[3]>>52))return false;
++    struct execution e={0};struct sgpu_ir3_result *r=&e.r;
++    for(unsigned i=0;i<4;i++)r->defined[i]=limits->inputs[i];
++    /* available is an owned readable BO tail, not the shader extent. Only
++     * complete instructions are decoded; END must have zero alignment pad
++     * inside a whole128-byte unit, matching its LOAD_STATE4 request. */
++    uint32_t count=available/8;if(count>IR3_MAX_INSTRUCTIONS)count=IR3_MAX_INSTRUCTIONS;
++    for(uint32_t i=0;i<count;i++) {
++        uint64_t value=(uint64_t)words[i*2]|((uint64_t)words[i*2+1]<<32);
++        const struct ir3_rule *rule=NULL;
++        for(unsigned j=0;j<sizeof(rules)/sizeof(rules[0]);j++)if((value&rules[j].mask)==rules[j].value) {rule=&rules[j];break;}
++        if(!rule)return false;
++        r->instructions++;
++        switch(rule->kind) {
++        case IR3_NOP:r->steps+=1+IR3_NOP_REPEAT(value);break;
++        case IR3_END: {
++            if(IR3_END_SY(value))sgpu_ir3_synchronize(&e);
++            if(sgpu_ir3_pending(&e) || (r->bary_instructions && !r->input_released))return false;
++            uint32_t extent=((i+1)*8u+127u)&~127u;if(extent>available)return false;
++            for(uint32_t pad=i+1;pad<extent/8;pad++)if(words[pad*2] || words[pad*2+1])return false;
++            r->steps++;r->extent=extent;*result=*r;return true;
++        }
++        case IR3_MOV_IMMED:
++            if(!sgpu_ir3_full_type(IR3_MOV_IMMED_SRC_TYPE(value)) || !sgpu_ir3_full_type(IR3_MOV_IMMED_DST_TYPE(value)) ||
++                !sgpu_ir3_reg(&e,IR3_MOV_IMMED_DST(value),1,WRITE_ALU))return false;
++            r->steps++;break;
++        case IR3_MOV_CONST:
++            if(!sgpu_ir3_full_type(IR3_MOV_CONST_SRC_TYPE(value)) || !sgpu_ir3_full_type(IR3_MOV_CONST_DST_TYPE(value)) ||
++                !sgpu_ir3_constant(r,limits,IR3_MOV_CONST_SRC(value)) || !sgpu_ir3_reg(&e,IR3_MOV_CONST_DST(value),1,WRITE_ALU))return false;
++            r->steps++;break;
++        case IR3_MOV_GPR:
++            if(!sgpu_ir3_full_type(IR3_MOV_GPR_SRC_TYPE(value)) || !sgpu_ir3_full_type(IR3_MOV_GPR_DST_TYPE(value)) ||
++                !sgpu_ir3_reg(&e,IR3_MOV_GPR_SRC(value),1,READ_ALU) || !sgpu_ir3_reg(&e,IR3_MOV_GPR_DST(value),1,WRITE_ALU))return false;
++            r->steps++;break;
++        case IR3_MUL: {
++            uint32_t repeat=IR3_MUL_REPEAT(value),a=IR3_MUL_SRC1_R(value),b=IR3_MUL_SRC2_R(value);
++            /* With repeat0 these bits mean a nop-encoding override, not an
++             * incrementing operand. That distinct form is NOT admitted. */
++            if(!repeat && (a || b))return false;
++            if((a && IR3_MUL_SRC1(value)==0x2801u) || (b && IR3_MUL_SRC2(value)==0x2801u))return false;
++            if(IR3_MUL_SY(value))sgpu_ir3_synchronize(&e);
++            for(uint32_t n=0;n<=repeat;n++) {
++                if(!sgpu_ir3_src2(&e,limits,IR3_MUL_SRC1(value),a?n:0) || !sgpu_ir3_src2(&e,limits,IR3_MUL_SRC2(value),b?n:0) ||
++                    !sgpu_ir3_reg(&e,IR3_MUL_DST(value)+n,1,WRITE_ALU))return false;
++                r->steps++;
++            }
++            break;
++        }
++        case IR3_MAD: {
++            uint32_t repeat=IR3_MAD_REPEAT(value),a=IR3_MAD_SRC1_R(value),b=IR3_MAD_SRC2_R(value),c=IR3_MAD_SRC3_R(value);
++            if(!repeat && (a || b || c))return false;
++            if(IR3_MAD_SY(value))sgpu_ir3_synchronize(&e);
++            for(uint32_t n=0;n<=repeat;n++) {
++                if(!sgpu_ir3_src3(&e,limits,IR3_MAD_SRC1(value),a?n:0) ||
++                    !sgpu_ir3_reg(&e,IR3_MAD_SRC2(value)+(b?n:0),1,READ_ALU) ||
++                    !sgpu_ir3_src3(&e,limits,IR3_MAD_SRC3(value),c?n:0) || !sgpu_ir3_reg(&e,IR3_MAD_DST(value)+n,1,WRITE_ALU))return false;
++                r->steps++;
++            }
++            break;
++        }
++        case IR3_BARY: {
++            uint32_t inloc=IR3_BARY_SRC1(value),ij=IR3_BARY_SRC2(value);
++            /* Packed varying slot is a NONNEGATIVE integer immediate, no
++             * modifiers/half/repeat. A5xx cannot rpt BARY. The second source
++             * is the full I/J pair from ir3_compiler_nir.c, not one scalar.
++             * The concrete raster binder must prove this system input pair. */
++            if((inloc&~0x3ffu)!=0x2000u || (inloc&0x3ffu)>=limits->varying_scalars ||
++                (ij&~255u) || r->input_released || !sgpu_ir3_reg(&e,ij,2,READ_ALU) ||
++                !sgpu_ir3_reg(&e,IR3_BARY_DST(value),1,WRITE_ALU))return false;
++            uint32_t slot=inloc&0x3ffu;r->varying_reads[slot/64]|=UINT64_C(1)<<(slot%64);
++            for(unsigned lane=0;lane<2;lane++)r->bary_inputs[(ij+lane)/64]|=UINT64_C(1)<<((ij+lane)%64);
++            r->input_released=IR3_BARY_EI(value)!=0;r->bary_instructions++;r->steps++;break;
++        }
++        case IR3_SAM: {
++            if(!IR3_SAM_FULL(value) || IR3_SAM_TYPE(value)!=1 || IR3_SAM_SAMP(value)>=limits->samplers ||
++                IR3_SAM_TEX(value)>=limits->textures || !sgpu_ir3_reg(&e,IR3_SAM_SRC1(value),2,READ_SAM))return false;
++            uint32_t mask=IR3_SAM_WRMASK(value),dst=IR3_SAM_DST(value);if(!mask)return false;
++            uint32_t coord=IR3_SAM_SRC1(value);
++            for(unsigned lane=0;lane<2;lane++)e.borrowed[(coord+lane)/64]|=UINT64_C(1)<<((coord+lane)%64);
++            for(unsigned lane=0;lane<4;lane++)if((mask>>lane)&1)if(!sgpu_ir3_reg(&e,dst+lane,1,WRITE_SAM))return false;
++            r->sampler_mask|=1u<<IR3_SAM_SAMP(value);r->texture_mask|=1u<<IR3_SAM_TEX(value);
++            r->samples++;r->steps++;break;
++        }
++        }
++    }
++    return false; /* missing unconditional END within hard instruction budget */
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/bsd/dev/santoni_gpu_ir3.h b/bsd/dev/santoni_gpu_ir3.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_ir3.h
+@@ -0,0 +1,21 @@
++#ifndef SANTONI_IR3_SUBSET_H
++#define SANTONI_IR3_SUBSET_H
++#include <stdbool.h>
++#include <stdint.h>
++struct sgpu_ir3_limits {
++    uint32_t constant_scalars,samplers,textures,varying_scalars;
++    uint64_t inputs[4]; /* adapter-proven initial full-precision GPR lanes */
++};
++struct sgpu_ir3_result {
++    uint32_t extent,instructions,steps,registers,constant_scalars,samples;
++    uint32_t sampler_mask,texture_mask;
++    uint64_t defined[4],written[4],input_reads[4];
++    uint64_t varying_reads[2],bary_inputs[4];
++    uint64_t constant_reads[32]; /* exact used scalars, not a guessed prefix */
++    uint32_t bary_instructions,synchronizations;
++    bool input_released;
++};
++/* Immutable bytes only, no MMIO/SMC/allocations. This limited shader check
++ * cannot authorize descriptors, initial inputs, shader outputs or raster state. */
++bool sgpu_ir3_subset(const uint32_t *,uint32_t,const struct sgpu_ir3_limits *,struct sgpu_ir3_result *);
++#endif
+diff --git a/bsd/dev/santoni_gpu_ir3_rules.h b/bsd/dev/santoni_gpu_ir3_rules.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_ir3_rules.h
+@@ -0,0 +1,61 @@
++/* Generated from Mesa25.0.7 IR3 XML (Google, MIT); restrictive subset. */
++enum ir3_kind {IR3_NOP,IR3_END,IR3_MOV_IMMED,IR3_MOV_CONST,IR3_MOV_GPR,IR3_MUL,IR3_MAD,IR3_BARY,IR3_SAM};
++struct ir3_rule {uint64_t mask,value;enum ir3_kind kind;};
++static const struct ir3_rule rules[]={
++ {UINT64_C(0xfffff8ffffffffff),UINT64_C(0x0000000000000000),IR3_NOP}, /* nop */
++ {UINT64_C(0xefffffffffffffff),UINT64_C(0x0300000000000000),IR3_END}, /* end */
++ {UINT64_C(0xffe23f0000000000),UINT64_C(0x2040000000000000),IR3_MOV_IMMED}, /* mov-immed */
++ {UINT64_C(0xffe23f00fffff800),UINT64_C(0x2020000000000000),IR3_MOV_CONST}, /* mov-const */
++ {UINT64_C(0xffe23f00fffffb00),UINT64_C(0x2000000000000000),IR3_MOV_GPR}, /* mov-gpr */
++ {UINT64_C(0xeff7f00000000000),UINT64_C(0x4070000000000000),IR3_MUL}, /* mul.f */
++ {UINT64_C(0xef80700000002000),UINT64_C(0x6380000000000000),IR3_MAD}, /* mad.f32 */
++ {UINT64_C(0xffff7f0000000000),UINT64_C(0x4730000000000000),IR3_BARY}, /* bary.f */
++ {UINT64_C(0xffff8000001ffe00),UINT64_C(0xa0c0000000000000),IR3_SAM}, /* sam */
++};
++#define IR3_BARY_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_BARY_EI(v) ((uint32_t)(((v)>>47u)&UINT64_C(0x1)))
++#define IR3_BARY_SRC1(v) ((uint32_t)(((v)>>0u)&UINT64_C(0xffff)))
++#define IR3_BARY_SRC2(v) ((uint32_t)(((v)>>16u)&UINT64_C(0xffff)))
++#define IR3_END_SY(v) ((uint32_t)(((v)>>60u)&UINT64_C(0x1)))
++#define IR3_MAD_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_MAD_REPEAT(v) ((uint32_t)(((v)>>40u)&UINT64_C(0x3)))
++#define IR3_MAD_SAT(v) ((uint32_t)(((v)>>42u)&UINT64_C(0x1)))
++#define IR3_MAD_SRC1(v) ((uint32_t)(((v)>>0u)&UINT64_C(0x1fff)))
++#define IR3_MAD_SRC1_NEG(v) ((uint32_t)(((v)>>14u)&UINT64_C(0x1)))
++#define IR3_MAD_SRC1_R(v) ((uint32_t)(((v)>>43u)&UINT64_C(0x1)))
++#define IR3_MAD_SRC2(v) ((uint32_t)(((v)>>47u)&UINT64_C(0xff)))
++#define IR3_MAD_SRC2_NEG(v) ((uint32_t)(((v)>>30u)&UINT64_C(0x1)))
++#define IR3_MAD_SRC2_R(v) ((uint32_t)(((v)>>15u)&UINT64_C(0x1)))
++#define IR3_MAD_SRC3(v) ((uint32_t)(((v)>>16u)&UINT64_C(0x1fff)))
++#define IR3_MAD_SRC3_NEG(v) ((uint32_t)(((v)>>31u)&UINT64_C(0x1)))
++#define IR3_MAD_SRC3_R(v) ((uint32_t)(((v)>>29u)&UINT64_C(0x1)))
++#define IR3_MAD_SY(v) ((uint32_t)(((v)>>60u)&UINT64_C(0x1)))
++#define IR3_MOV_CONST_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_MOV_CONST_DST_TYPE(v) ((uint32_t)(((v)>>46u)&UINT64_C(0x7)))
++#define IR3_MOV_CONST_SRC(v) ((uint32_t)(((v)>>0u)&UINT64_C(0x7ff)))
++#define IR3_MOV_CONST_SRC_TYPE(v) ((uint32_t)(((v)>>50u)&UINT64_C(0x7)))
++#define IR3_MOV_GPR_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_MOV_GPR_DST_TYPE(v) ((uint32_t)(((v)>>46u)&UINT64_C(0x7)))
++#define IR3_MOV_GPR_LAST(v) ((uint32_t)(((v)>>10u)&UINT64_C(0x1)))
++#define IR3_MOV_GPR_SRC(v) ((uint32_t)(((v)>>0u)&UINT64_C(0xff)))
++#define IR3_MOV_GPR_SRC_TYPE(v) ((uint32_t)(((v)>>50u)&UINT64_C(0x7)))
++#define IR3_MOV_IMMED_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_MOV_IMMED_DST_TYPE(v) ((uint32_t)(((v)>>46u)&UINT64_C(0x7)))
++#define IR3_MOV_IMMED_SRC(v) ((uint32_t)(((v)>>0u)&UINT64_C(0xffffffff)))
++#define IR3_MOV_IMMED_SRC_TYPE(v) ((uint32_t)(((v)>>50u)&UINT64_C(0x7)))
++#define IR3_MUL_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_MUL_REPEAT(v) ((uint32_t)(((v)>>40u)&UINT64_C(0x3)))
++#define IR3_MUL_SAT(v) ((uint32_t)(((v)>>42u)&UINT64_C(0x1)))
++#define IR3_MUL_SRC1(v) ((uint32_t)(((v)>>0u)&UINT64_C(0xffff)))
++#define IR3_MUL_SRC1_R(v) ((uint32_t)(((v)>>43u)&UINT64_C(0x1)))
++#define IR3_MUL_SRC2(v) ((uint32_t)(((v)>>16u)&UINT64_C(0xffff)))
++#define IR3_MUL_SRC2_R(v) ((uint32_t)(((v)>>51u)&UINT64_C(0x1)))
++#define IR3_MUL_SY(v) ((uint32_t)(((v)>>60u)&UINT64_C(0x1)))
++#define IR3_NOP_REPEAT(v) ((uint32_t)(((v)>>40u)&UINT64_C(0x7)))
++#define IR3_SAM_DST(v) ((uint32_t)(((v)>>32u)&UINT64_C(0xff)))
++#define IR3_SAM_FULL(v) ((uint32_t)(((v)>>0u)&UINT64_C(0x1)))
++#define IR3_SAM_SAMP(v) ((uint32_t)(((v)>>21u)&UINT64_C(0xf)))
++#define IR3_SAM_SRC1(v) ((uint32_t)(((v)>>1u)&UINT64_C(0xff)))
++#define IR3_SAM_TEX(v) ((uint32_t)(((v)>>25u)&UINT64_C(0x7f)))
++#define IR3_SAM_TYPE(v) ((uint32_t)(((v)>>44u)&UINT64_C(0x7)))
++#define IR3_SAM_WRMASK(v) ((uint32_t)(((v)>>40u)&UINT64_C(0xf)))
+diff --git a/bsd/dev/santoni_gpu_pm4.c b/bsd/dev/santoni_gpu_pm4.c
+--- a/bsd/dev/santoni_gpu_pm4.c
++++ b/bsd/dev/santoni_gpu_pm4.c
+@@ -9,7 +9,11 @@
+     const struct sgpu_pm4_policy *policy;
+     const struct sgpu_graphics_snapshot *snapshots;
+     const struct sgpu_graphics_range *ranges;
+-    uint32_t ns,nr,words,nodes,depth;
++    uint32_t ns,nr,words,nodes,depth,states;
++    uint32_t shader_units[2],constant_end[2];
++    uint32_t code_count,data_count;
++    struct { uint32_t va,bytes; } code[SGPU_PM4_STATE_SPANS],data[SGPU_PM4_STATE_SPANS];
++    uint32_t active_code[SGPU_PM4_DEPTH];
+     uint32_t active_va[SGPU_PM4_DEPTH],active_bytes[SGPU_PM4_DEPTH];
+     bool prepare;
+ };
+@@ -63,12 +67,113 @@
+     for (uint32_t i=0;i<w->policy->count;i++)if(w->policy->rules[i].reg==reg)return &w->policy->rules[i];
+     return NULL;
+ }
+-static bool PM4_FN sgpu_pm4_registers(struct pm4_walk *w,uint32_t reg,const uint32_t *p,uint32_t count)
++static uint32_t PM4_FN sgpu_pm4_state_check(struct pm4_walk *w,const struct sgpu_pm4_state *state)
++{
++    if (!w->policy->state_check || w->states>=SGPU_PM4_STATE_SPANS) return false;
++    w->states++;
++    return w->policy->state_check(w->policy->state_context,state);
++}
++static bool PM4_FN sgpu_pm4_state_span(struct pm4_walk *w,uint32_t va,uint32_t bytes,bool inline_constant,bool record)
++{
++    if (!bytes || w->data_count>=SGPU_PM4_STATE_SPANS)return false;
++    for (uint32_t i=0;i<w->code_count;i++) {
++        if (inline_constant && w->depth && i==w->active_code[w->depth-1])continue;
++        if ((uint64_t)va<(uint64_t)w->code[i].va+w->code[i].bytes &&
++            (uint64_t)w->code[i].va<(uint64_t)va+bytes)return false;
++    }
++    if (record) {w->data[w->data_count].va=va;w->data[w->data_count++].bytes=bytes;}
++    return true;
++}
++static bool PM4_FN sgpu_pm4_state_data(struct pm4_walk *w,uint32_t *low,uint32_t high,
++    struct sgpu_pm4_state *state)
++{
++    if (high || !state->bytes || state->bytes>SGPU_GRAPHICS_IB_BYTES || (*low&3)!=state->type) return false;
++    uint32_t va=*low&~3u;
++    if (!state->type && (va&127u)) return false;
++    const struct sgpu_graphics_snapshot *s=NULL;
++    if (w->prepare) {
++        s=sgpu_pm4_snapshot(w,va,state->bytes,true);
++        if (s)va=s->gpu_va+va-s->source_va;
++    }
++    if (!s)s=sgpu_pm4_snapshot(w,va,state->bytes,false);
++    if (!s)return false; /* a public owned range is insufficient for executable state */
++    if (!state->type && (va&127u))return false;
++    state->gpu_va=va;state->words=s->words+(va-s->gpu_va)/4;
++    state->available_bytes=s->bytes-(va-s->gpu_va);
++    if (state->bytes>state->available_bytes || !sgpu_pm4_state_span(w,va,state->bytes,false,false))return false;
++    uint32_t approved=sgpu_pm4_state_check(w,state);
++    if (approved<state->bytes || approved>state->available_bytes ||
++        (state->shader_object ? (approved&127u)!=0 : approved!=state->bytes) ||
++        !sgpu_pm4_state_span(w,va,approved,false,true))return false;
++    if (w->prepare)*low=va|state->type;
++    return true;
++}
++static bool PM4_FN sgpu_pm4_state4(struct pm4_walk *w,uint32_t *p,uint32_t n)
++{
++    /* Pinned Mesa25.0.7 adreno_pm4.xml/fd5_emit.c/fd5_program.c. A5xx uses
++     * VS=8/FS=12; shader units are16 64-bit instructions, constants vec4s.
++     * ir3_compiler.c supplies512 pipeline constant vec4s; fd5_program.c
++     * limits the shared instruction cache to64 such shader units. */
++    if (n<3 || (p[0]&0xc000u) || p[2])return false;
++    struct sgpu_pm4_state state={.block=(p[0]>>18)&15,.type=p[1]&3,
++        .destination=p[0]&0x3fff,.units=p[0]>>22};
++    uint32_t source=(p[0]>>16)&3;
++    bool texture=state.block==0 || state.block==4;
++    if(texture) {
++        /* Mesa fd5_emit.c emit_textures: direct VS/FS sampler4 or texture12
++         * words/unit. Full descriptor/owned-span policy is mandatory below. */
++        if(source || state.destination || !state.units || state.units>16 || state.type>1 ||
++            p[1]!=state.type || n!=3+state.units*(state.type?12u:4u))return false;
++        state.bytes=state.units*(state.type?48u:16u);
++    } else {
++        if ((state.block!=8 && state.block!=12) || state.type>1 || !state.units)return false;
++        uint32_t stage=state.block==12;
++        if (state.type) {
++            if (state.destination>512 || state.units>512-state.destination)return false;
++            uint32_t end=state.destination+state.units;
++            if (end>w->constant_end[stage])w->constant_end[stage]=end;
++            if (w->constant_end[0]+w->constant_end[1]>512)return false;
++        } else {
++            if (state.destination || state.units>64)return false;
++            w->shader_units[stage]=state.units;
++            if (w->shader_units[0]+w->shader_units[1]>64)return false;
++        }
++        state.bytes=state.units*(state.type?16u:128u);
++    }
++    if (!source) {
++        if ((!texture && state.type!=1) || p[1]!=state.type || n!=3+state.bytes/4)return false;
++        state.words=p+3;
++        state.available_bytes=state.bytes;
++        for (uint32_t i=0;i<w->ns;i++) {
++            const struct sgpu_graphics_snapshot *s=&w->snapshots[i];
++            uintptr_t base=(uintptr_t)s->words,word=(uintptr_t)state.words;
++            if (word>=base && word-base<=s->bytes && state.bytes<=s->bytes-(word-base))
++                return sgpu_pm4_state_span(w,s->gpu_va+(uint32_t)(word-base),state.bytes,true,false) &&
++                    sgpu_pm4_state_check(w,&state)==state.bytes &&
++                    sgpu_pm4_state_span(w,s->gpu_va+(uint32_t)(word-base),state.bytes,true,true);
++        }
++        return false;
++    }
++    if (source!=2 || n!=3 || (state.type && ((state.destination|state.units)&3)))return false;
++    return sgpu_pm4_state_data(w,&p[1],p[2],&state);
++}
++static bool PM4_FN sgpu_pm4_registers(struct pm4_walk *w,uint32_t reg,uint32_t *p,uint32_t count)
+ {
+     for (uint32_t i=0;i<count;) {
+         const struct sgpu_pm4_rule *r=sgpu_pm4_rule(w,reg+i);
+         if (!r || (p[i]&~r->allowed_bits) || (p[i]&r->required_mask)!=r->required_value) return false;
+         if (r->kind==SG_PM4_VALUE) {i++;continue;}
++        if (r->kind==SG_PM4_SHADER64) {
++            /* A505 word indices from a5xx.xml, never an arbitrary register.
++             * Content policy must bind this entry point to an approved shader. */
++            if ((r->reg!=0xe5ac && r->reg!=0xe5c3) || i+1>=count || p[i+1] ||
++                r->shift || r->address_flags || r->address_value || r->alignment!=128 ||
++                !r->minimum_bytes || (r->minimum_bytes&127u))return false;
++            struct sgpu_pm4_state state={.block=r->reg==0xe5ac?8u:12u,
++                .bytes=r->minimum_bytes,.shader_object=true};
++            if (!sgpu_pm4_state_data(w,&p[i],p[i+1],&state))return false;
++            i+=2;continue;
++        }
+         if ((r->kind!=SG_PM4_READ64 && r->kind!=SG_PM4_WRITE64) || i+1>=count ||
+             p[i+1] || r->shift>12 || !r->alignment || (r->alignment&(r->alignment-1)) ||
+             r->alignment>SGPU_PAGE || !r->minimum_bytes ||
+@@ -77,7 +182,7 @@
+         if (va&(r->alignment-1) || !sgpu_pm4_data(w,va,r->minimum_bytes,r->kind==SG_PM4_WRITE64)) return false;
+         i+=2;
+     }
+-    return true;
++    return !w->policy->register_check || w->policy->register_check(w->policy->state_context,reg,p,count);
+ }
+ static bool sgpu_pm4_walk(struct pm4_walk *,uint32_t,uint32_t);
+ static bool PM4_FN sgpu_pm4_child(struct pm4_walk *w,uint32_t *lo,uint32_t hi,uint32_t words)
+@@ -91,12 +196,13 @@
+     } else if (!sgpu_pm4_snapshot(w,va,bytes,false)) return false;
+     return sgpu_pm4_walk(w,va,bytes);
+ }
+-static bool PM4_FN sgpu_pm4_draw(struct pm4_walk *w,uint32_t op,const uint32_t *p,uint32_t n)
++static bool PM4_FN sgpu_pm4_draw_shape(struct pm4_walk *w,uint32_t op,const uint32_t *p,uint32_t n)
+ {
+     if (!w->policy->draw || !n || (p[0]&~0xfffu) || (p[0]&63)>0x1fu) return false;
+     uint32_t source=(p[0]>>6)&3,index=(p[0]>>10)&3;
+     if (index>2) return false;
+-    if (op==0x38) { /* A5xx DRAW_INDX_OFFSET: AUTO4 or DMA7, NOT the A4xx six-word form */
++    if (op==0x38) { /* Mesa fd5_draw.h: nonindexed AUTO3; indexed DMA7. */
++        if (n==3)return source==2 && p[1] && p[1]<=65535 && p[2] && p[2]<=1048576;
+         if (n==4) return source==2 && p[1] && p[1]<=65535 && p[2] && p[2]<=1048576 && p[3]<=1048576-p[2];
+         if (n!=7 || source || !p[1] || p[1]>65535 || !p[2] || p[3]>p[6] || p[2]>p[6]-p[3]) return false;
+         uint64_t bytes=(uint64_t)p[6]*(1u<<index);
+@@ -111,12 +217,25 @@
+     }
+     return false;
+ }
+-static bool PM4_FN sgpu_pm4_packet(struct pm4_walk *w,uint32_t op,uint32_t *p,uint32_t n)
++static bool PM4_FN sgpu_pm4_draw(struct pm4_walk *w,uint32_t op,const uint32_t *p,uint32_t n)
++{
++    if (!sgpu_pm4_draw_shape(w,op,p,n))return false;
++    if (w->policy->state_check && (!w->policy->register_check || !w->policy->draw_check || !w->policy->packet_check))return false;
++    return !w->policy->draw_check || w->policy->draw_check(w->policy->state_context,op,p,n);
++}
++static bool PM4_FN sgpu_pm4_packet_shape(struct pm4_walk *w,uint32_t op,uint32_t *p,uint32_t n)
+ {
+     switch (op) {
+     case 0x10:return true; /* CP_NOP: payload intentionally opaque */
+     case 0x12:case 0x13:case 0x26:return n==0; /* vendor WAIT_MEM_WRITES / WAIT_FOR_ME / WAIT_FOR_IDLE */
+     case 0x37:case 0x3f:return n==3 && sgpu_pm4_child(w,&p[0],p[1],p[2]);
++    case 0x30:return sgpu_pm4_state4(w,p,n);
++    /* These controls do not admit arbitrary embedded pointers. Their entire
++     * payload is scalar/zero and an explicit ordered raster callback is needed.
++     * Sources: Mesa adreno_pm4.xml and fd5_gmem.c/fd5_emit.c. */
++    case 0x1d:return w->policy->packet_check && n==1 && p[0]==0;
++    case 0x64:return w->policy->packet_check && n==1 && p[0]<=1;
++    case 0x6c:return w->policy->packet_check && n==5 && p[0]==1 && !p[1] && !p[2] && !p[3] && !p[4];
+     case 0x43: /* 32 A5xx groups; bits20..22 are A6xx-only and rejected */
+         if (!n || n%3) return false;
+         for (uint32_t i=0;i<n;i+=3) {
+@@ -124,18 +243,29 @@
+             if (control&~0x1f0fffffu) return false;
+             if ((control&(3u<<17)) || !count) {
+                 if (count || p[i+1] || p[i+2]) return false;
+-            } else if (!sgpu_pm4_child(w,&p[i+1],p[i+2],count)) return false;
++            } else {
++                /* A shader/raster policy cannot treat potentially deferred
++                 * draw-state groups as immediately executed state. The first
++                 * ordered profile supports reset/disabled groups only. */
++                if(w->policy->state_check || !sgpu_pm4_child(w,&p[i+1],p[i+2],count))return false;
++            }
+         }
+         return true;
+     case 0x3d: /* CP_MEM_WRITE: 64-bit address then bounded data */
+         return n>=3 && sgpu_pm4_data(w,(uint64_t)p[0]|((uint64_t)p[1]<<32),(n-2)*4,true);
+     case 0x46: /* No private/kernel fence address is admitted from userspace. */
+         if (n==1)return p[0]<64 && ((w->policy->events_without_address>>p[0])&1);
+-        return n==4 && (p[0]==4 || p[0]==0x1d) &&
++        return n==4 && (p[0]==4 || p[0]==0x1d ||
++            ((p[0]==0x1c || p[0]==0x1e) && w->policy->packet_check)) &&
+             sgpu_pm4_data(w,(uint64_t)p[1]|((uint64_t)p[2]<<32),4,true);
+     case 0x28:case 0x29:case 0x38:return sgpu_pm4_draw(w,op,p,n);
+     default:return false; /* no secure/protected/preemption/SMMU/compute or unbounded wait packets */
+     }
++}
++static bool PM4_FN sgpu_pm4_packet(struct pm4_walk *w,uint32_t op,uint32_t *p,uint32_t n)
++{
++    if(!sgpu_pm4_packet_shape(w,op,p,n))return false;
++    return !w->policy->packet_check || w->policy->packet_check(w->policy->state_context,op,p,n);
+ }
+ static bool PM4_FN sgpu_pm4_walk(struct pm4_walk *w,uint32_t va,uint32_t bytes)
+ {
+@@ -146,6 +276,14 @@
+     for (uint32_t i=0;i<w->depth;i++)
+         if ((uint64_t)va<(uint64_t)w->active_va[i]+w->active_bytes[i] &&
+             (uint64_t)w->active_va[i]<(uint64_t)va+bytes) return false;
++    if (w->policy->state_check) {
++        if (w->code_count>=SGPU_PM4_STATE_SPANS)return false;
++        for (uint32_t i=0;i<w->data_count;i++)
++            if ((uint64_t)va<(uint64_t)w->data[i].va+w->data[i].bytes &&
++                (uint64_t)w->data[i].va<(uint64_t)va+bytes)return false;
++        w->active_code[w->depth]=w->code_count;
++        w->code[w->code_count].va=va;w->code[w->code_count++].bytes=bytes;
++    }
+     w->active_va[w->depth]=va;w->active_bytes[w->depth++]=bytes;w->nodes++;w->words+=bytes/4;
+     uint32_t *words=s->words+(va-s->gpu_va)/4;
+     for (uint32_t pos=0;pos<bytes/4;) {
+@@ -161,15 +299,17 @@
+     const struct sgpu_graphics_snapshot *s,uint32_t ns,const struct sgpu_graphics_command *roots,uint32_t ni,
+     const struct sgpu_graphics_range *r,uint32_t nr)
+ {
+-    if (!policy || policy->count>256 || (policy->count && !policy->rules) || !s || !ns ||
++    if (!policy || policy->count>SGPU_PM4_RULES || policy->vm_profile>SGPU_GRAPHICS_VM_WIDE || (policy->count && !policy->rules) || !s || !ns ||
+         ns>SGPU_GRAPHICS_IBS || !roots || !ni || ni>SGPU_GRAPHICS_IBS || !r || !nr || nr>SGPU_GRAPHICS_BOS) return false;
++    bool wide=policy->vm_profile==SGPU_GRAPHICS_VM_WIDE;
++    uint32_t base=wide?SGPU_GRAPHICS_WIDE_VA:SGPU_RENDER_VA;
++    uint32_t end=base+(wide?SGPU_GRAPHICS_WIDE_BYTES:SGPU_RENDER_MAX_PAGES*SGPU_PAGE);
+     for (uint32_t i=0;i<ns;i++) {
+         if (!s[i].words || ((uintptr_t)s[i].words&3) || !s[i].bytes || s[i].bytes>SGPU_GRAPHICS_IB_BYTES ||
+             ((s[i].source_va|s[i].gpu_va|s[i].bytes)&3) || s[i].source_va>UINT32_MAX-s[i].bytes ||
+             s[i].gpu_va>UINT32_MAX-s[i].bytes || (uintptr_t)s[i].words>UINTPTR_MAX-s[i].bytes ||
+-            s[i].source_va<SGPU_RENDER_VA+SGPU_PAGE || s[i].gpu_va<SGPU_RENDER_VA+SGPU_PAGE ||
+-            s[i].source_va+s[i].bytes>SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE ||
+-            s[i].gpu_va+s[i].bytes>SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE) return false;
++            s[i].source_va<base+SGPU_PAGE || s[i].gpu_va<base+SGPU_PAGE ||
++            s[i].source_va+s[i].bytes>end || s[i].gpu_va+s[i].bytes>end) return false;
+         for (uint32_t j=0;j<ns;j++) {
+             if ((uint64_t)s[i].source_va<(uint64_t)s[j].gpu_va+s[j].bytes &&
+                 (uint64_t)s[j].gpu_va<(uint64_t)s[i].source_va+s[i].bytes) return false;
+@@ -183,8 +323,7 @@
+     }
+     for (uint32_t i=0;i<nr;i++) {
+         if (!r[i].handle || !r[i].bytes || r[i].gpu_va>UINT32_MAX-r[i].bytes ||
+-            r[i].gpu_va<SGPU_RENDER_VA+SGPU_PAGE ||
+-            r[i].gpu_va+r[i].bytes>SGPU_RENDER_VA+SGPU_RENDER_MAX_PAGES*SGPU_PAGE ||
++            r[i].gpu_va<base+SGPU_PAGE || r[i].gpu_va+r[i].bytes>end ||
+             (r[i].flags!=SGPU_GRAPHICS_RO && r[i].flags!=SGPU_GRAPHICS_RW)) return false;
+         for (uint32_t j=0;j<i;j++)if(r[i].handle==r[j].handle ||
+             ((uint64_t)r[i].gpu_va<(uint64_t)r[j].gpu_va+r[j].bytes &&
+diff --git a/bsd/dev/santoni_gpu_pm4.h b/bsd/dev/santoni_gpu_pm4.h
+--- a/bsd/dev/santoni_gpu_pm4.h
++++ b/bsd/dev/santoni_gpu_pm4.h
+@@ -5,20 +5,45 @@
+ #define SGPU_PM4_DEPTH 8u
+ #define SGPU_PM4_NODES 512u
+ #define SGPU_PM4_WORDS (SGPU_GRAPHICS_IBS*SGPU_GRAPHICS_IB_BYTES/4u)
+-enum sgpu_pm4_kind { SG_PM4_VALUE, SG_PM4_READ64, SG_PM4_WRITE64 };
++#define SGPU_PM4_STATE_SPANS 32u /* bounded initial shader/state graph; no heap allocation */
++#define SGPU_PM4_RULES 512u /* bounded closed A505 raster inventory, not arbitrary register access */
++enum sgpu_pm4_kind { SG_PM4_VALUE, SG_PM4_READ64, SG_PM4_WRITE64, SG_PM4_SHADER64 };
+ struct sgpu_pm4_rule {
+     uint32_t reg,allowed_bits,required_mask,required_value;
+     uint32_t address_flags,address_value,alignment,minimum_bytes,shift;
+     enum sgpu_pm4_kind kind;
+ };
++struct sgpu_pm4_state {
++    uint32_t block,type,destination,units,bytes,gpu_va,available_bytes;
++    bool shader_object;
++    const uint32_t *words; /* kernel-private snapshot, or inline private IB data */
++};
+ struct sgpu_pm4_policy {
+     const struct sgpu_pm4_rule *rules;
+     uint32_t count;
++    uint32_t vm_profile; /* exact legacy0 or owned-wide1 geometry, no arbitrary windows */
+     uint64_t events_without_address; /* audited event IDs only; default empty */
+     bool draw; /* explicitly enable only after the adapter's raster-state audit */
++    /* Mandatory content/layout approval for immutable VS/FS state. Default
++     * NULL refuses all LOAD_STATE4 and shader-object addresses. No platform
++     * calls belong in this validator. A raster adapter must supply its own
++     * independently tested IR3/constants/layout policy before enabling GLES. */
++    /* Return0 to refuse, otherwise the fully approved extent. LOAD_STATE4
++     * must return exactly bytes. A shader-object rule specifies a minimum;
++     * approval must cover the COMPLETE shader and fit available_bytes. */
++    uint32_t (*state_check)(void *,const struct sgpu_pm4_state *);
++    void *state_context;
++    /* Ordered callbacks receive ONLY immutable private command bytes, after
++     * generic address/register framing checks. No callback may perform MMIO.
++     * A shader-enabled draw requires all three callbacks, never just draw=1.
++     * Callers must initialize/discard context separately for each parser pass. */
++    bool (*register_check)(void *,uint32_t,const uint32_t *,uint32_t);
++    bool (*draw_check)(void *,uint32_t,const uint32_t *,uint32_t);
++    bool (*packet_check)(void *,uint32_t,const uint32_t *,uint32_t);
+ };
+ /* Private snapshots cover full command BOs; roots select execute intervals.
+- * Preparation relocates only command pointers, never shader/data pointers.
++ * Preparation relocates command and explicitly approved immutable VS/FS state
++ * pointers. Ordinary vertex/render data pointers retain their owned ranges.
+  * Unsupported opcodes, control/security register writes and unowned data
+  * addresses are rejected. No GPU/MMIO/platform call is made here. */
+ bool sgpu_pm4_prepare(const struct sgpu_pm4_policy *,
+diff --git a/bsd/dev/santoni_gpu_raster.c b/bsd/dev/santoni_gpu_raster.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_raster.c
+@@ -0,0 +1,276 @@
++#include "santoni_gpu_raster.h"
++#include <stddef.h>
++#include <string.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#define SGPU_RASTER_FN __attribute__((noinline))
++#include "santoni_gpu_raster_rules.h"
++#include "santoni_gpu_raster_fields.h"
++_Static_assert(RASTER_REGISTERS<=RASTER_MAX_REGS,"bounded register inventory");
++static bool SGPU_RASTER_FN sgpu_raster_failure(struct sgpu_raster_context *c,uint32_t error)
++{if(!c->error)c->error=error;return false;}
++static int SGPU_RASTER_FN sgpu_raster_index_for(uint32_t reg)
++{
++    uint32_t low=0,high=RASTER_REGISTERS;
++    while(low<high) {uint32_t mid=low+(high-low)/2;if(raster_rules[mid].reg<reg)low=mid+1;else high=mid;}
++    return low<RASTER_REGISTERS && raster_rules[low].reg==reg?(int)low:-1;
++}
++static bool SGPU_RASTER_FN sgpu_raster_have(const struct sgpu_raster_context *c,uint32_t index)
++{return index<RASTER_REGISTERS && c->seen[index];}
++#define VALUE(c,name) ((c)->registers[R_##name])
++#define HAVE(c,name) sgpu_raster_have((c),R_##name)
++static bool SGPU_RASTER_FN sgpu_raster_all_lanes(const uint64_t *mask,uint32_t first,uint32_t count)
++{
++    if(first>=244 || count>244-first)return false;
++    for(uint32_t i=0;i<count;i++)if(!((mask[(first+i)/64]>>((first+i)%64))&1))return false;
++    return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_owned(const struct sgpu_raster_context *c,uint32_t va,uint64_t bytes,bool writable,uint32_t *handle)
++{
++    if(!va || !bytes || bytes>UINT32_MAX || (uint64_t)va+bytes>UINT64_C(0x100000000))return false;
++    for(uint32_t i=0;i<c->range_count;i++) {
++        const struct sgpu_graphics_range *r=&c->ranges[i];
++        if((!writable || r->flags==SGPU_GRAPHICS_RW) && va>=r->gpu_va && va-r->gpu_va<=r->bytes && bytes<=r->bytes-(va-r->gpu_va)) {
++            if(handle)*handle=r->handle;return true;
++        }
++    }
++    return false;
++}
++static bool SGPU_RASTER_FN sgpu_raster_finite_viewport(uint32_t word)
++{
++    /* IEEE binary32 absolute bound4096, using integer bits only. No kernel
++     * floating-point operation or guessed GPU coordinate measurement. */
++    return (word&0x7fffffffu)<=0x45800000u;
++}
++static bool SGPU_RASTER_FN sgpu_raster_rectangle_inside(uint32_t tl,uint32_t br,uint32_t outer_tl,uint32_t outer_br)
++{
++    if((tl|br)&0x80008000u)return false;
++    uint32_t left=tl&0x7fff,top=(tl>>16)&0x7fff,right=br&0x7fff,bottom=(br>>16)&0x7fff;
++    return left<=right && top<=bottom && left>=(outer_tl&0x7fff) && top>=((outer_tl>>16)&0x7fff) &&
++        right<=(outer_br&0x7fff) && bottom<=((outer_br>>16)&0x7fff);
++}
++static bool SGPU_RASTER_FN sgpu_raster_target(struct sgpu_raster_context *c,bool clear)
++{
++    /* A previous GPU context must not supply omitted depth/stream-out/cache
++     * state. Require the entire pinned observed prefix, not selected fields. */
++    const uint16_t *needed=clear?raster_needed_clear:raster_needed_draw;
++    uint32_t needed_count=clear?sizeof(raster_needed_clear)/sizeof(raster_needed_clear[0]):sizeof(raster_needed_draw)/sizeof(raster_needed_draw[0]);
++    for(uint32_t i=0;i<needed_count;i++)if(!sgpu_raster_have(c,needed[i]))return sgpu_raster_failure(c,RASTER_REGISTER);
++    if(!c->bypass || !c->groups_reset || !c->skip_disabled || !c->visibility ||
++        !HAVE(c,RB_MRT_0_BUF_INFO) || VALUE(c,RB_MRT_0_BUF_INFO)!=E_RB5_R8G8B8A8_UNORM ||
++        !HAVE(c,RB_MRT_0_PITCH) || !HAVE(c,RB_MRT_0_ARRAY_PITCH) ||
++        !HAVE(c,RB_MRT_0_BASE_LO) || !HAVE(c,RB_MRT_0_BASE_HI) || VALUE(c,RB_MRT_0_BASE_HI) ||
++        !HAVE(c,GRAS_SC_WINDOW_SCISSOR_TL) || !HAVE(c,GRAS_SC_WINDOW_SCISSOR_BR))return sgpu_raster_failure(c,RASTER_TARGET);
++    uint32_t tl=VALUE(c,GRAS_SC_WINDOW_SCISSOR_TL),br=VALUE(c,GRAS_SC_WINDOW_SCISSOR_BR);
++    uint32_t left=tl&0x7fff,top=(tl>>16)&0x7fff,right=br&0x7fff,bottom=(br>>16)&0x7fff;
++    uint64_t pitch=(uint64_t)VALUE(c,RB_MRT_0_PITCH)<<6,layer=(uint64_t)VALUE(c,RB_MRT_0_ARRAY_PITCH)<<6;
++    if((tl|br)&0x80008000u || left>right || top>bottom || right>=4096 || bottom>=4096 ||
++        !pitch || pitch>UINT32_MAX || !layer || layer>UINT32_MAX || (uint64_t)(right+1)*4>pitch || pitch*(bottom+1)>layer ||
++        !sgpu_raster_owned(c,VALUE(c,RB_MRT_0_BASE_LO),layer,true,&c->target_handle))return sgpu_raster_failure(c,RASTER_TARGET);
++    /* fd5_gmem.c:fd5_emit_sysmem_prep uses inclusive framebuffer endpoints
++     * for both window and resolve. This restricted bypass profile requires
++     * exact equality, rather than accepting an unrelated resolve rectangle. */
++    if(!HAVE(c,RB_RESOLVE_CNTL_1) || !HAVE(c,RB_RESOLVE_CNTL_2) ||
++        VALUE(c,RB_RESOLVE_CNTL_1)!=tl || VALUE(c,RB_RESOLVE_CNTL_2)!=br)return sgpu_raster_failure(c,RASTER_TARGET);
++    if(!clear) {
++        if(!HAVE(c,GRAS_SC_SCREEN_SCISSOR_TL_0) || !HAVE(c,GRAS_SC_SCREEN_SCISSOR_BR_0))return sgpu_raster_failure(c,RASTER_TARGET);
++        uint32_t stl=VALUE(c,GRAS_SC_SCREEN_SCISSOR_TL_0),sbr=VALUE(c,GRAS_SC_SCREEN_SCISSOR_BR_0);
++        if(!sgpu_raster_rectangle_inside(stl,sbr,tl,br))return sgpu_raster_failure(c,RASTER_TARGET);
++        /* fd5_emit.c writes the same scissor endpoints to both banks. The
++         * unknown WINDOW_OFFSET_DISABLE interpretation is not admitted. */
++        if(!HAVE(c,GRAS_SC_VIEWPORT_SCISSOR_TL_0) || !HAVE(c,GRAS_SC_VIEWPORT_SCISSOR_BR_0) ||
++            !sgpu_raster_rectangle_inside(VALUE(c,GRAS_SC_VIEWPORT_SCISSOR_TL_0),VALUE(c,GRAS_SC_VIEWPORT_SCISSOR_BR_0),tl,br) ||
++            VALUE(c,GRAS_SC_VIEWPORT_SCISSOR_TL_0)!=stl || VALUE(c,GRAS_SC_VIEWPORT_SCISSOR_BR_0)!=sbr)return sgpu_raster_failure(c,RASTER_TARGET);
++    }
++    c->width=right+1;c->height=bottom+1;c->pitch=(uint32_t)pitch;c->layer_bytes=(uint32_t)layer;return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_vertex(struct sgpu_raster_context *c,uint32_t vertices,uint32_t instances)
++{
++    if(instances!=1 || !vertices || vertices>65536 || !HAVE(c,VFD_CONTROL_0) || VALUE(c,VFD_CONTROL_0)!=1 ||
++        !HAVE(c,VFD_FETCH_0_BASE_LO) || !HAVE(c,VFD_FETCH_0_BASE_HI) || VALUE(c,VFD_FETCH_0_BASE_HI) ||
++        !HAVE(c,VFD_FETCH_0_SIZE) || !HAVE(c,VFD_FETCH_0_STRIDE) || !HAVE(c,VFD_INDEX_OFFSET) ||
++        !HAVE(c,VFD_DECODE_0_INSTR) || !HAVE(c,VFD_DECODE_0_STEP_RATE) || !HAVE(c,VFD_DEST_CNTL_0_INSTR))return sgpu_raster_failure(c,RASTER_VERTEX);
++    uint32_t decode=VALUE(c,VFD_DECODE_0_INSTR),dest=VALUE(c,VFD_DEST_CNTL_0_INSTR),stride=VALUE(c,VFD_FETCH_0_STRIDE);
++    if((decode&31) || (decode&(1u<<17)) || ((decode>>20)&255)!=E_VFMT5_32_32_FLOAT ||
++        (dest&15)!=15 || ((dest>>4)&255)!=0 || VALUE(c,VFD_DECODE_0_STEP_RATE)!=1 || stride<8 || stride>65536)return sgpu_raster_failure(c,RASTER_VERTEX);
++    uint64_t last=(uint64_t)VALUE(c,VFD_INDEX_OFFSET)+vertices-1,bytes=last*stride+8;
++    if(bytes>VALUE(c,VFD_FETCH_0_SIZE) || !sgpu_raster_owned(c,VALUE(c,VFD_FETCH_0_BASE_LO),VALUE(c,VFD_FETCH_0_SIZE),false,NULL))return sgpu_raster_failure(c,RASTER_VERTEX);
++    return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_constants_ready(const struct sgpu_raster_stage *s)
++{
++    /* Real quad uses only c1.x: Mesa initializes scalar4, not an invented
++     * c0 prefix. Require EVERY decoded operand/repeated scalar and keep
++     * constant_scalars separately as the HLSQ cache-footprint bound. */
++    for(unsigned i=0;i<32;i++)if(s->load.constant_reads[i]&~s->constants[i])return false;
++    return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_stage_ready(struct sgpu_raster_context *c,unsigned stage)
++{
++    struct sgpu_raster_stage *s=&c->stage[stage];
++    if(!s->object_ready || !s->load_ready || s->object_va!=s->load_va || s->object.extent!=s->load.extent ||
++        s->units!=s->load.extent/128 || !sgpu_raster_constants_ready(s))return sgpu_raster_failure(c,RASTER_SHADER);
++    if((s->load.sampler_mask&~s->sampler_mask) || (s->load.texture_mask&~s->texture_mask))return sgpu_raster_failure(c,RASTER_DESCRIPTOR);
++    for(unsigned i=0;i<16;i++)if((s->load.texture_mask>>i)&1) {
++        struct sgpu_texture_result checked;
++        if(!sgpu_sampler_subset(s->samplers[i],4) || !sgpu_texture_subset(s->textures[i],12,c->readable,c->range_count,&checked))return sgpu_raster_failure(c,RASTER_DESCRIPTOR);
++        /* Render-target feedback is not an admitted initial UI sampling mode. */
++        if(checked.handle==c->target_handle)return sgpu_raster_failure(c,RASTER_DESCRIPTOR);
++    }
++    return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_config_ready(struct sgpu_raster_context *c)
++{
++    const uint32_t required[]={R_HLSQ_VS_CONSTLEN,R_HLSQ_FS_CONSTLEN,R_HLSQ_VS_INSTRLEN,R_HLSQ_FS_INSTRLEN,
++        R_HLSQ_VS_CONFIG,R_HLSQ_FS_CONFIG,R_SP_VS_CONFIG,R_SP_FS_CONFIG,R_SP_VS_CTRL_REG0,R_SP_FS_CTRL_REG0,
++        R_HLSQ_VS_CNTL,R_HLSQ_FS_CNTL,R_SP_FS_OUTPUT_0_REG,R_RB_FS_OUTPUT_CNTL,R_RB_RENDER_COMPONENTS,
++        R_SP_VS_OUT_0_REG,R_RB_RENDER_CONTROL0,R_HLSQ_CONTROL_4_REG,R_VPC_SO_BUF_CNTL};
++    for(unsigned i=0;i<sizeof(required)/sizeof(required[0]);i++)if(!sgpu_raster_have(c,required[i]))return sgpu_raster_failure(c,RASTER_CONFIG);
++    uint32_t vc=VALUE(c,HLSQ_VS_CONSTLEN),fc=VALUE(c,HLSQ_FS_CONSTLEN);
++    if(vc>127 || fc>127-vc || VALUE(c,HLSQ_VS_INSTRLEN)!=c->stage[0].units || VALUE(c,HLSQ_FS_INSTRLEN)!=c->stage[1].units ||
++        c->stage[0].units+c->stage[1].units>64 || c->stage[0].load.constant_scalars>vc*16 || c->stage[1].load.constant_scalars>fc*16 ||
++        VALUE(c,HLSQ_VS_CONFIG)!=VALUE(c,SP_VS_CONFIG) || VALUE(c,HLSQ_FS_CONFIG)!=VALUE(c,SP_FS_CONFIG) ||
++        !F_CFG_ENABLED(VALUE(c,SP_VS_CONFIG)) || !F_CFG_ENABLED(VALUE(c,SP_FS_CONFIG)) ||
++        F_CFG_CONSTOBJECTOFFSET(VALUE(c,SP_VS_CONFIG)) || F_CFG_CONSTOBJECTOFFSET(VALUE(c,SP_FS_CONFIG))!=vc ||
++        F_CFG_SHADEROBJOFFSET(VALUE(c,SP_VS_CONFIG)) || F_CFG_SHADEROBJOFFSET(VALUE(c,SP_FS_CONFIG))!=64-c->stage[1].units ||
++        VALUE(c,HLSQ_VS_CNTL)!=c->stage[0].units*2 || VALUE(c,HLSQ_FS_CNTL)!=c->stage[1].units*2)return sgpu_raster_failure(c,RASTER_CONFIG);
++    if(F_CTRL_FULLREGFOOTPRINT(VALUE(c,SP_VS_CTRL_REG0))<c->stage[0].load.registers ||
++        F_CTRL_FULLREGFOOTPRINT(VALUE(c,SP_FS_CTRL_REG0))<c->stage[1].load.registers ||
++        F_CTRL_HALFREGFOOTPRINT(VALUE(c,SP_VS_CTRL_REG0)) || F_CTRL_HALFREGFOOTPRINT(VALUE(c,SP_FS_CTRL_REG0)) ||
++        F_CTRL_BRANCHSTACK(VALUE(c,SP_VS_CTRL_REG0)) || F_CTRL_BRANCHSTACK(VALUE(c,SP_FS_CTRL_REG0)) ||
++        F_CTRL_PIXLODENABLE(VALUE(c,SP_FS_CTRL_REG0))!=(c->stage[1].load.samples!=0) ||
++        VALUE(c,RB_FS_OUTPUT_CNTL)!=1 || VALUE(c,RB_RENDER_COMPONENTS)!=15 || VALUE(c,VPC_SO_BUF_CNTL))return sgpu_raster_failure(c,RASTER_CONFIG);
++    uint32_t output=VALUE(c,SP_FS_OUTPUT_0_REG)&255;
++    uint64_t defined[4];for(unsigned i=0;i<4;i++)defined[i]=c->stage[1].load.written[i];
++    uint32_t input_reads=(uint32_t)c->stage[1].load.input_reads[0];
++    struct sgpu_ir3_result *fs=&c->stage[1].load;
++    bool varying=fs->bary_instructions!=0;
++    if(c->stage[1].load.input_reads[1] || c->stage[1].load.input_reads[2] || c->stage[1].load.input_reads[3] || input_reads&~3u)return sgpu_raster_failure(c,RASTER_CONFIG);
++    if(input_reads && !varying) {
++        uint32_t xy=(VALUE(c,HLSQ_CONTROL_4_REG)>>16)&255,mask=(VALUE(c,RB_RENDER_CONTROL0)>>6)&15;
++        if(xy || (mask&input_reads)!=input_reads)return sgpu_raster_failure(c,RASTER_CONFIG);
++        defined[0]|=input_reads;
++    }
++    /* Exact capture/source-derived packed link, no guessed varying mapping.
++     * Slots0,1 come from VS r1.xy, both actually written; r0.xyzw is position
++     * at location2. FS receives the I/J pair r0.xy, not FragCoord. Extra slots,
++     * input banks, sparse/uninitialized output or mixed tuples stay refused. */
++    if(varying && (fs->bary_instructions!=2 || !fs->input_released || fs->varying_reads[0]!=3 || fs->varying_reads[1] ||
++        fs->bary_inputs[0]!=3 || fs->bary_inputs[1] || fs->bary_inputs[2] || fs->bary_inputs[3] || input_reads!=3 ||
++        !sgpu_raster_all_lanes(c->stage[0].load.written,4,2)))return sgpu_raster_failure(c,RASTER_CONFIG);
++    if(F_CTRL_VARYING(VALUE(c,SP_FS_CTRL_REG0))!=varying)return sgpu_raster_failure(c,RASTER_CONFIG);
++    for(unsigned i=0;i<sizeof(raster_ui_bindings)/sizeof(raster_ui_bindings[0]);i++) {
++        const struct sgpu_raster_ui_binding *b=&raster_ui_bindings[i];
++        if(!sgpu_raster_have(c,b->index) || c->registers[b->index]!=(varying?b->quad:b->plain))return sgpu_raster_failure(c,RASTER_CONFIG);
++    }
++    if(VALUE(c,RB_RENDER_CONTROL0)!=(varying?1u:input_reads?0xc8u:0u) || !HAVE(c,GRAS_CNTL) ||
++        VALUE(c,GRAS_CNTL)!=VALUE(c,RB_RENDER_CONTROL0) ||
++        VALUE(c,HLSQ_CONTROL_4_REG)!=(varying?0xfcfcfcfcu:input_reads?0x0200fcfcu:0xfcfcfcfcu))return sgpu_raster_failure(c,RASTER_CONFIG);
++    if(!sgpu_raster_all_lanes(defined,output,4) || !sgpu_raster_all_lanes(c->stage[0].load.defined,0,4))return sgpu_raster_failure(c,RASTER_CONFIG);
++    uint32_t vc_tex=HAVE(c,TPL1_VS_TEX_COUNT)?VALUE(c,TPL1_VS_TEX_COUNT):0;
++    uint32_t fc_tex=HAVE(c,TPL1_FS_TEX_COUNT)?VALUE(c,TPL1_FS_TEX_COUNT):0;
++    if(vc_tex>16 || fc_tex>16 || (c->stage[0].load.texture_mask&~((1u<<vc_tex)-1)) ||
++        (c->stage[1].load.texture_mask&~((1u<<fc_tex)-1)))return sgpu_raster_failure(c,RASTER_DESCRIPTOR);
++    return true;
++}
++static uint32_t SGPU_RASTER_FN sgpu_raster_check_state(void *opaque,const struct sgpu_pm4_state *state)
++{
++    struct sgpu_raster_context *c=opaque;
++    unsigned stage=state->block==12 || state->block==4;
++    struct sgpu_raster_stage *s=&c->stage[stage];
++    if(state->block==0 || state->block==4) {
++        if(state->shader_object || state->destination || !state->units || state->units>16 || state->type>1)return sgpu_raster_failure(c,RASTER_STATE);
++        for(unsigned i=0;i<state->units;i++) {
++            struct sgpu_texture_result checked;
++            bool valid=state->type?sgpu_texture_subset(state->words+i*12,12,c->readable,c->range_count,&checked):sgpu_sampler_subset(state->words+i*4,4);
++            if(!valid)return sgpu_raster_failure(c,RASTER_DESCRIPTOR);
++        }
++        if(state->type) {memcpy(s->textures,state->words,state->bytes);s->texture_mask=(1u<<state->units)-1;}
++        else {memcpy(s->samplers,state->words,state->bytes);s->sampler_mask=(1u<<state->units)-1;}
++        return state->bytes;
++    }
++    if(state->block!=8 && state->block!=12)return sgpu_raster_failure(c,RASTER_STATE);
++    if(state->type==1) {
++        if(state->shader_object || state->destination>512 || state->units>512-state->destination)return sgpu_raster_failure(c,RASTER_CONSTANT);
++        for(uint32_t i=0;i<state->units*4;i++) {uint32_t scalar=state->destination*4+i;s->constants[scalar/64]|=UINT64_C(1)<<(scalar%64);}
++        return state->bytes;
++    }
++    struct sgpu_ir3_limits limits={.constant_scalars=2048,.samplers=16,.textures=16,.varying_scalars=stage?128:0,.inputs={3,0,0,0}};
++    struct sgpu_ir3_result result;
++    if(state->type || !sgpu_ir3_subset(state->words,state->available_bytes,&limits,&result))return sgpu_raster_failure(c,RASTER_SHADER);
++    if(state->shader_object) {s->object=result;s->object_va=state->gpu_va;s->object_ready=true;}
++    else {s->load=result;s->load_va=state->gpu_va;s->load_ready=true;s->units=state->units;}
++    return result.extent;
++}
++static bool SGPU_RASTER_FN sgpu_raster_check_registers(void *opaque,uint32_t reg,const uint32_t *words,uint32_t count)
++{
++    struct sgpu_raster_context *c=opaque;
++    for(uint32_t i=0;i<count;i++) {
++        int found=sgpu_raster_index_for(reg+i);if(found<0)return sgpu_raster_failure(c,RASTER_REGISTER);
++        uint32_t index=(uint32_t)found,value=words[i];
++        if(index>=R_GRAS_CL_VPORT_XOFFSET_0 && index<=R_GRAS_CL_VPORT_ZSCALE_0 && !sgpu_raster_finite_viewport(value))return sgpu_raster_failure(c,RASTER_REGISTER);
++        if(index==R_GRAS_SU_POINT_MINMAX && ((value>>16)<16 || (value>>16)>65472))return sgpu_raster_failure(c,RASTER_REGISTER);
++        if(index==R_GRAS_SU_POINT_SIZE && value!=8 && value!=16)return sgpu_raster_failure(c,RASTER_REGISTER);
++        if((index==R_HLSQ_VS_CONSTLEN || index==R_HLSQ_FS_CONSTLEN) && value>127)return sgpu_raster_failure(c,RASTER_REGISTER);
++        if((index==R_HLSQ_VS_INSTRLEN || index==R_HLSQ_FS_INSTRLEN) && value>64)return sgpu_raster_failure(c,RASTER_REGISTER);
++        if((index==R_TPL1_VS_TEX_COUNT || index==R_TPL1_FS_TEX_COUNT) && value>16)return sgpu_raster_failure(c,RASTER_REGISTER);
++        if((index==R_SP_HS_CONFIG || index==R_SP_DS_CONFIG || index==R_SP_GS_CONFIG ||
++            index==R_HLSQ_HS_CONFIG || index==R_HLSQ_DS_CONFIG || index==R_HLSQ_GS_CONFIG) && F_CFG_ENABLED(value))return sgpu_raster_failure(c,RASTER_REGISTER);
++        c->registers[index]=value;c->seen[index]=true;
++    }
++    return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_check_draw(void *opaque,uint32_t op,const uint32_t *p,uint32_t n)
++{
++    struct sgpu_raster_context *c=opaque;
++    /* Mesa AUTO_INDEX triangle list/fan/strip, no indexed/indirect/tessellation
++     * or stream-output program in this restricted first raster profile. */
++    if(op!=0x38 || n!=3 || (p[0]&63)<4 || (p[0]&63)>6 || ((p[0]>>6)&3)!=2 ||
++        !sgpu_raster_target(c,false) || !sgpu_raster_vertex(c,p[2],p[1]) || !sgpu_raster_stage_ready(c,0) || !sgpu_raster_stage_ready(c,1) || !sgpu_raster_config_ready(c))return sgpu_raster_failure(c,RASTER_CONFIG);
++    c->draws++;return true;
++}
++static bool SGPU_RASTER_FN sgpu_raster_check_packet(void *opaque,uint32_t op,const uint32_t *p,uint32_t n)
++{
++    struct sgpu_raster_context *c=opaque;
++    switch(op) {
++    case 0x6c:
++        if(n!=5 || p[0]!=1 || p[1] || p[2] || p[3] || p[4])return sgpu_raster_failure(c,RASTER_CONTROL);
++        c->bypass=true;return true;
++    case 0x64:
++        if(n!=1 || p[0]!=1)return sgpu_raster_failure(c,RASTER_CONTROL);c->visibility=true;return true;
++    case 0x1d:
++        if(n!=1 || p[0])return sgpu_raster_failure(c,RASTER_CONTROL);c->skip_disabled=true;return true;
++    case 0x43:
++        if(n!=3 || p[0]!=(1u<<18) || p[1] || p[2])return sgpu_raster_failure(c,RASTER_CONTROL);c->groups_reset=true;return true;
++    case 0x46:
++        if(n==1)return (p[0]==25 || p[0]==38) && c->bypass?true:sgpu_raster_failure(c,RASTER_CONTROL);
++        if(n!=4 || !c->bypass)return sgpu_raster_failure(c,RASTER_CONTROL);
++        if(p[0]==30) {
++            if(!HAVE(c,RB_BLIT_CNTL) || VALUE(c,RB_BLIT_CNTL)!=E_BLIT_MRT0 || !HAVE(c,RB_CLEAR_CNTL) ||
++                VALUE(c,RB_CLEAR_CNTL)!=0xf2 || !sgpu_raster_target(c,true))return sgpu_raster_failure(c,RASTER_TARGET);
++            c->clears++;return true;
++        }
++        if(p[0]!=4 && p[0]!=28 && p[0]!=29)return sgpu_raster_failure(c,RASTER_CONTROL);
++        if(!c->draws && !c->clears)return sgpu_raster_failure(c,RASTER_CONTROL);
++        return true;
++    case 0x38:return n==3;
++    case 0x10:case 0x26:case 0x13:case 0x12:case 0x37:case 0x3f:case 0x30:return true;
++    default:return sgpu_raster_failure(c,RASTER_CONTROL);
++    }
++}
++void SGPU_RASTER_FN sgpu_raster_policy(struct sgpu_raster_context *c,struct sgpu_pm4_policy *policy)
++{
++    *policy=(struct sgpu_pm4_policy){.rules=raster_rules,.count=RASTER_REGISTERS,.draw=true,
++        .events_without_address=(UINT64_C(1)<<25)|(UINT64_C(1)<<38),.state_check=sgpu_raster_check_state,.state_context=c,
++        .register_check=sgpu_raster_check_registers,.draw_check=sgpu_raster_check_draw,.packet_check=sgpu_raster_check_packet};
++}
++bool SGPU_RASTER_FN sgpu_raster_init(struct sgpu_raster_context *c,const struct sgpu_graphics_range *ranges,uint32_t count)
++{
++    if(!c || !ranges || !count || count>64)return false;
++    memset(c,0,sizeof(*c));c->ranges=ranges;c->range_count=count;
++    for(uint32_t i=0;i<count;i++) {
++        if(!ranges[i].handle || !ranges[i].bytes || (ranges[i].flags!=SGPU_GRAPHICS_RO && ranges[i].flags!=SGPU_GRAPHICS_RW))return sgpu_raster_failure(c,RASTER_INPUT);
++        c->readable[i]=(struct sgpu_descriptor_range){ranges[i].handle,ranges[i].gpu_va,ranges[i].bytes};
++    }
++    return true;
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/bsd/dev/santoni_gpu_raster.h b/bsd/dev/santoni_gpu_raster.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_raster.h
+@@ -0,0 +1,29 @@
++#ifndef SANTONI_RASTER_DRAFT_H
++#define SANTONI_RASTER_DRAFT_H
++#include "santoni_gpu_pm4.h"
++#include "santoni_gpu_ir3.h"
++#include "santoni_gpu_descriptors.h"
++#define RASTER_MAX_REGS 512u
++struct sgpu_raster_stage {
++    struct sgpu_ir3_result object,load;
++    uint32_t object_va,load_va,units,sampler_mask,texture_mask;
++    uint64_t constants[32];
++    uint32_t samplers[16][4],textures[16][12];
++    bool object_ready,load_ready;
++};
++enum sgpu_raster_error { RASTER_OK,RASTER_INPUT,RASTER_REGISTER,RASTER_SHADER,RASTER_STATE,
++    RASTER_TARGET,RASTER_VERTEX,RASTER_CONSTANT,RASTER_DESCRIPTOR,RASTER_CONFIG,RASTER_CONTROL };
++struct sgpu_raster_context {
++    const struct sgpu_graphics_range *ranges;uint32_t range_count;
++    struct sgpu_descriptor_range readable[64];
++    uint32_t registers[RASTER_MAX_REGS];bool seen[RASTER_MAX_REGS];
++    struct sgpu_raster_stage stage[2];
++    uint32_t draws,clears,error,target_handle,width,height,pitch,layer_bytes;
++    bool bypass,visibility,skip_disabled,groups_reset;
++};
++/* Kernel-independent, unshipped restricted profile. Same-owner public ranges
++ * must be supplied by the actual BO core; it does not establish ownership or
++ * hardware acceptance. Unknown register semantics remain source-pattern-only. */
++bool sgpu_raster_init(struct sgpu_raster_context *,const struct sgpu_graphics_range *,uint32_t);
++void sgpu_raster_policy(struct sgpu_raster_context *,struct sgpu_pm4_policy *);
++#endif
+diff --git a/bsd/dev/santoni_gpu_raster_batch.c b/bsd/dev/santoni_gpu_raster_batch.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_raster_batch.c
+@@ -0,0 +1,24 @@
++#include "santoni_gpu_raster_batch.h"
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#define SGPU_RASTER_BATCH_FN __attribute__((noinline))
++static bool SGPU_RASTER_BATCH_FN sgpu_raster_batch_run(struct sgpu_raster_context *context,uint32_t profile,
++    const struct sgpu_graphics_snapshot *snapshots,uint32_t ns,
++    const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *ranges,uint32_t nr,bool prepare)
++{
++    if(profile>SGPU_GRAPHICS_VM_WIDE || !sgpu_raster_init(context,ranges,nr))return false;
++    struct sgpu_pm4_policy policy;sgpu_raster_policy(context,&policy);policy.vm_profile=profile;
++    return prepare?sgpu_pm4_prepare(&policy,snapshots,ns,roots,ni,ranges,nr):
++        sgpu_pm4_validate(&policy,snapshots,ns,roots,ni,ranges,nr);
++}
++bool SGPU_RASTER_BATCH_FN sgpu_raster_prepare_batch(struct sgpu_raster_context *context,uint32_t profile,
++    const struct sgpu_graphics_snapshot *snapshots,uint32_t ns,
++    const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *ranges,uint32_t nr)
++{return sgpu_raster_batch_run(context,profile,snapshots,ns,roots,ni,ranges,nr,true);}
++bool SGPU_RASTER_BATCH_FN sgpu_raster_validate_batch(struct sgpu_raster_context *context,uint32_t profile,
++    const struct sgpu_graphics_snapshot *snapshots,uint32_t ns,
++    const struct sgpu_graphics_command *roots,uint32_t ni,
++    const struct sgpu_graphics_range *ranges,uint32_t nr)
++{return sgpu_raster_batch_run(context,profile,snapshots,ns,roots,ni,ranges,nr,false);}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/bsd/dev/santoni_gpu_raster_batch.h b/bsd/dev/santoni_gpu_raster_batch.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_raster_batch.h
+@@ -0,0 +1,14 @@
++#ifndef SANTONI_RASTER_BATCH_DRAFT_H
++#define SANTONI_RASTER_BATCH_DRAFT_H
++#include "santoni_gpu_raster.h"
++/* Caller owns context storage and serialization. EACH call starts cold; no
++ * allocator/MMIO/SMC or cached previous submission state is used here. */
++bool sgpu_raster_prepare_batch(struct sgpu_raster_context *,uint32_t,
++    const struct sgpu_graphics_snapshot *,uint32_t,
++    const struct sgpu_graphics_command *,uint32_t,
++    const struct sgpu_graphics_range *,uint32_t);
++bool sgpu_raster_validate_batch(struct sgpu_raster_context *,uint32_t,
++    const struct sgpu_graphics_snapshot *,uint32_t,
++    const struct sgpu_graphics_command *,uint32_t,
++    const struct sgpu_graphics_range *,uint32_t);
++#endif
+diff --git a/bsd/dev/santoni_gpu_raster_fields.h b/bsd/dev/santoni_gpu_raster_fields.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_raster_fields.h
+@@ -0,0 +1,13 @@
++#define F_CFG_ENABLED(v) (((v)>>0u)&UINT32_C(0x1))
++#define F_CFG_CONSTOBJECTOFFSET(v) (((v)>>1u)&UINT32_C(0x7f))
++#define F_CFG_SHADEROBJOFFSET(v) (((v)>>8u)&UINT32_C(0x7f))
++#define F_CTRL_BUFFER(v) (((v)>>2u)&UINT32_C(0x1))
++#define F_CTRL_THREADSIZE(v) (((v)>>3u)&UINT32_C(0x1))
++#define F_CTRL_HALFREGFOOTPRINT(v) (((v)>>4u)&UINT32_C(0x3f))
++#define F_CTRL_FULLREGFOOTPRINT(v) (((v)>>10u)&UINT32_C(0x3f))
++#define F_CTRL_VARYING(v) (((v)>>16u)&UINT32_C(0x1))
++#define F_CTRL_PIXLODENABLE(v) (((v)>>20u)&UINT32_C(0x1))
++#define F_CTRL_BRANCHSTACK(v) (((v)>>25u)&UINT32_C(0x7f))
++#define E_VFMT5_32_32_FLOAT UINT32_C(0x67)
++#define E_RB5_R8G8B8A8_UNORM UINT32_C(0x30)
++#define E_BLIT_MRT0 UINT32_C(0x0)
+diff --git a/bsd/dev/santoni_gpu_raster_rules.h b/bsd/dev/santoni_gpu_raster_rules.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_raster_rules.h
+@@ -0,0 +1,759 @@
++/* Source/capture-derived closed profile; no hardware/unknown-register semantic proof. */
++#define RASTER_REGISTERS 362u
++#define R_RB_DBG_ECO_CNTL 0u
++#define R_RB_MODE_CNTL 1u
++#define R_RB_CCU_CNTL 2u
++#define R_PC_MODE_CNTL 3u
++#define R_HLSQ_TIMEOUT_THRESHOLD_0 4u
++#define R_HLSQ_TIMEOUT_THRESHOLD_1 5u
++#define R_HLSQ_MODE_CNTL 6u
++#define R_VFD_MODE_CNTL 7u
++#define R_VPC_DBG_ECO_CNTL 8u
++#define R_VPC_MODE_CNTL 9u
++#define R_UCHE_CACHE_INVALIDATE_MIN_LO 10u
++#define R_UCHE_CACHE_INVALIDATE_MIN_HI 11u
++#define R_UCHE_CACHE_INVALIDATE_MAX_LO 12u
++#define R_UCHE_CACHE_INVALIDATE_MAX_HI 13u
++#define R_UCHE_CACHE_INVALIDATE 14u
++#define R_SP_DBG_ECO_CNTL 15u
++#define R_SP_MODE_CNTL 16u
++#define R_TPL1_MODE_CNTL 17u
++#define R_GRAS_CL_CNTL 18u
++#define R_GRAS_VS_CL_CNTL 19u
++#define R_UNKNOWN_E004 20u
++#define R_GRAS_CNTL 21u
++#define R_GRAS_CL_VPORT_XOFFSET_0 22u
++#define R_GRAS_CL_VPORT_XSCALE_0 23u
++#define R_GRAS_CL_VPORT_YOFFSET_0 24u
++#define R_GRAS_CL_VPORT_YSCALE_0 25u
++#define R_GRAS_CL_VPORT_ZOFFSET_0 26u
++#define R_GRAS_CL_VPORT_ZSCALE_0 27u
++#define R_GRAS_SU_CNTL 28u
++#define R_GRAS_SU_POINT_MINMAX 29u
++#define R_GRAS_SU_POINT_SIZE 30u
++#define R_GRAS_SU_LAYERED 31u
++#define R_GRAS_SU_DEPTH_PLANE_CNTL 32u
++#define R_GRAS_SU_POLY_OFFSET_SCALE 33u
++#define R_GRAS_SU_POLY_OFFSET_OFFSET 34u
++#define R_GRAS_SU_POLY_OFFSET_OFFSET_CLAMP 35u
++#define R_GRAS_SU_DEPTH_BUFFER_INFO 36u
++#define R_GRAS_SU_CONSERVATIVE_RAS_CNTL 37u
++#define R_GRAS_SC_CNTL 38u
++#define R_GRAS_SC_BIN_CNTL 39u
++#define R_GRAS_SC_RAS_MSAA_CNTL 40u
++#define R_GRAS_SC_DEST_MSAA_CNTL 41u
++#define R_GRAS_SC_SCREEN_SCISSOR_CNTL 42u
++#define R_GRAS_SC_SCREEN_SCISSOR_TL_0 43u
++#define R_GRAS_SC_SCREEN_SCISSOR_BR_0 44u
++#define R_GRAS_SC_VIEWPORT_SCISSOR_TL_0 45u
++#define R_GRAS_SC_VIEWPORT_SCISSOR_BR_0 46u
++#define R_GRAS_SC_WINDOW_SCISSOR_TL 47u
++#define R_GRAS_SC_WINDOW_SCISSOR_BR 48u
++#define R_GRAS_LRZ_CNTL 49u
++#define R_RB_CNTL 50u
++#define R_RB_RENDER_CNTL 51u
++#define R_RB_RAS_MSAA_CNTL 52u
++#define R_RB_DEST_MSAA_CNTL 53u
++#define R_RB_RENDER_CONTROL0 54u
++#define R_RB_RENDER_CONTROL1 55u
++#define R_RB_FS_OUTPUT_CNTL 56u
++#define R_RB_RENDER_COMPONENTS 57u
++#define R_RB_MRT_0_CONTROL 58u
++#define R_RB_MRT_0_BLEND_CONTROL 59u
++#define R_RB_MRT_0_BUF_INFO 60u
++#define R_RB_MRT_0_PITCH 61u
++#define R_RB_MRT_0_ARRAY_PITCH 62u
++#define R_RB_MRT_0_BASE_LO 63u
++#define R_RB_MRT_0_BASE_HI 64u
++#define R_RB_MRT_1_CONTROL 65u
++#define R_RB_MRT_1_BLEND_CONTROL 66u
++#define R_RB_MRT_1_BUF_INFO 67u
++#define R_RB_MRT_1_PITCH 68u
++#define R_RB_MRT_1_ARRAY_PITCH 69u
++#define R_RB_MRT_1_BASE_LO 70u
++#define R_RB_MRT_1_BASE_HI 71u
++#define R_RB_MRT_2_CONTROL 72u
++#define R_RB_MRT_2_BLEND_CONTROL 73u
++#define R_RB_MRT_2_BUF_INFO 74u
++#define R_RB_MRT_2_PITCH 75u
++#define R_RB_MRT_2_ARRAY_PITCH 76u
++#define R_RB_MRT_2_BASE_LO 77u
++#define R_RB_MRT_2_BASE_HI 78u
++#define R_RB_MRT_3_CONTROL 79u
++#define R_RB_MRT_3_BLEND_CONTROL 80u
++#define R_RB_MRT_3_BUF_INFO 81u
++#define R_RB_MRT_3_PITCH 82u
++#define R_RB_MRT_3_ARRAY_PITCH 83u
++#define R_RB_MRT_3_BASE_LO 84u
++#define R_RB_MRT_3_BASE_HI 85u
++#define R_RB_MRT_4_CONTROL 86u
++#define R_RB_MRT_4_BLEND_CONTROL 87u
++#define R_RB_MRT_4_BUF_INFO 88u
++#define R_RB_MRT_4_PITCH 89u
++#define R_RB_MRT_4_ARRAY_PITCH 90u
++#define R_RB_MRT_4_BASE_LO 91u
++#define R_RB_MRT_4_BASE_HI 92u
++#define R_RB_MRT_5_CONTROL 93u
++#define R_RB_MRT_5_BLEND_CONTROL 94u
++#define R_RB_MRT_5_BUF_INFO 95u
++#define R_RB_MRT_5_PITCH 96u
++#define R_RB_MRT_5_ARRAY_PITCH 97u
++#define R_RB_MRT_5_BASE_LO 98u
++#define R_RB_MRT_5_BASE_HI 99u
++#define R_RB_MRT_6_CONTROL 100u
++#define R_RB_MRT_6_BLEND_CONTROL 101u
++#define R_RB_MRT_6_BUF_INFO 102u
++#define R_RB_MRT_6_PITCH 103u
++#define R_RB_MRT_6_ARRAY_PITCH 104u
++#define R_RB_MRT_6_BASE_LO 105u
++#define R_RB_MRT_6_BASE_HI 106u
++#define R_RB_MRT_7_CONTROL 107u
++#define R_RB_MRT_7_BLEND_CONTROL 108u
++#define R_RB_MRT_7_BUF_INFO 109u
++#define R_RB_MRT_7_PITCH 110u
++#define R_RB_MRT_7_ARRAY_PITCH 111u
++#define R_RB_MRT_7_BASE_LO 112u
++#define R_RB_MRT_7_BASE_HI 113u
++#define R_RB_BLEND_RED 114u
++#define R_RB_BLEND_RED_F32 115u
++#define R_RB_BLEND_GREEN 116u
++#define R_RB_BLEND_GREEN_F32 117u
++#define R_RB_BLEND_BLUE 118u
++#define R_RB_BLEND_BLUE_F32 119u
++#define R_RB_BLEND_ALPHA 120u
++#define R_RB_BLEND_ALPHA_F32 121u
++#define R_RB_ALPHA_CONTROL 122u
++#define R_RB_BLEND_CNTL 123u
++#define R_RB_DEPTH_PLANE_CNTL 124u
++#define R_RB_DEPTH_CNTL 125u
++#define R_RB_DEPTH_BUFFER_INFO 126u
++#define R_RB_DEPTH_BUFFER_BASE_LO 127u
++#define R_RB_DEPTH_BUFFER_BASE_HI 128u
++#define R_RB_DEPTH_BUFFER_PITCH 129u
++#define R_RB_DEPTH_BUFFER_ARRAY_PITCH 130u
++#define R_RB_STENCIL_CONTROL 131u
++#define R_RB_STENCIL_INFO 132u
++#define R_RB_STENCILREFMASK 133u
++#define R_RB_STENCILREFMASK_BF 134u
++#define R_RB_WINDOW_OFFSET 135u
++#define R_RB_BLIT_CNTL 136u
++#define R_RB_RESOLVE_CNTL_1 137u
++#define R_RB_RESOLVE_CNTL_2 138u
++#define R_RB_CLEAR_COLOR_DW0 139u
++#define R_RB_CLEAR_COLOR_DW1 140u
++#define R_RB_CLEAR_COLOR_DW2 141u
++#define R_RB_CLEAR_COLOR_DW3 142u
++#define R_RB_CLEAR_CNTL 143u
++#define R_RB_DEPTH_FLAG_BUFFER_BASE_LO 144u
++#define R_RB_DEPTH_FLAG_BUFFER_BASE_HI 145u
++#define R_RB_DEPTH_FLAG_BUFFER_PITCH 146u
++#define R_RB_MRT_FLAG_BUFFER_0_ADDR_LO 147u
++#define R_RB_MRT_FLAG_BUFFER_0_ADDR_HI 148u
++#define R_RB_MRT_FLAG_BUFFER_0_PITCH 149u
++#define R_RB_MRT_FLAG_BUFFER_0_ARRAY_PITCH 150u
++#define R_RB_MRT_FLAG_BUFFER_1_ADDR_LO 151u
++#define R_RB_MRT_FLAG_BUFFER_1_ADDR_HI 152u
++#define R_RB_MRT_FLAG_BUFFER_1_PITCH 153u
++#define R_RB_MRT_FLAG_BUFFER_1_ARRAY_PITCH 154u
++#define R_RB_MRT_FLAG_BUFFER_2_ADDR_LO 155u
++#define R_RB_MRT_FLAG_BUFFER_2_ADDR_HI 156u
++#define R_RB_MRT_FLAG_BUFFER_2_PITCH 157u
++#define R_RB_MRT_FLAG_BUFFER_2_ARRAY_PITCH 158u
++#define R_RB_MRT_FLAG_BUFFER_3_ADDR_LO 159u
++#define R_RB_MRT_FLAG_BUFFER_3_ADDR_HI 160u
++#define R_RB_MRT_FLAG_BUFFER_3_PITCH 161u
++#define R_RB_MRT_FLAG_BUFFER_3_ARRAY_PITCH 162u
++#define R_RB_MRT_FLAG_BUFFER_4_ADDR_LO 163u
++#define R_RB_MRT_FLAG_BUFFER_4_ADDR_HI 164u
++#define R_RB_MRT_FLAG_BUFFER_4_PITCH 165u
++#define R_RB_MRT_FLAG_BUFFER_4_ARRAY_PITCH 166u
++#define R_RB_MRT_FLAG_BUFFER_5_ADDR_LO 167u
++#define R_RB_MRT_FLAG_BUFFER_5_ADDR_HI 168u
++#define R_RB_MRT_FLAG_BUFFER_5_PITCH 169u
++#define R_RB_MRT_FLAG_BUFFER_5_ARRAY_PITCH 170u
++#define R_RB_MRT_FLAG_BUFFER_6_ADDR_LO 171u
++#define R_RB_MRT_FLAG_BUFFER_6_ADDR_HI 172u
++#define R_RB_MRT_FLAG_BUFFER_6_PITCH 173u
++#define R_RB_MRT_FLAG_BUFFER_6_ARRAY_PITCH 174u
++#define R_RB_MRT_FLAG_BUFFER_7_ADDR_LO 175u
++#define R_RB_MRT_FLAG_BUFFER_7_ADDR_HI 176u
++#define R_RB_MRT_FLAG_BUFFER_7_PITCH 177u
++#define R_RB_MRT_FLAG_BUFFER_7_ARRAY_PITCH 178u
++#define R_VPC_CNTL_0 179u
++#define R_VPC_VARYING_INTERP_0_MODE 180u
++#define R_VPC_VARYING_INTERP_1_MODE 181u
++#define R_VPC_VARYING_INTERP_2_MODE 182u
++#define R_VPC_VARYING_INTERP_3_MODE 183u
++#define R_VPC_VARYING_INTERP_4_MODE 184u
++#define R_VPC_VARYING_INTERP_5_MODE 185u
++#define R_VPC_VARYING_INTERP_6_MODE 186u
++#define R_VPC_VARYING_INTERP_7_MODE 187u
++#define R_VPC_VARYING_PS_REPL_0_MODE 188u
++#define R_VPC_VARYING_PS_REPL_1_MODE 189u
++#define R_VPC_VARYING_PS_REPL_2_MODE 190u
++#define R_VPC_VARYING_PS_REPL_3_MODE 191u
++#define R_VPC_VARYING_PS_REPL_4_MODE 192u
++#define R_VPC_VARYING_PS_REPL_5_MODE 193u
++#define R_VPC_VARYING_PS_REPL_6_MODE 194u
++#define R_VPC_VARYING_PS_REPL_7_MODE 195u
++#define R_UNKNOWN_E292 196u
++#define R_UNKNOWN_E293 197u
++#define R_VPC_VAR_0_DISABLE 198u
++#define R_VPC_VAR_1_DISABLE 199u
++#define R_VPC_VAR_2_DISABLE 200u
++#define R_VPC_VAR_3_DISABLE 201u
++#define R_VPC_GS_SIV_CNTL 202u
++#define R_VPC_CLIP_CNTL 203u
++#define R_VPC_PACK 204u
++#define R_VPC_FS_PRIMITIVEID_CNTL 205u
++#define R_VPC_SO_BUF_CNTL 206u
++#define R_VPC_SO_OVERRIDE 207u
++#define R_VPC_SO_0_BUFFER_BASE_LO 208u
++#define R_VPC_SO_0_BUFFER_BASE_HI 209u
++#define R_VPC_SO_0_BUFFER_SIZE 210u
++#define R_VPC_SO_0_BUFFER_OFFSET 211u
++#define R_VPC_SO_0_FLUSH_BASE_LO 212u
++#define R_VPC_SO_0_FLUSH_BASE_HI 213u
++#define R_VPC_SO_1_BUFFER_BASE_LO 214u
++#define R_VPC_SO_1_BUFFER_BASE_HI 215u
++#define R_VPC_SO_1_BUFFER_SIZE 216u
++#define R_VPC_SO_1_BUFFER_OFFSET 217u
++#define R_VPC_SO_1_FLUSH_BASE_LO 218u
++#define R_VPC_SO_1_FLUSH_BASE_HI 219u
++#define R_VPC_SO_2_BUFFER_BASE_LO 220u
++#define R_VPC_SO_2_BUFFER_BASE_HI 221u
++#define R_VPC_SO_2_BUFFER_SIZE 222u
++#define R_VPC_SO_2_BUFFER_OFFSET 223u
++#define R_VPC_SO_2_FLUSH_BASE_LO 224u
++#define R_VPC_SO_2_FLUSH_BASE_HI 225u
++#define R_VPC_SO_3_BUFFER_BASE_LO 226u
++#define R_VPC_SO_3_BUFFER_BASE_HI 227u
++#define R_VPC_SO_3_BUFFER_SIZE 228u
++#define R_VPC_SO_3_BUFFER_OFFSET 229u
++#define R_VPC_SO_3_FLUSH_BASE_LO 230u
++#define R_VPC_SO_3_FLUSH_BASE_HI 231u
++#define R_PC_PRIMITIVE_CNTL 232u
++#define R_PC_PRIM_VTX_CNTL 233u
++#define R_PC_RASTER_CNTL 234u
++#define R_PC_CLIP_CNTL 235u
++#define R_PC_RESTART_INDEX 236u
++#define R_PC_GS_LAYERED 237u
++#define R_PC_GS_PARAM 238u
++#define R_PC_HS_PARAM 239u
++#define R_PC_POWER_CNTL 240u
++#define R_VFD_CONTROL_0 241u
++#define R_VFD_CONTROL_1 242u
++#define R_VFD_CONTROL_2 243u
++#define R_VFD_CONTROL_3 244u
++#define R_VFD_CONTROL_4 245u
++#define R_VFD_CONTROL_5 246u
++#define R_VFD_INDEX_OFFSET 247u
++#define R_VFD_INSTANCE_START_OFFSET 248u
++#define R_VFD_FETCH_0_BASE_LO 249u
++#define R_VFD_FETCH_0_BASE_HI 250u
++#define R_VFD_FETCH_0_SIZE 251u
++#define R_VFD_FETCH_0_STRIDE 252u
++#define R_VFD_DECODE_0_INSTR 253u
++#define R_VFD_DECODE_0_STEP_RATE 254u
++#define R_VFD_DEST_CNTL_0_INSTR 255u
++#define R_VFD_POWER_CNTL 256u
++#define R_SP_SP_CNTL 257u
++#define R_SP_VS_CONFIG 258u
++#define R_SP_FS_CONFIG 259u
++#define R_SP_HS_CONFIG 260u
++#define R_SP_DS_CONFIG 261u
++#define R_SP_GS_CONFIG 262u
++#define R_SP_CS_CONFIG 263u
++#define R_SP_VS_CONFIG_MAX_CONST 264u
++#define R_SP_FS_CONFIG_MAX_CONST 265u
++#define R_SP_VS_CTRL_REG0 266u
++#define R_SP_PRIMITIVE_CNTL 267u
++#define R_SP_VS_OUT_0_REG 268u
++#define R_SP_VS_VPC_DST_0_REG 269u
++#define R_UNKNOWN_E5AB 270u
++#define R_SP_VS_OBJ_START_LO 271u
++#define R_SP_VS_OBJ_START_HI 272u
++#define R_SP_VS_PVT_MEM_PARAM 273u
++#define R_SP_VS_PVT_MEM_ADDR 274u
++#define R_SP_VS_PVT_MEM_ADDR_HI 275u
++#define R_SP_VS_PVT_MEM_SIZE 276u
++#define R_SP_FS_CTRL_REG0 277u
++#define R_UNKNOWN_E5C2 278u
++#define R_SP_FS_OBJ_START_LO 279u
++#define R_SP_FS_OBJ_START_HI 280u
++#define R_SP_FS_PVT_MEM_PARAM 281u
++#define R_SP_FS_PVT_MEM_ADDR 282u
++#define R_SP_FS_PVT_MEM_ADDR_HI 283u
++#define R_SP_FS_PVT_MEM_SIZE 284u
++#define R_SP_BLEND_CNTL 285u
++#define R_SP_FS_OUTPUT_CNTL 286u
++#define R_SP_FS_OUTPUT_0_REG 287u
++#define R_SP_FS_OUTPUT_1_REG 288u
++#define R_SP_FS_OUTPUT_2_REG 289u
++#define R_SP_FS_OUTPUT_3_REG 290u
++#define R_SP_FS_OUTPUT_4_REG 291u
++#define R_SP_FS_OUTPUT_5_REG 292u
++#define R_SP_FS_OUTPUT_6_REG 293u
++#define R_SP_FS_OUTPUT_7_REG 294u
++#define R_SP_FS_MRT_0_REG 295u
++#define R_SP_FS_MRT_1_REG 296u
++#define R_SP_FS_MRT_2_REG 297u
++#define R_SP_FS_MRT_3_REG 298u
++#define R_SP_FS_MRT_4_REG 299u
++#define R_SP_FS_MRT_5_REG 300u
++#define R_SP_FS_MRT_6_REG 301u
++#define R_SP_FS_MRT_7_REG 302u
++#define R_UNKNOWN_E5DB 303u
++#define R_SP_HS_CTRL_REG0 304u
++#define R_SP_GS_CTRL_REG0 305u
++#define R_TPL1_VS_TEX_COUNT 306u
++#define R_TPL1_HS_TEX_COUNT 307u
++#define R_TPL1_DS_TEX_COUNT 308u
++#define R_TPL1_GS_TEX_COUNT 309u
++#define R_TPL1_TP_RAS_MSAA_CNTL 310u
++#define R_TPL1_TP_DEST_MSAA_CNTL 311u
++#define R_TPL1_FS_TEX_COUNT 312u
++#define R_TPL1_CS_TEX_COUNT 313u
++#define R_TPL1_TP_FS_ROTATION_CNTL 314u
++#define R_HLSQ_CONTROL_0_REG 315u
++#define R_HLSQ_CONTROL_1_REG 316u
++#define R_HLSQ_CONTROL_2_REG 317u
++#define R_HLSQ_CONTROL_3_REG 318u
++#define R_HLSQ_CONTROL_4_REG 319u
++#define R_HLSQ_UPDATE_CNTL 320u
++#define R_HLSQ_VS_CONFIG 321u
++#define R_HLSQ_FS_CONFIG 322u
++#define R_HLSQ_HS_CONFIG 323u
++#define R_HLSQ_DS_CONFIG 324u
++#define R_HLSQ_GS_CONFIG 325u
++#define R_HLSQ_CS_CONFIG 326u
++#define R_HLSQ_VS_CNTL 327u
++#define R_HLSQ_FS_CNTL 328u
++#define R_HLSQ_HS_CNTL 329u
++#define R_HLSQ_DS_CNTL 330u
++#define R_HLSQ_GS_CNTL 331u
++#define R_UNKNOWN_E7C0 332u
++#define R_SOURCE_UNNAMED_E7C1 333u
++#define R_SOURCE_UNNAMED_E7C2 334u
++#define R_HLSQ_VS_CONSTLEN 335u
++#define R_HLSQ_VS_INSTRLEN 336u
++#define R_UNKNOWN_E7C5 337u
++#define R_SOURCE_UNNAMED_E7C6 338u
++#define R_SOURCE_UNNAMED_E7C7 339u
++#define R_HLSQ_HS_CONSTLEN 340u
++#define R_HLSQ_HS_INSTRLEN 341u
++#define R_UNKNOWN_E7CA 342u
++#define R_SOURCE_UNNAMED_E7CB 343u
++#define R_SOURCE_UNNAMED_E7CC 344u
++#define R_HLSQ_DS_CONSTLEN 345u
++#define R_HLSQ_DS_INSTRLEN 346u
++#define R_UNKNOWN_E7CF 347u
++#define R_SOURCE_UNNAMED_E7D0 348u
++#define R_SOURCE_UNNAMED_E7D1 349u
++#define R_HLSQ_GS_CONSTLEN 350u
++#define R_HLSQ_GS_INSTRLEN 351u
++#define R_UNKNOWN_E7D4 352u
++#define R_SOURCE_UNNAMED_E7D5 353u
++#define R_SOURCE_UNNAMED_E7D6 354u
++#define R_HLSQ_FS_CONSTLEN 355u
++#define R_HLSQ_FS_INSTRLEN 356u
++#define R_UNKNOWN_E7D9 357u
++#define R_SOURCE_UNNAMED_E7DA 358u
++#define R_SOURCE_UNNAMED_E7DB 359u
++#define R_HLSQ_CS_CONSTLEN 360u
++#define R_HLSQ_CS_INSTRLEN 361u
++static const struct sgpu_pm4_rule raster_rules[]={
++ {.reg=0xcc4,.allowed_bits=UINT32_C(0x100000),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x100000),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DBG_ECO_CNTL */
++ {.reg=0xcc6,.allowed_bits=UINT32_C(0x44),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x44),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MODE_CNTL */
++ {.reg=0xcc7,.allowed_bits=UINT32_C(0x10000000),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x10000000),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CCU_CNTL */
++ {.reg=0xd02,.allowed_bits=UINT32_C(0x1f),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1f),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_MODE_CNTL */
++ {.reg=0xe00,.allowed_bits=UINT32_C(0x80),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x80),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_TIMEOUT_THRESHOLD_0 */
++ {.reg=0xe01,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_TIMEOUT_THRESHOLD_1 */
++ {.reg=0xe06,.allowed_bits=UINT32_C(0x1),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_MODE_CNTL */
++ {.reg=0xe42,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_MODE_CNTL */
++ {.reg=0xe60,.allowed_bits=UINT32_C(0x400),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x400),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_DBG_ECO_CNTL */
++ {.reg=0xe62,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_MODE_CNTL */
++ {.reg=0xe91,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UCHE_CACHE_INVALIDATE_MIN_LO */
++ {.reg=0xe92,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UCHE_CACHE_INVALIDATE_MIN_HI */
++ {.reg=0xe93,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UCHE_CACHE_INVALIDATE_MAX_LO */
++ {.reg=0xe94,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UCHE_CACHE_INVALIDATE_MAX_HI */
++ {.reg=0xe95,.allowed_bits=UINT32_C(0x12),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x12),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UCHE_CACHE_INVALIDATE */
++ {.reg=0xec0,.allowed_bits=UINT32_C(0x40000800),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x40000800),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_DBG_ECO_CNTL */
++ {.reg=0xec2,.allowed_bits=UINT32_C(0x1e),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1e),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_MODE_CNTL */
++ {.reg=0xf02,.allowed_bits=UINT32_C(0x544),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x544),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_MODE_CNTL */
++ {.reg=0xe000,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_CNTL */
++ {.reg=0xe001,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_VS_CL_CNTL */
++ {.reg=0xe004,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E004 */
++ {.reg=0xe005,.allowed_bits=UINT32_C(0x3ff),.required_mask=UINT32_C(0xfffffc00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CNTL */
++ {.reg=0xe010,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_VPORT_XOFFSET_0 */
++ {.reg=0xe011,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_VPORT_XSCALE_0 */
++ {.reg=0xe012,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_VPORT_YOFFSET_0 */
++ {.reg=0xe013,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_VPORT_YSCALE_0 */
++ {.reg=0xe014,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_VPORT_ZOFFSET_0 */
++ {.reg=0xe015,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_CL_VPORT_ZSCALE_0 */
++ {.reg=0xe090,.allowed_bits=UINT32_C(0x14),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x14),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_CNTL */
++ {.reg=0xe091,.allowed_bits=UINT32_C(0xffff0010),.required_mask=UINT32_C(0xffff),.required_value=UINT32_C(0x10),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_POINT_MINMAX */
++ {.reg=0xe092,.allowed_bits=UINT32_C(0x18),.required_mask=UINT32_C(0xffffffe7),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_POINT_SIZE */
++ {.reg=0xe093,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_LAYERED */
++ {.reg=0xe094,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_DEPTH_PLANE_CNTL */
++ {.reg=0xe095,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_POLY_OFFSET_SCALE */
++ {.reg=0xe096,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_POLY_OFFSET_OFFSET */
++ {.reg=0xe097,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_POLY_OFFSET_OFFSET_CLAMP */
++ {.reg=0xe098,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_DEPTH_BUFFER_INFO */
++ {.reg=0xe099,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SU_CONSERVATIVE_RAS_CNTL */
++ {.reg=0xe0a0,.allowed_bits=UINT32_C(0x8),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x8),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_CNTL */
++ {.reg=0xe0a1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_BIN_CNTL */
++ {.reg=0xe0a2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_RAS_MSAA_CNTL */
++ {.reg=0xe0a3,.allowed_bits=UINT32_C(0x4),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x4),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_DEST_MSAA_CNTL */
++ {.reg=0xe0a4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_SCREEN_SCISSOR_CNTL */
++ {.reg=0xe0aa,.allowed_bits=UINT32_C(0x7fff7fff),.required_mask=UINT32_C(0x80008000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_SCREEN_SCISSOR_TL_0 */
++ {.reg=0xe0ab,.allowed_bits=UINT32_C(0x7fff7fff),.required_mask=UINT32_C(0x80008000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_SCREEN_SCISSOR_BR_0 */
++ {.reg=0xe0ca,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_VIEWPORT_SCISSOR_TL_0 */
++ {.reg=0xe0cb,.allowed_bits=UINT32_C(0x7fff7fff),.required_mask=UINT32_C(0x80008000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_VIEWPORT_SCISSOR_BR_0 */
++ {.reg=0xe0ea,.allowed_bits=UINT32_C(0x7fff7fff),.required_mask=UINT32_C(0x80008000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_WINDOW_SCISSOR_TL */
++ {.reg=0xe0eb,.allowed_bits=UINT32_C(0x7fff7fff),.required_mask=UINT32_C(0x80008000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_SC_WINDOW_SCISSOR_BR */
++ {.reg=0xe100,.allowed_bits=UINT32_C(0x1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* GRAS_LRZ_CNTL */
++ {.reg=0xe140,.allowed_bits=UINT32_C(0x20000),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x20000),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CNTL */
++ {.reg=0xe141,.allowed_bits=UINT32_C(0x8),.required_mask=UINT32_C(0xfffffff7),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RENDER_CNTL */
++ {.reg=0xe142,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RAS_MSAA_CNTL */
++ {.reg=0xe143,.allowed_bits=UINT32_C(0x4),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x4),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEST_MSAA_CNTL */
++ {.reg=0xe144,.allowed_bits=UINT32_C(0x3ff),.required_mask=UINT32_C(0xfffffc00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RENDER_CONTROL0 */
++ {.reg=0xe145,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RENDER_CONTROL1 */
++ {.reg=0xe146,.allowed_bits=UINT32_C(0x1),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_FS_OUTPUT_CNTL */
++ {.reg=0xe147,.allowed_bits=UINT32_C(0xf),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xf),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RENDER_COMPONENTS */
++ {.reg=0xe150,.allowed_bits=UINT32_C(0x7e3),.required_mask=UINT32_C(0xfffffffc),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_0_CONTROL */
++ {.reg=0xe151,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_0_BLEND_CONTROL */
++ {.reg=0xe152,.allowed_bits=UINT32_C(0x30),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x30),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_0_BUF_INFO */
++ {.reg=0xe153,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_0_PITCH */
++ {.reg=0xe154,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_0_ARRAY_PITCH */
++ {.reg=0xe155,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=64u,.minimum_bytes=4u,.kind=SG_PM4_WRITE64}, /* RB_MRT_0_BASE_LO */
++ {.reg=0xe156,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_0_BASE_HI */
++ {.reg=0xe157,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_CONTROL */
++ {.reg=0xe158,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_BLEND_CONTROL */
++ {.reg=0xe159,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_BUF_INFO */
++ {.reg=0xe15a,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_PITCH */
++ {.reg=0xe15b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_ARRAY_PITCH */
++ {.reg=0xe15c,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_BASE_LO */
++ {.reg=0xe15d,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_1_BASE_HI */
++ {.reg=0xe15e,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_CONTROL */
++ {.reg=0xe15f,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_BLEND_CONTROL */
++ {.reg=0xe160,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_BUF_INFO */
++ {.reg=0xe161,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_PITCH */
++ {.reg=0xe162,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_ARRAY_PITCH */
++ {.reg=0xe163,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_BASE_LO */
++ {.reg=0xe164,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_2_BASE_HI */
++ {.reg=0xe165,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_CONTROL */
++ {.reg=0xe166,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_BLEND_CONTROL */
++ {.reg=0xe167,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_BUF_INFO */
++ {.reg=0xe168,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_PITCH */
++ {.reg=0xe169,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_ARRAY_PITCH */
++ {.reg=0xe16a,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_BASE_LO */
++ {.reg=0xe16b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_3_BASE_HI */
++ {.reg=0xe16c,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_CONTROL */
++ {.reg=0xe16d,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_BLEND_CONTROL */
++ {.reg=0xe16e,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_BUF_INFO */
++ {.reg=0xe16f,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_PITCH */
++ {.reg=0xe170,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_ARRAY_PITCH */
++ {.reg=0xe171,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_BASE_LO */
++ {.reg=0xe172,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_4_BASE_HI */
++ {.reg=0xe173,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_CONTROL */
++ {.reg=0xe174,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_BLEND_CONTROL */
++ {.reg=0xe175,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_BUF_INFO */
++ {.reg=0xe176,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_PITCH */
++ {.reg=0xe177,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_ARRAY_PITCH */
++ {.reg=0xe178,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_BASE_LO */
++ {.reg=0xe179,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_5_BASE_HI */
++ {.reg=0xe17a,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_CONTROL */
++ {.reg=0xe17b,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_BLEND_CONTROL */
++ {.reg=0xe17c,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_BUF_INFO */
++ {.reg=0xe17d,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_PITCH */
++ {.reg=0xe17e,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_ARRAY_PITCH */
++ {.reg=0xe17f,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_BASE_LO */
++ {.reg=0xe180,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_6_BASE_HI */
++ {.reg=0xe181,.allowed_bits=UINT32_C(0x7e1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x7e0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_CONTROL */
++ {.reg=0xe182,.allowed_bits=UINT32_C(0x7010701),.required_mask=UINT32_C(0xf8fef8fe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_BLEND_CONTROL */
++ {.reg=0xe183,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_BUF_INFO */
++ {.reg=0xe184,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_PITCH */
++ {.reg=0xe185,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_ARRAY_PITCH */
++ {.reg=0xe186,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_BASE_LO */
++ {.reg=0xe187,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_7_BASE_HI */
++ {.reg=0xe1a0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_RED */
++ {.reg=0xe1a1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_RED_F32 */
++ {.reg=0xe1a2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_GREEN */
++ {.reg=0xe1a3,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_GREEN_F32 */
++ {.reg=0xe1a4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_BLUE */
++ {.reg=0xe1a5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_BLUE_F32 */
++ {.reg=0xe1a6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_ALPHA */
++ {.reg=0xe1a7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_ALPHA_F32 */
++ {.reg=0xe1a8,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_ALPHA_CONTROL */
++ {.reg=0xe1a9,.allowed_bits=UINT32_C(0xffff00ff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0xffff0000),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLEND_CNTL */
++ {.reg=0xe1b0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_PLANE_CNTL */
++ {.reg=0xe1b1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_CNTL */
++ {.reg=0xe1b2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_BUFFER_INFO */
++ {.reg=0xe1b3,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_BUFFER_BASE_LO */
++ {.reg=0xe1b4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_BUFFER_BASE_HI */
++ {.reg=0xe1b5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_BUFFER_PITCH */
++ {.reg=0xe1b6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_BUFFER_ARRAY_PITCH */
++ {.reg=0xe1c0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_STENCIL_CONTROL */
++ {.reg=0xe1c1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_STENCIL_INFO */
++ {.reg=0xe1c6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_STENCILREFMASK */
++ {.reg=0xe1c7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_STENCILREFMASK_BF */
++ {.reg=0xe1d0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_WINDOW_OFFSET */
++ {.reg=0xe210,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_BLIT_CNTL */
++ {.reg=0xe211,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RESOLVE_CNTL_1 */
++ {.reg=0xe212,.allowed_bits=UINT32_C(0x7fff7fff),.required_mask=UINT32_C(0x80008000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_RESOLVE_CNTL_2 */
++ {.reg=0xe218,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CLEAR_COLOR_DW0 */
++ {.reg=0xe219,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CLEAR_COLOR_DW1 */
++ {.reg=0xe21a,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CLEAR_COLOR_DW2 */
++ {.reg=0xe21b,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CLEAR_COLOR_DW3 */
++ {.reg=0xe21c,.allowed_bits=UINT32_C(0xf2),.required_mask=UINT32_C(0xffffff0d),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_CLEAR_CNTL */
++ {.reg=0xe240,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_FLAG_BUFFER_BASE_LO */
++ {.reg=0xe241,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_FLAG_BUFFER_BASE_HI */
++ {.reg=0xe242,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_DEPTH_FLAG_BUFFER_PITCH */
++ {.reg=0xe243,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_0_ADDR_LO */
++ {.reg=0xe244,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_0_ADDR_HI */
++ {.reg=0xe245,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_0_PITCH */
++ {.reg=0xe246,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_0_ARRAY_PITCH */
++ {.reg=0xe247,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_1_ADDR_LO */
++ {.reg=0xe248,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_1_ADDR_HI */
++ {.reg=0xe249,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_1_PITCH */
++ {.reg=0xe24a,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_1_ARRAY_PITCH */
++ {.reg=0xe24b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_2_ADDR_LO */
++ {.reg=0xe24c,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_2_ADDR_HI */
++ {.reg=0xe24d,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_2_PITCH */
++ {.reg=0xe24e,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_2_ARRAY_PITCH */
++ {.reg=0xe24f,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_3_ADDR_LO */
++ {.reg=0xe250,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_3_ADDR_HI */
++ {.reg=0xe251,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_3_PITCH */
++ {.reg=0xe252,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_3_ARRAY_PITCH */
++ {.reg=0xe253,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_4_ADDR_LO */
++ {.reg=0xe254,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_4_ADDR_HI */
++ {.reg=0xe255,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_4_PITCH */
++ {.reg=0xe256,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_4_ARRAY_PITCH */
++ {.reg=0xe257,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_5_ADDR_LO */
++ {.reg=0xe258,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_5_ADDR_HI */
++ {.reg=0xe259,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_5_PITCH */
++ {.reg=0xe25a,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_5_ARRAY_PITCH */
++ {.reg=0xe25b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_6_ADDR_LO */
++ {.reg=0xe25c,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_6_ADDR_HI */
++ {.reg=0xe25d,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_6_PITCH */
++ {.reg=0xe25e,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_6_ARRAY_PITCH */
++ {.reg=0xe25f,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_7_ADDR_LO */
++ {.reg=0xe260,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_7_ADDR_HI */
++ {.reg=0xe261,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_7_PITCH */
++ {.reg=0xe262,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* RB_MRT_FLAG_BUFFER_7_ARRAY_PITCH */
++ {.reg=0xe280,.allowed_bits=UINT32_C(0x10806),.required_mask=UINT32_C(0xfffff7fd),.required_value=UINT32_C(0x10004),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_CNTL_0 */
++ {.reg=0xe282,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_0_MODE */
++ {.reg=0xe283,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_1_MODE */
++ {.reg=0xe284,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_2_MODE */
++ {.reg=0xe285,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_3_MODE */
++ {.reg=0xe286,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_4_MODE */
++ {.reg=0xe287,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_5_MODE */
++ {.reg=0xe288,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_6_MODE */
++ {.reg=0xe289,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_INTERP_7_MODE */
++ {.reg=0xe28a,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_0_MODE */
++ {.reg=0xe28b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_1_MODE */
++ {.reg=0xe28c,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_2_MODE */
++ {.reg=0xe28d,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_3_MODE */
++ {.reg=0xe28e,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_4_MODE */
++ {.reg=0xe28f,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_5_MODE */
++ {.reg=0xe290,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_6_MODE */
++ {.reg=0xe291,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VARYING_PS_REPL_7_MODE */
++ {.reg=0xe292,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E292 */
++ {.reg=0xe293,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E293 */
++ {.reg=0xe294,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0xfffffffc),.required_value=UINT32_C(0xfffffffc),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VAR_0_DISABLE */
++ {.reg=0xe295,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xffffffff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VAR_1_DISABLE */
++ {.reg=0xe296,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xffffffff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VAR_2_DISABLE */
++ {.reg=0xe297,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xffffffff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_VAR_3_DISABLE */
++ {.reg=0xe298,.allowed_bits=UINT32_C(0xffff),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xffff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_GS_SIV_CNTL */
++ {.reg=0xe29a,.allowed_bits=UINT32_C(0xffff00),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xffff00),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_CLIP_CNTL */
++ {.reg=0xe29d,.allowed_bits=UINT32_C(0xff02),.required_mask=UINT32_C(0xfffffffd),.required_value=UINT32_C(0xff00),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_PACK */
++ {.reg=0xe2a0,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_FS_PRIMITIVEID_CNTL */
++ {.reg=0xe2a1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_BUF_CNTL */
++ {.reg=0xe2a2,.allowed_bits=UINT32_C(0x1),.required_mask=UINT32_C(0xfffffffe),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_OVERRIDE */
++ {.reg=0xe2a7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_0_BUFFER_BASE_LO */
++ {.reg=0xe2a8,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_0_BUFFER_BASE_HI */
++ {.reg=0xe2a9,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_0_BUFFER_SIZE */
++ {.reg=0xe2ab,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_0_BUFFER_OFFSET */
++ {.reg=0xe2ac,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_0_FLUSH_BASE_LO */
++ {.reg=0xe2ad,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_0_FLUSH_BASE_HI */
++ {.reg=0xe2ae,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_1_BUFFER_BASE_LO */
++ {.reg=0xe2af,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_1_BUFFER_BASE_HI */
++ {.reg=0xe2b0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_1_BUFFER_SIZE */
++ {.reg=0xe2b2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_1_BUFFER_OFFSET */
++ {.reg=0xe2b3,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_1_FLUSH_BASE_LO */
++ {.reg=0xe2b4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_1_FLUSH_BASE_HI */
++ {.reg=0xe2b5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_2_BUFFER_BASE_LO */
++ {.reg=0xe2b6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_2_BUFFER_BASE_HI */
++ {.reg=0xe2b7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_2_BUFFER_SIZE */
++ {.reg=0xe2b9,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_2_BUFFER_OFFSET */
++ {.reg=0xe2ba,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_2_FLUSH_BASE_LO */
++ {.reg=0xe2bb,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_2_FLUSH_BASE_HI */
++ {.reg=0xe2bc,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_3_BUFFER_BASE_LO */
++ {.reg=0xe2bd,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_3_BUFFER_BASE_HI */
++ {.reg=0xe2be,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_3_BUFFER_SIZE */
++ {.reg=0xe2c0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_3_BUFFER_OFFSET */
++ {.reg=0xe2c1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_3_FLUSH_BASE_LO */
++ {.reg=0xe2c2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VPC_SO_3_FLUSH_BASE_HI */
++ {.reg=0xe384,.allowed_bits=UINT32_C(0x406),.required_mask=UINT32_C(0xfffffffd),.required_value=UINT32_C(0x404),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_PRIMITIVE_CNTL */
++ {.reg=0xe385,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_PRIM_VTX_CNTL */
++ {.reg=0xe388,.allowed_bits=UINT32_C(0x12),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x12),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_RASTER_CNTL */
++ {.reg=0xe389,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_CLIP_CNTL */
++ {.reg=0xe38c,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xffffffff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_RESTART_INDEX */
++ {.reg=0xe38d,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_GS_LAYERED */
++ {.reg=0xe38e,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_GS_PARAM */
++ {.reg=0xe38f,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_HS_PARAM */
++ {.reg=0xe3b0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* PC_POWER_CNTL */
++ {.reg=0xe400,.allowed_bits=UINT32_C(0x1),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_CONTROL_0 */
++ {.reg=0xe401,.allowed_bits=UINT32_C(0xfcfcfc),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xfcfcfc),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_CONTROL_1 */
++ {.reg=0xe402,.allowed_bits=UINT32_C(0xfcfc),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xfcfc),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_CONTROL_2 */
++ {.reg=0xe403,.allowed_bits=UINT32_C(0xfcfc),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xfcfc),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_CONTROL_3 */
++ {.reg=0xe404,.allowed_bits=UINT32_C(0xfc),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xfc),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_CONTROL_4 */
++ {.reg=0xe405,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_CONTROL_5 */
++ {.reg=0xe408,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_INDEX_OFFSET */
++ {.reg=0xe409,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_INSTANCE_START_OFFSET */
++ {.reg=0xe40a,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_READ64}, /* VFD_FETCH_0_BASE_LO */
++ {.reg=0xe40b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_FETCH_0_BASE_HI */
++ {.reg=0xe40c,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_FETCH_0_SIZE */
++ {.reg=0xe40d,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_FETCH_0_STRIDE */
++ {.reg=0xe48a,.allowed_bits=UINT32_C(0xc6700000),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xc6700000),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_DECODE_0_INSTR */
++ {.reg=0xe48b,.allowed_bits=UINT32_C(0x1),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_DECODE_0_STEP_RATE */
++ {.reg=0xe4ca,.allowed_bits=UINT32_C(0xf),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xf),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_DEST_CNTL_0_INSTR */
++ {.reg=0xe4f0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* VFD_POWER_CNTL */
++ {.reg=0xe580,.allowed_bits=UINT32_C(0x10),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x10),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_SP_CNTL */
++ {.reg=0xe584,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_CONFIG */
++ {.reg=0xe585,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_CONFIG */
++ {.reg=0xe586,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_HS_CONFIG */
++ {.reg=0xe587,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_DS_CONFIG */
++ {.reg=0xe588,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_GS_CONFIG */
++ {.reg=0xe589,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_CS_CONFIG */
++ {.reg=0xe58a,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_CONFIG_MAX_CONST */
++ {.reg=0xe58b,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_CONFIG_MAX_CONST */
++ {.reg=0xe590,.allowed_bits=UINT32_C(0x10fc06),.required_mask=UINT32_C(0xffef03ff),.required_value=UINT32_C(0x6),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_CTRL_REG0 */
++ {.reg=0xe592,.allowed_bits=UINT32_C(0x3),.required_mask=UINT32_C(0xfffffffc),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_PRIMITIVE_CNTL */
++ {.reg=0xe593,.allowed_bits=UINT32_C(0xf000f04),.required_mask=UINT32_C(0xf0fff3fb),.required_value=UINT32_C(0x300),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_OUT_0_REG */
++ {.reg=0xe5a3,.allowed_bits=UINT32_C(0x200),.required_mask=UINT32_C(0xfffffdff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_VPC_DST_0_REG */
++ {.reg=0xe5ab,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E5AB */
++ {.reg=0xe5ac,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=128u,.minimum_bytes=128u,.kind=SG_PM4_SHADER64}, /* SP_VS_OBJ_START_LO */
++ {.reg=0xe5ad,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_OBJ_START_HI */
++ {.reg=0xe5ae,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_PVT_MEM_PARAM */
++ {.reg=0xe5af,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_PVT_MEM_ADDR */
++ {.reg=0xe5b0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_PVT_MEM_ADDR_HI */
++ {.reg=0xe5b1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_VS_PVT_MEM_SIZE */
++ {.reg=0xe5c0,.allowed_bits=UINT32_C(0x15fc0e),.required_mask=UINT32_C(0xffee03ff),.required_value=UINT32_C(0x4000e),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_CTRL_REG0 */
++ {.reg=0xe5c2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E5C2 */
++ {.reg=0xe5c3,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=128u,.minimum_bytes=128u,.kind=SG_PM4_SHADER64}, /* SP_FS_OBJ_START_LO */
++ {.reg=0xe5c4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OBJ_START_HI */
++ {.reg=0xe5c5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_PVT_MEM_PARAM */
++ {.reg=0xe5c6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_PVT_MEM_ADDR */
++ {.reg=0xe5c7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_PVT_MEM_ADDR_HI */
++ {.reg=0xe5c8,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_PVT_MEM_SIZE */
++ {.reg=0xe5c9,.allowed_bits=UINT32_C(0x1ff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x100),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_BLEND_CNTL */
++ {.reg=0xe5ca,.allowed_bits=UINT32_C(0x1f9f81),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x1f9f81),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_CNTL */
++ {.reg=0xe5cb,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_0_REG */
++ {.reg=0xe5cc,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_1_REG */
++ {.reg=0xe5cd,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_2_REG */
++ {.reg=0xe5ce,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_3_REG */
++ {.reg=0xe5cf,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_4_REG */
++ {.reg=0xe5d0,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_5_REG */
++ {.reg=0xe5d1,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_6_REG */
++ {.reg=0xe5d2,.allowed_bits=UINT32_C(0xff),.required_mask=UINT32_C(0xffffff00),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_OUTPUT_7_REG */
++ {.reg=0xe5d3,.allowed_bits=UINT32_C(0x30),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x30),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_0_REG */
++ {.reg=0xe5d4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_1_REG */
++ {.reg=0xe5d5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_2_REG */
++ {.reg=0xe5d6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_3_REG */
++ {.reg=0xe5d7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_4_REG */
++ {.reg=0xe5d8,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_5_REG */
++ {.reg=0xe5d9,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_6_REG */
++ {.reg=0xe5da,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_FS_MRT_7_REG */
++ {.reg=0xe5db,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E5DB */
++ {.reg=0xe600,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_HS_CTRL_REG0 */
++ {.reg=0xe640,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SP_GS_CTRL_REG0 */
++ {.reg=0xe700,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_VS_TEX_COUNT */
++ {.reg=0xe701,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_HS_TEX_COUNT */
++ {.reg=0xe702,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_DS_TEX_COUNT */
++ {.reg=0xe703,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_GS_TEX_COUNT */
++ {.reg=0xe704,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_TP_RAS_MSAA_CNTL */
++ {.reg=0xe705,.allowed_bits=UINT32_C(0x4),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x4),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_TP_DEST_MSAA_CNTL */
++ {.reg=0xe750,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_FS_TEX_COUNT */
++ {.reg=0xe751,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_CS_TEX_COUNT */
++ {.reg=0xe764,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* TPL1_TP_FS_ROTATION_CNTL */
++ {.reg=0xe784,.allowed_bits=UINT32_C(0x881),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x881),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CONTROL_0_REG */
++ {.reg=0xe785,.allowed_bits=UINT32_C(0x3f),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x3f),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CONTROL_1_REG */
++ {.reg=0xe786,.allowed_bits=UINT32_C(0xfcfcfcfc),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0xfcfcfcfc),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CONTROL_2_REG */
++ {.reg=0xe787,.allowed_bits=UINT32_C(0xfcfcfc),.required_mask=UINT32_C(0xffffff03),.required_value=UINT32_C(0xfcfc00),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CONTROL_3_REG */
++ {.reg=0xe788,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CONTROL_4_REG */
++ {.reg=0xe78a,.allowed_bits=UINT32_C(0x20fffff),.required_mask=UINT32_C(0xfdffffff),.required_value=UINT32_C(0xfffff),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_UPDATE_CNTL */
++ {.reg=0xe78b,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_VS_CONFIG */
++ {.reg=0xe78c,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_FS_CONFIG */
++ {.reg=0xe78d,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_HS_CONFIG */
++ {.reg=0xe78e,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_DS_CONFIG */
++ {.reg=0xe78f,.allowed_bits=UINT32_C(0x7fff),.required_mask=UINT32_C(0xffff8000),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_GS_CONFIG */
++ {.reg=0xe790,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CS_CONFIG */
++ {.reg=0xe791,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_VS_CNTL */
++ {.reg=0xe792,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_FS_CNTL */
++ {.reg=0xe793,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_HS_CNTL */
++ {.reg=0xe794,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_DS_CNTL */
++ {.reg=0xe795,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_GS_CNTL */
++ {.reg=0xe7c0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E7C0 */
++ {.reg=0xe7c1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7C1 */
++ {.reg=0xe7c2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7C2 */
++ {.reg=0xe7c3,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_VS_CONSTLEN */
++ {.reg=0xe7c4,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_VS_INSTRLEN */
++ {.reg=0xe7c5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E7C5 */
++ {.reg=0xe7c6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7C6 */
++ {.reg=0xe7c7,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7C7 */
++ {.reg=0xe7c8,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_HS_CONSTLEN */
++ {.reg=0xe7c9,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_HS_INSTRLEN */
++ {.reg=0xe7ca,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E7CA */
++ {.reg=0xe7cb,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7CB */
++ {.reg=0xe7cc,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7CC */
++ {.reg=0xe7cd,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_DS_CONSTLEN */
++ {.reg=0xe7ce,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_DS_INSTRLEN */
++ {.reg=0xe7cf,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E7CF */
++ {.reg=0xe7d0,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7D0 */
++ {.reg=0xe7d1,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7D1 */
++ {.reg=0xe7d2,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_GS_CONSTLEN */
++ {.reg=0xe7d3,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_GS_INSTRLEN */
++ {.reg=0xe7d4,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E7D4 */
++ {.reg=0xe7d5,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7D5 */
++ {.reg=0xe7d6,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7D6 */
++ {.reg=0xe7d7,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_FS_CONSTLEN */
++ {.reg=0xe7d8,.allowed_bits=UINT32_C(0xffffffff),.required_mask=UINT32_C(0x0),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_FS_INSTRLEN */
++ {.reg=0xe7d9,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* UNKNOWN_E7D9 */
++ {.reg=0xe7da,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7DA */
++ {.reg=0xe7db,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* SOURCE_UNNAMED_E7DB */
++ {.reg=0xe7dc,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CS_CONSTLEN */
++ {.reg=0xe7dd,.allowed_bits=UINT32_C(0x0),.required_mask=UINT32_C(0xffffffff),.required_value=UINT32_C(0x0),.alignment=4u,.minimum_bytes=4u,.kind=SG_PM4_VALUE}, /* HLSQ_CS_INSTRLEN */
++};
++struct sgpu_raster_ui_binding {uint16_t index;uint32_t plain,quad;};
++static const struct sgpu_raster_ui_binding raster_ui_bindings[]={
++ {318u,UINT32_C(0xfcfcfc),UINT32_C(0xfcfc00)}, /* HLSQ_CONTROL_3_REG */
++ {232u,UINT32_C(0x404),UINT32_C(0x406)}, /* PC_PRIMITIVE_CNTL */
++ {123u,UINT32_C(0xffff0000),UINT32_C(0xffff00ff)}, /* RB_BLEND_CNTL */
++ {59u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_0_BLEND_CONTROL */
++ {58u,UINT32_C(0x7e0),UINT32_C(0x7e3)}, /* RB_MRT_0_CONTROL */
++ {66u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_1_BLEND_CONTROL */
++ {65u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_1_CONTROL */
++ {73u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_2_BLEND_CONTROL */
++ {72u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_2_CONTROL */
++ {80u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_3_BLEND_CONTROL */
++ {79u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_3_CONTROL */
++ {87u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_4_BLEND_CONTROL */
++ {86u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_4_CONTROL */
++ {94u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_5_BLEND_CONTROL */
++ {93u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_5_CONTROL */
++ {101u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_6_BLEND_CONTROL */
++ {100u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_6_CONTROL */
++ {108u,UINT32_C(0x0),UINT32_C(0x7010701)}, /* RB_MRT_7_BLEND_CONTROL */
++ {107u,UINT32_C(0x7e0),UINT32_C(0x7e1)}, /* RB_MRT_7_CONTROL */
++ {285u,UINT32_C(0x100),UINT32_C(0x1ff)}, /* SP_BLEND_CNTL */
++ {267u,UINT32_C(0x1),UINT32_C(0x2)}, /* SP_PRIMITIVE_CNTL */
++ {268u,UINT32_C(0xf00),UINT32_C(0xf000304)}, /* SP_VS_OUT_0_REG */
++ {269u,UINT32_C(0x0),UINT32_C(0x200)}, /* SP_VS_VPC_DST_0_REG */
++ {179u,UINT32_C(0x10004),UINT32_C(0x10806)}, /* VPC_CNTL_0 */
++ {204u,UINT32_C(0xff00),UINT32_C(0xff02)}, /* VPC_PACK */
++ {198u,UINT32_C(0xffffffff),UINT32_C(0xfffffffc)}, /* VPC_VAR_0_DISABLE */
++};
++static const uint16_t raster_needed_draw[]={0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99,100,101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,137,138,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255,256,257,258,259,260,261,262,263,264,265,266,267,268,269,270,271,272,273,274,275,276,277,278,279,280,281,282,283,284,285,286,287,288,289,290,291,292,293,294,295,296,297,298,299,300,301,302,303,304,305,306,307,308,309,310,311,312,313,314,315,316,317,318,319,320,321,322,323,324,325,326,327,328,329,330,331,332,333,334,335,336,337,338,339,340,341,342,343,344,345,346,347,348,349,350,351,352,353,354,355,356,357,358,359,360,361};
++static const uint16_t raster_needed_clear[]={0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,20,29,30,31,36,37,38,39,40,41,42,47,48,49,50,51,52,53,60,61,62,63,64,67,68,69,70,71,74,75,76,77,78,81,82,83,84,85,88,89,90,91,92,95,96,97,98,99,102,103,104,105,106,109,110,111,112,113,126,127,128,129,130,132,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,176,177,178,196,197,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,224,225,226,227,228,229,230,231,234,236,237,238,239,240,256,264,265,270,278,295,296,297,298,299,300,301,302,303,304,305,306,307,308,309,310,311,312,313,314,320,332,333,334,337,338,339,342,343,344,347,348,349,352,353,354,357,358,359};
+diff --git a/bsd/dev/santoni_gpu_vm.c b/bsd/dev/santoni_gpu_vm.c
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_vm.c
+@@ -0,0 +1,71 @@
++#include "santoni_gpu_vm.h"
++#include <stddef.h>
++#include <string.h>
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++#define GVM_FN __attribute__((noinline))
++_Static_assert(SGPU_PAGE==4096,"actual Santoni4K geometry");
++_Static_assert(GVM_BASE==0x02000000u && GVM_L2_FIRST+GVM_L3_PAGES<=512,"32-bit L2 aperture");
++static bool GVM_FN gvm_fail(struct gvm *v,uint32_t error) {if(!v->error)v->error=error;return false;}
++static bool GVM_FN gvm_memory_valid(struct gvm *v,const struct gvm_memory *m,const struct gvm_ops *ops)
++{
++    if(!m || !ops || !ops->owned_private || !ops->page_pa || !ops->reserved_pa || !m->va ||
++        ((uintptr_t)m->va&(SGPU_PAGE-1)) || !m->cookie || m->bytes!=GVM_TABLE_PAGES*SGPU_PAGE ||
++        (uintptr_t)m->va>UINTPTR_MAX-m->bytes)return gvm_fail(v,GVM_INPUT);
++    uintptr_t base=(uintptr_t)m->va,end=base+m->bytes,metadata=(uintptr_t)m;
++    if(metadata>UINTPTR_MAX-sizeof(*m) || (base<metadata+sizeof(*m) && metadata<end) ||
++        (base<(uintptr_t)v+sizeof(*v) && (uintptr_t)v<end))return gvm_fail(v,GVM_INPUT);
++    if(!ops->owned_private(ops->context,m))return gvm_fail(v,GVM_OWNER);
++    for(uint32_t i=0;i<GVM_TABLE_PAGES;i++) {
++        uint64_t pa=m->pa[i];
++        if((pa&(SGPU_PAGE-1)) || pa<SGPU_DMA_MIN || pa>SGPU_DMA_END-SGPU_PAGE ||
++            ops->page_pa(ops->context,m,i)!=pa)return gvm_fail(v,GVM_PAGE);
++        if(ops->reserved_pa(ops->context,pa))return gvm_fail(v,GVM_RESERVED);
++        for(uint32_t j=0;j<i;j++)if(m->pa[j]==pa)return gvm_fail(v,GVM_PAGE);
++    }
++    return true;
++}
++bool GVM_FN gvm_prepare(struct gvm *v,const struct gvm_memory *memory,const struct gvm_ops *ops)
++{
++    if(!v || v->prepared || v->memory.va || v->error)return false;
++    if(!gvm_memory_valid(v,memory,ops))return false;
++    /* Fresh private pages must be zero. Unknown scratch/live content is never
++     * silently erased to manufacture an allocator/table proof. */
++    const uint64_t *words=(const uint64_t *)(const void *)memory->va;
++    for(uint32_t i=0;i<memory->bytes/8;i++)if(words[i])return gvm_fail(v,GVM_NONZERO);
++    v->memory=*memory;v->ops=*ops;
++    memset(v->ptes,0,sizeof(v->ptes));
++    for(unsigned i=0;i<GVM_L3_PAGES;i++)v->l2[i]=memory->pa[i]|3u;
++    v->ptes[0]=memory->pa[GVM_FENCE_PAGE]|GVM_PTE_RW;
++    ((uint64_t *)(void *)memory->va)[0]=v->ptes[0];
++    v->prepared=true;return true;
++}
++bool GVM_FN gvm_verify(struct gvm *v)
++{
++    if(!v || !v->prepared || v->error)return false;
++    if(!gvm_memory_valid(v,&v->memory,&v->ops))return false;
++    if(v->ptes[0]!=(v->memory.pa[GVM_FENCE_PAGE]|GVM_PTE_RW))return gvm_fail(v,GVM_CHANGED);
++    const uint64_t *words=(const uint64_t *)(const void *)v->memory.va;
++    for(uint32_t i=0;i<GVM_PAGES;i++)if(words[i]!=v->ptes[i])return gvm_fail(v,GVM_CHANGED);
++    for(unsigned i=0;i<GVM_L3_PAGES;i++)if(v->l2[i]!=(v->memory.pa[i]|3u))return gvm_fail(v,GVM_CHANGED);
++    return true;
++}
++bool GVM_FN gvm_propose_l2(struct gvm *v,const uint64_t *current,uint64_t *candidate)
++{
++    if(!v || !current || !candidate || ((uintptr_t)current&7) || ((uintptr_t)candidate&7))return false;
++    uintptr_t old=(uintptr_t)current,next=(uintptr_t)candidate,size=512u*8u;
++    if(old>UINTPTR_MAX-size || next>UINTPTR_MAX-size || (old<next+size && next<old+size))return gvm_fail(v,GVM_ROOT);
++    if(!gvm_verify(v))return false;
++    uintptr_t table=(uintptr_t)v->memory.va;
++    if((next<table+v->memory.bytes && table<next+size) ||
++        (next<(uintptr_t)v+sizeof(*v) && (uintptr_t)v<next+size))return gvm_fail(v,GVM_ROOT);
++    for(unsigned i=0;i<GVM_L3_PAGES;i++)if(current[GVM_L2_FIRST+i])return gvm_fail(v,GVM_ROOT);
++    memcpy(candidate,current,size);
++    for(unsigned i=0;i<GVM_L3_PAGES;i++)candidate[GVM_L2_FIRST+i]=v->l2[i];
++    return true; /* caller has not published or modified the original root */
++}
++bool GVM_FN gvm_index(const struct gvm *v,uint32_t va,uint32_t *index)
++{
++    if(!v || !v->prepared || v->error || !index || va<GVM_BASE || (va&(SGPU_PAGE-1)) || va-GVM_BASE>=GVM_BYTES)return false;
++    *index=(va-GVM_BASE)/SGPU_PAGE;return true;
++}
++#endif /* ARM64_BOARD_CONFIG_SANTONI */
+diff --git a/bsd/dev/santoni_gpu_vm.h b/bsd/dev/santoni_gpu_vm.h
+new file mode 100644
+--- /dev/null
++++ b/bsd/dev/santoni_gpu_vm.h
+@@ -0,0 +1,35 @@
++#ifndef SANTONI_GRAPHICS_VM32_DRAFT_H
++#define SANTONI_GRAPHICS_VM32_DRAFT_H
++#include "santoni_gpu_graphics.h"
++/* Engineering virtual aperture only: next32MiB-aligned window after the
++ * tested legacy render aperture. This is NOT a physical/DTS/TZ carveout. */
++#define GVM_BYTES SGPU_GRAPHICS_WIDE_BYTES
++#define GVM_BASE SGPU_GRAPHICS_WIDE_VA
++#define GVM_PAGES (GVM_BYTES/SGPU_PAGE)
++#define GVM_L3_PAGES (GVM_PAGES/512u)
++#define GVM_TABLE_PAGES (GVM_L3_PAGES+1u)
++#define GVM_FENCE_PAGE GVM_L3_PAGES
++#define GVM_L2_FIRST (GVM_BASE>>21)
++#define GVM_PTE_RW UINT64_C(0x0060000000000e47)
++struct gvm_memory {uint8_t *va;uint64_t pa[GVM_TABLE_PAGES];uintptr_t cookie;uint32_t bytes;};
++struct gvm_ops {
++    void *context;
++    /* Must prove a fresh private allocator lease, never a public/retired alias. */
++    bool (*owned_private)(void *,const struct gvm_memory *);
++    uint64_t (*page_pa)(void *,const struct gvm_memory *,uint32_t);
++    bool (*reserved_pa)(void *,uint64_t);
++};
++enum gvm_error { GVM_OK,GVM_INPUT,GVM_OWNER,GVM_PAGE,GVM_RESERVED,GVM_NONZERO,GVM_CHANGED,GVM_ROOT };
++struct gvm {
++    struct gvm_memory memory;struct gvm_ops ops;
++    uint64_t ptes[GVM_PAGES],l2[GVM_L3_PAGES];
++    uint32_t error;bool prepared;
++};
++/* RAM-only construction/verification. No MMIO/SMC/table publication/free.
++ * Adapter must independently stop CP, fault SID0, disable CB and check every
++ * publication/flush before using proposed descriptors on hardware. */
++bool gvm_prepare(struct gvm *,const struct gvm_memory *,const struct gvm_ops *);
++bool gvm_verify(struct gvm *);
++bool gvm_propose_l2(struct gvm *,const uint64_t *,uint64_t *);
++bool gvm_index(const struct gvm *,uint32_t,uint32_t *);
++#endif
+diff --git a/iokit/Kernel/arm/SantoniGraphics.cpp b/iokit/Kernel/arm/SantoniGraphics.cpp
+--- a/iokit/Kernel/arm/SantoniGraphics.cpp
++++ b/iokit/Kernel/arm/SantoniGraphics.cpp
+@@ -20,29 +20,31 @@
+ #include "../../../bsd/dev/santoni_gpu_graphics_hw.h"
+ #include "../../../bsd/dev/santoni_gpu_graphics_uapi.h"
+ #include "../../../bsd/dev/santoni_gpu_pm4.h"
++#include "../../../bsd/dev/santoni_gpu_raster_batch.h"
+ extern ppnum_t pmap_find_phys(pmap_t,addr64_t);
+ }
+
+-#define GFX_PRIVATE_PAGES (SGPU_GRAPHICS_IBS*SGPU_GRAPHICS_IB_BYTES/SGPU_PAGE)
++#define GFX_PRIVATE_PAGES SGPU_GRAPHICS_PRIVATE_PAGES
+ #define GFX_PUBLIC_PAGES (SGPU_GRAPHICS_PAGES-GFX_PRIVATE_PAGES)
+ struct gfx_pool {
+     IOBufferMemoryDescriptor *memory;
+     uint8_t *bytes;
+-    uint64_t pa[SGPU_GRAPHICS_PAGES];
+-    uint8_t used[SGPU_GRAPHICS_PAGES];
++    uint64_t pa[SGPU_GRAPHICS_MAX_PAGES];
++    uint8_t used[SGPU_GRAPHICS_MAX_PAGES];
+     uint32_t pages;
+ };
+ struct gfx_lease { gfx_pool *pool;uint32_t first,pages;bool live; };
+ static struct {
+     IOLock *lock;
+     task_t owner;
+-    bool claimed,pools_ready;
++    bool claimed,pools_ready,raster_enabled;
+     gfx_pool user,commands;
+     gfx_lease leases[SGPU_GRAPHICS_BOS];
+     sgpu_graphics core;
+     sgpu_graphics_snapshot snapshots[SGPU_GRAPHICS_IBS];
+     uint32_t snapshot_count;
+     sgpu_pm4_policy policy;
++    sgpu_raster_context raster; /* lock-serialized storage, not kernel stack */
+ } gfx;
+
+ extern "C" {
+@@ -112,19 +114,19 @@
+ {
+     if (ns>SGPU_GRAPHICS_IBS) return false;
+     memcpy(gfx.snapshots,s,ns*sizeof(*s));gfx.snapshot_count=ns;
++    if(gfx.raster_enabled)
++        return sgpu_raster_prepare_batch(&gfx.raster,gfx.policy.vm_profile,s,ns,r,nr,ranges,count);
+     return sgpu_pm4_prepare(&gfx.policy,s,ns,r,nr,ranges,count);
+ }
+-static bool __attribute__((noinline)) gfx_validate(void *,const uint32_t *words,uint32_t count,const sgpu_graphics_range *ranges,uint32_t nr)
+-{
+-    for (uint32_t i=0;i<gfx.snapshot_count;i++) {
+-        const sgpu_graphics_snapshot *s=&gfx.snapshots[i];
+-        uintptr_t word=(uintptr_t)words,base=(uintptr_t)s->words;
+-        if (word>=base && word-base<=s->bytes && count*4<=s->bytes-(word-base)) {
+-            sgpu_graphics_command root={s->gpu_va+(uint32_t)(word-base),count*4};
+-            return sgpu_pm4_validate(&gfx.policy,gfx.snapshots,gfx.snapshot_count,&root,1,ranges,nr);
+-        }
+-    }
+-    return false;
++static bool __attribute__((noinline)) gfx_validate_ibs(void *,const sgpu_graphics_snapshot *snapshots,uint32_t ns,
++    const sgpu_graphics_command *roots,uint32_t count,const sgpu_graphics_range *ranges,uint32_t nr)
++{
++    /* EACH whole stream starts cold, including the second pass after cache
++     * callbacks. Opt-out keeps the legacy default-refusing shader policy.
++     * INFO[9] remains0 pending production/binary/runtime/hardware gates. */
++    if(gfx.raster_enabled)
++        return sgpu_raster_validate_batch(&gfx.raster,gfx.policy.vm_profile,snapshots,ns,roots,count,ranges,nr);
++    return sgpu_pm4_validate(&gfx.policy,snapshots,ns,roots,count,ranges,nr);
+ }
+ static bool __attribute__((noinline)) gfx_publish(void *,const sgpu_graphics_command *c,uint32_t count,uint32_t seq) {return sgpu_graphics_hw_publish(c,count,seq);}
+ static void __attribute__((noinline)) gfx_invalidate_fence(void *) {sgpu_graphics_hw_invalidate_fence();}
+@@ -156,16 +158,18 @@
+
+ bool SantoniGraphics::start(IOService *provider)
+ {
+-    int enabled=0,mode=0,render=0,ui=0;
++    int enabled=0,mode=0,render=0,ui=0,raster=0;
+     PE_parse_boot_argn("santonigpu_graphics",&enabled,sizeof(enabled));
+     if (enabled!=1) return false;
+     PE_parse_boot_argn("santonigpu",&mode,sizeof(mode));PE_parse_boot_argn("santonigpu_render",&render,sizeof(render));
+     PE_parse_boot_argn("santonigpu_ui",&ui,sizeof(ui));
+-    if (mode!=3 || render!=1 || ui || !IOService::start(provider)) return false;
++    PE_parse_boot_argn("santonigpu_raster",&raster,sizeof(raster));
++    if (mode!=3 || render!=1 || ui || (raster!=0 && raster!=1) || !IOService::start(provider)) return false;
++    gfx.raster_enabled=raster==1;
+     if (!gfx.lock) gfx.lock=IOLockAlloc();
+     if (!gfx.lock) return false;
+     setProperty(kIOUserClientClassKey,"SantoniGraphicsClient");registerService();
+-    IOLog("SANTONI GPU: graphics transport registered; waits for owned VM; shaders not enabled yet\n");
++    IOLog("SANTONI GPU: graphics transport registered; waits for owned VM; raster opt-in=%u GLES capability=0\n",gfx.raster_enabled);
+     return true;
+ }
+ bool SantoniGraphicsClient::initWithTask(task_t owner,void *security,UInt32 type)
+@@ -176,15 +180,18 @@
+     IOLockLock(gfx.lock);bool ok=false;
+     if (!gfx.claimed && santoni_gpu_graphics_worker_ready() && sgpu_graphics_hw_ready()) {
+         gfx.claimed=true;gfx.owner=owner;task_reference(owner);
+-        bool pools=gfx_pool_init(&gfx.user,GFX_PUBLIC_PAGES,true) && gfx_pool_init(&gfx.commands,GFX_PRIVATE_PAGES,false);
++        uint32_t profile=sgpu_graphics_hw_vm_profile();
++        uint32_t public_pages=profile==SGPU_GRAPHICS_VM_WIDE?SGPU_GRAPHICS_WIDE_PUBLIC_PAGES:GFX_PUBLIC_PAGES;
++        bool pools=profile<=SGPU_GRAPHICS_VM_WIDE && gfx_pool_init(&gfx.user,public_pages,true) && gfx_pool_init(&gfx.commands,GFX_PRIVATE_PAGES,false);
+         if (pools) for (uint32_t i=0;i<gfx.user.pages;i++) for (uint32_t j=0;j<gfx.commands.pages;j++)
+             if (gfx.user.pa[i]==gfx.commands.pa[j]) pools=false;
+         gfx.pools_ready=pools;
+         if (pools) {
+-            sgpu_graphics_ops ops={};ops.fence_pa=sgpu_graphics_hw_fence_pa();
++            sgpu_graphics_ops ops={};ops.fence_pa=sgpu_graphics_hw_fence_pa();ops.vm_profile=profile;
++            gfx.policy.vm_profile=profile;
+             ops.ready=gfx_ready;ops.allocate=gfx_allocate;ops.release=gfx_release;ops.page_pa=gfx_page_pa;
+             ops.reserved_pa=gfx_reserved;ops.map=gfx_map;ops.unmap=gfx_unmap;ops.pte=gfx_pte;
+-            ops.clean=gfx_clean;ops.invalidate=gfx_invalidate;ops.prepare_ibs=gfx_prepare;ops.validate_ib=gfx_validate;
++            ops.clean=gfx_clean;ops.invalidate=gfx_invalidate;ops.prepare_ibs=gfx_prepare;ops.validate_ibs=gfx_validate_ibs;
+             ops.publish=gfx_publish;ops.invalidate_fence=gfx_invalidate_fence;ops.fence=gfx_fence;
+             ops.faulted=gfx_faulted;ops.idle=gfx_idle;ops.now_us=gfx_now;ops.wait_us=gfx_wait;
+             ok=sgpu_graphics_init(&gfx.core,(uint64_t)(uintptr_t)owner,&ops);
+@@ -238,12 +245,12 @@
+     switch (selector) {
+     case SG_GFX_INFO:
+         output[0]=SGPU_GRAPHICS_UAPI_VERSION;output[1]=SGPU_PAGE;output[2]=SGPU_CHIPID;output[3]=SGPU_GMEM_BYTES;
+-        output[4]=SGPU_RENDER_VA;output[5]=SGPU_RENDER_MAX_PAGES*SGPU_PAGE;output[6]=SGPU_RENDER_BO_BYTES;
++        output[4]=gfx.core.va_base;output[5]=gfx.core.va_pages*SGPU_PAGE;output[6]=gfx.core.bo_bytes;
+         output[7]=SGPU_GRAPHICS_IB_BYTES;output[8]=gfx.core.retained_pages*SGPU_PAGE;
+         output[9]=0; /* No GLES capability until the vetted raster-state policy exists. */
+         result=kIOReturnSuccess;break;
+     case SG_GFX_NEW:
+-        if (arg && arg<=SGPU_RENDER_BO_BYTES && a->scalarInput[1]<=UINT32_MAX) {
++        if (arg && arg<=gfx.core.bo_bytes && a->scalarInput[1]<=UINT32_MAX) {
+             uint32_t handle=sgpu_graphics_new(&gfx.core,owner,(uint32_t)arg,(uint32_t)a->scalarInput[1]);
+             if (handle && sgpu_graphics_info(&gfx.core,owner,handle,&info)) {
+                 output[0]=handle;output[1]=info.gpu_va;output[2]=info.bytes;output[3]=handle;result=kIOReturnSuccess;

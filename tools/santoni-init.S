@@ -13,6 +13,7 @@
 #define SYS_write	4
 #define SYS_open	5
 #define SYS_read	3
+#define SYS_pread	153
 #define SYS_close	6
 #define SYS_getpid	20
 #define SYS_select	93
@@ -62,9 +63,12 @@ _start:
 	bl	write_console
 
 	/*
-	 * eMMC root probe: read LBA 0 of /dev/remmcroot0 (the raw character
-	 * device, present because IOKitBSDInit probed the controller) and print
-	 * the first 8 bytes. Missing device (rd=md0) just skips this.
+	 * eMMC root probe: read LBA 2 of /dev/remmcroot0 (the raw character
+	 * device, present because IOKitBSDInit probed the controller) with a
+	 * pread at byte offset 1024 and print the first 8 bytes. LBA 2 is the
+	 * GPT partition entry array, so a successful read proves a non-zero,
+	 * offset-addressed data path (LBA 0 is all zeros on this disk).
+	 * Missing device (rd=md0) just skips this.
 	 */
 	adr	x0, emmc_path
 	mov	x1, #O_RDONLY
@@ -79,7 +83,8 @@ _start:
 	mov	x0, x20
 	mov	x1, sp
 	mov	x2, #512
-	mov	x16, #SYS_read
+	mov	x3, #1024		/* byte offset: LBA 2 */
+	mov	x16, #SYS_pread
 	svc	#0x80
 	b.cs	emmc_close
 
@@ -175,7 +180,7 @@ alive_end:
 emmc_path:
 	.asciz	"/dev/remmcroot0"
 emmc_msg:
-	.ascii	"SANTONI userspace: read eMMC LBA 0: ["
+	.ascii	"SANTONI userspace: read eMMC LBA 2 (off 1024): ["
 emmc_msg_end:
 emmc_tail:
 	.ascii	"]\n"

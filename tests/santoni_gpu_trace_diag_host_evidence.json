@@ -1,0 +1,32 @@
+{
+  "success": true,
+  "receiver_cases": {
+    "O0": 59,
+    "O2": 59,
+    "UBSan": 59
+  },
+  "late_cases": {
+    "O0": 33,
+    "O2": 33,
+    "UBSan": 33
+  },
+  "receiver_compiling_mutants_rejected": 11,
+  "late_compiling_mutants_rejected": 6,
+  "mechanical_apply_and_bytes_verified": true,
+  "GPU_core_MMIO_PAS_BO_lifetime_unchanged": true,
+  "hardware_verified": false,
+  "kernel_certified": false,
+  "sha256": {
+    "tests/santoni_gpu_el0_trace_stubs.h": "78bb301a1f5fa05da2fad9ac91742ea0448b7cf9d5705d538f482923ed671433",
+    "tests/test_santoni_gpu_el0_trace.c": "71d9d2c835e6aee475dbd159407b3964f85b5fe2f55867f738dfc78cb484a757",
+    "tests/test_santoni_gpu_late_launch.c": "f3c0af026c00bbf1ffe8f82f60fe1c511e58c32973b7c042542fc95de44be5b2",
+    "tests/verify_santoni_gpu_el0_trace.py": "c2118058ec6d781513531b41df0fa9a2e401ffce1e0bb5c94d56afa4313cfbc6",
+    "tests/verify_santoni_gpu_late_launch.py": "7a519f853e497f173fce883ea5a6a491fed364bbea28a857d2c9a58efd55970b",
+    "xnu/patches/0214-santoni-gpu-trace-path-diagnostics.patch": "1d17025785494b9eaffbcf9a784ea96831c0c8a58df3097c99bd557040cc776c"
+  },
+  "origin": {
+    "receiver": "out/verify0214-20261102T140621898626Z/native-final/result.json",
+    "late": "out/verify0214-20261102T140621898626Z/late-native-final/result.json",
+    "mechanical": "out/verify0214-20261102T140621898626Z/patch-verification-final.json"
+  }
+}

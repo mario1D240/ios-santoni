@@ -1,0 +1,33 @@
+diff --git a/osfmk/arm64/sleh.c b/osfmk/arm64/sleh.c
+index 66fec10..aea6767 100644
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1262,9 +1262,17 @@ user_fault_addr_matches_pac_error_code(vm_offset_t fault_addr, bool data_key)
+ #endif /* __has_feature(ptrauth_calls) */
+
+ #if defined(ARM64_BOARD_CONFIG_SANTONI)
+-#include <sys/proc.h>
+ #include <pexpert/pexpert.h>
+-#include <dev/santoni_gpu_launch.h>
++
++/* OSFMK must not import BSD sys/proc.h (libsa typedef collisions), and the
++ * private dev header is not installed in EXPORT_HDRS. Use the exact opaque
++ * proc pointer/int API from bsd/sys/proc.h and the bool/uint32_t launcher API
++ * from bsd/dev/santoni_gpu_launch.h, without importing BSD data structures. */
++struct proc;
++extern struct proc *current_proc(void);
++extern int proc_isinitproc(struct proc *);
++extern bool santoni_gpu_user_launch_mount_published(void);
++extern bool santoni_gpu_user_launch_worker_ready(uint32_t);
+
+ /* First terminal PID1 user abort on the explicit boot-only EL0 role. This
+  * observes the exception frame before triage; it neither changes that frame
+@@ -1280,7 +1288,7 @@ santoni_gpu_user_fault(arm_saved_state_t *state, exception_type_t exc,
+ {
+     if (!state || !is_saved_state64(state) ||
+         !PSR64_IS_USER(get_saved_state_cpsr(state))) return;
+-    proc_t p=current_proc();
++    struct proc *p=current_proc();
+     if (!p || !proc_isinitproc(p)) return;
+     uint32_t mode=0,enabled=0;
+     if (!PE_parse_boot_argn("santonigpu",&mode,sizeof(mode)) || mode!=3 ||

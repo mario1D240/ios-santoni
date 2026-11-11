@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "native_cases": {
+    "receiver": {
+      "O0": 50,
+      "O2": 50,
+      "UBSan": 50
+    },
+    "probe_entry": {
+      "O0": 14,
+      "O2": 14,
+      "UBSan": 14
+    }
+  },
+  "compiled_rejected_mutants": 10,
+  "linked_probe_cases": 22,
+  "new_gate_tests": 6,
+  "GPU_core_MMIO_PAS_BO_lifetime_unchanged": true,
+  "mechanical_apply_and_bytes_verified": true,
+  "hardware_verified": false,
+  "kernel_certified": false,
+  "sha256": {
+    "tests/santoni_gpu_el0_trace_stubs.h": "d4a886a298b5c2e1c18289a834ef2581d1a263290aaec5a544d0295bfa55ed9c",
+    "tests/test_santoni_gpu_el0_trace.c": "a7d694e60b3edc6905e596062f2b8ad7df5ec0ed0b496c08fcac7f011dba1750",
+    "tests/test_santoni_gpu_el0_trace_gates.py": "526ce1a305d84b84713589864b5d656bbaf15e136c1005be15b9ad9eaefcdfd8",
+    "tests/test_santoni_gpu_el0_trace_probe.c": "7ce827e3e1c7e93f0467581a831a65a942eab8a0b7e4e28aaad0002430076234",
+    "tests/verify_santoni_gpu_el0_trace.py": "88ba77a906b676f0ebf4f6a97eac1070809f94cce38000b7fb6241510ee74f91",
+    "tools/build_santoni_gpu_user_probe.py": "7ab07dcfe9d3ff4f35a7d7f7bfbefdd9d157d4f25704b599f4e964807ebc122d",
+    "tools/check_santoni_gpu_user_probe.py": "9667df4ee7d66cd2d92d10c62a6e83b6bee6fc95ba5dbb06704c9ca86a545be5",
+    "tools/santoni_gpu_launcher_audit.py": "87e7cd939a2b7945a8db021c67908be9748692c29d00a9a33de50bcd48a382b4",
+    "tools/santoni_gpu_launcher_gate.py": "71a8ac7a238d848eb4af91a68ce9410b1229b995f683a27996de9497b3c40f3b",
+    "tools/santoni_gpu_user_probe.c": "ddc0ab4f40c34b87e149e0e0fff715b95c1c9b503cd022c949f88547ae1f1e3b",
+    "tools/santoni_gpu_user_probe_start.S": "2dcf060438c8d58b331eec60fe6e6ad171a33276ae18c37f52d86ff6b5cece15",
+    "xnu/patches/0211-santoni-gpu-el0-outcome-trace.patch": "a8fd878661af0abee50d856aa4dee623c8bde34309219ea7f0866d21397d0c79"
+  },
+  "origin_evidence": {
+    "native": "out/santoni-gpu-el0-diagnostics-20261101T204219509348Z/native-20261102-new/result.json",
+    "mutants": "out/santoni-gpu-el0-diagnostics-20261101T204219509348Z/native-mutants-final-20261102/result.json",
+    "linked_probe": "out/santoni-gpu-el0-probe-outcome-trace-20261102/replay-20261101T212637596014Z/result.json",
+    "mechanical": "out/santoni-gpu-el0-diagnostics-20261101T204219509348Z/mechanical0211.json"
+  },
+  "mutation_startup_errors": [
+    "unused vp in identity mutant; corrected only mutant definition",
+    "false used before stdbool include in observation mutant; replaced only mutant false with 0"
+  ],
+  "completed_native_cases_replayed": 0,
+  "old_kernel_tests_replayed": 0
+}

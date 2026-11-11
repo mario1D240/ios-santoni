@@ -1,0 +1,90 @@
+diff --git a/bsd/kern/sweet_amfi.c b/bsd/kern/sweet_amfi.c
+index eff0853..87c96db 100644
+--- a/bsd/kern/sweet_amfi.c
++++ b/bsd/kern/sweet_amfi.c
+@@ -28,6 +28,7 @@
+ #include <libkern/amfi/amfi.h>
+ #include <mach/kern_return.h>
+ #include <sys/codesign.h>
++#include <sys/errno.h>
+ #include <sys/mount.h>
+ #include <sys/priv.h>
+ #include <sys/proc.h>
+@@ -367,6 +368,34 @@ static struct mac_policy_conf sweet_amfi_mac_conf = {
+ 
+ static mac_policy_handle_t sweet_amfi_mac_handle;
+ 
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++/* Sailfish's named AMFI policy is the pattern. Santoni answers only its
++ * opted-in executable-vnode-authorized renderer, retaining the existing
++ * signature policy and default ENOPOLICY behavior for other processes/modes.
++ * Retained iOS dyld sends selector90 with {u64 input,u64 output-pointer}.
++ * No firmware, GPU address, MMIO or portable-core call is involved. */
++extern uint64_t santoni_gpu_graphics_dyld_flags(struct proc *process);
++
++static int __attribute__((noinline))
++sweet_santoni_dyld_syscall(struct proc *process, int call, user_addr_t arg)
++{
++    uint64_t args[2],flags;
++    if(call!=90 || !(flags=santoni_gpu_graphics_dyld_flags(process)))return ENOPOLICY;
++    if(copyin(arg,args,sizeof(args))!=0 || !args[1])return EFAULT;
++    return copyout(&flags,(user_addr_t)args[1],sizeof(flags));
++}
++
++static const struct mac_policy_ops sweet_santoni_dyld_mac_ops = {
++    .mpo_policy_syscall = sweet_santoni_dyld_syscall,
++};
++static struct mac_policy_conf sweet_santoni_dyld_mac_conf = {
++    .mpc_name = "AMFI",
++    .mpc_fullname = "SANTONI renderer dyld policy",
++    .mpc_ops = &sweet_santoni_dyld_mac_ops,
++};
++static mac_policy_handle_t sweet_santoni_dyld_mac_handle;
++#endif
++
+ /* Called from bsd_init once MAC policies can register, before any exec. */
+ void sweet_amfi_policy_register(void);
+ 
+@@ -379,5 +408,10 @@ sweet_amfi_policy_register(void)
+ 	error = mac_policy_register(&sweet_sandbox_mac_conf, &sweet_sandbox_mac_handle, NULL);
+ 	printf("SWEET Sandbox: permissive policy %s (%d)\n",
+ 	    error ? "NOT registered" : "registered", error);
++#if defined(ARM64_BOARD_CONFIG_SANTONI)
++    error = mac_policy_register(&sweet_santoni_dyld_mac_conf, &sweet_santoni_dyld_mac_handle, NULL);
++    printf("SANTONI GPU: renderer dyld policy %s (%d)\n",
++        error ? "NOT registered" : "registered", error);
++#endif
+ }
+ #endif /* ARM64_BOARD_CONFIG_SWEET */
+diff --git a/iokit/Kernel/arm/SantoniGraphics.cpp b/iokit/Kernel/arm/SantoniGraphics.cpp
+index d87778c..6d487cf 100644
+--- a/iokit/Kernel/arm/SantoniGraphics.cpp
++++ b/iokit/Kernel/arm/SantoniGraphics.cpp
+@@ -76,6 +76,27 @@ static bool __attribute__((noinline)) gfx_renderer_task(task_t owner)
+     return allowed;
+ }
+ 
++/* dyld-1042.1 DyldProcessConfig::Security uses bit1 for path variables
++ * and bit5 for failed insertions. Retained iOS dyld words were also replayed.
++ * The loader and every dependency use absolute paths; method replacement needs
++ * no dyld interposing. This query is CPU/VFS only, independent of worker timing.
++ * Returning flags is policy availability, never proof that dyld ran the loader. */
++uint64_t __attribute__((noinline)) santoni_gpu_graphics_dyld_flags(proc_t process)
++{
++    if(!process || process!=current_proc())return 0;
++    int graphics=0,mode=0,render=0,ui=0,raster=0,gles=0,renderer=0;
++    PE_parse_boot_argn("santonigpu_graphics",&graphics,sizeof(graphics));
++    PE_parse_boot_argn("santonigpu",&mode,sizeof(mode));
++    PE_parse_boot_argn("santonigpu_render",&render,sizeof(render));
++    PE_parse_boot_argn("santonigpu_ui",&ui,sizeof(ui));
++    PE_parse_boot_argn("santonigpu_raster",&raster,sizeof(raster));
++    PE_parse_boot_argn("santonigpu_gles",&gles,sizeof(gles));
++    PE_parse_boot_argn("santonigpu_renderer",&renderer,sizeof(renderer));
++    if(graphics!=1 || mode!=3 || render!=1 || ui!=0 || raster!=1 || gles!=1 || renderer!=1 ||
++        !gfx_renderer_task(current_task()))return 0;
++    return (1ull<<1)|(1ull<<5);
++}
++
+ static bool __attribute__((noinline)) gfx_ready(void *) { return santoni_gpu_graphics_worker_ready() && gfx.pools_ready && sgpu_graphics_hw_ready(); }
+ static bool __attribute__((noinline)) gfx_pool_init(gfx_pool *p,uint32_t pages,bool user)
+ {

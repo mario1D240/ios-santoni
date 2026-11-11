@@ -1,0 +1,40 @@
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -3221,7 +3221,8 @@
+  *             "rpm_requests", flags packet bit 9, edge 15
+  *   info      item 14+cid / 138+cid: tx half then rx half (20 or 44 B)
+  *   fifo      item 338+cid / 202+cid: tx fifo first, then rx, size/2
+- *   doorbell  APCS1 IPC at 0xb011008, bit 8 (DT qcom,ipc = <&apcs1 8 0>)
++ *   doorbell  APCS1 IPC at 0xb011008, bit 0 (DT qcom,ipc = <&apcs1 8 0>:
++ *             cell 1 is the register offset, cell 2 the bit)
+  * One voter thread; santonirpm=0 skips every vote.
+  */
+ #define SMEM_PHYS               0x86300000UL
+@@ -3237,7 +3238,7 @@
+ #define SMD_EDGE_RPM            15u
+ 
+ #define APCS1_PHYS              0x0b011000UL
+-#define RPM_IPC_BIT             8u
++/* qcom,ipc = <&apcs1 8 0>: IPC register at APCS1 + 8, RPM edge bit 0. */
+ 
+ /* struct smd_channel_info(_word) field offsets; flag i in
+  * fDSR fCTS fCD fRI fHEAD fTAIL fSTATE fBLOCKREADINTR order. */
+@@ -3409,7 +3410,7 @@
+ santoni_smd_kick(void)
+ {
+ 	__asm__ volatile("dsb sy" ::: "memory");
+-	*(volatile uint32_t *)(santoni_smd.ipc + 0x08) = 1u << RPM_IPC_BIT;
++	*(volatile uint32_t *)(santoni_smd.ipc + 0x08) = 1u;   /* bit 0 */
+ }
+ 
+ static void
+@@ -3796,7 +3797,8 @@
+ 		 * may not have the channel ready a few seconds into boot.
+ 		 * Whenever L10 finally lands, re-read the PMIC and pulse
+ 		 * the touch reset again (power-cycle order). */
+-		if (rpm_on && !rails_ok && (tick % 1000) == 0) {
++		if (rpm_on && !rails_ok && (tick % 1000) == 0 &&
++		    tick < 30000u) {
+ 			printf("SANTONI RPM: retrying touch rails\n");
+ 			bool l10r = santoni_rpm_ldo(10, 2850000);
+ 			(void)santoni_rpm_ldo(5, 1800000);

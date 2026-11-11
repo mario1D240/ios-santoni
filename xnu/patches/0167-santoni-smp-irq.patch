@@ -1,0 +1,183 @@
+Subject: [PATCH 0167] santoni: discover GICv2 targets and initialize private IRQ state per CPU
+
+Apply after 0165/0166. No PSCI, MPIDR, timer ID, cache policy or touch changes.
+Reference: Linux irq-gic.c gic_get_cpumask/gic_dist_init/gic_cpu_init/
+gic_handle_irq and irq-gic-common.c gic_cpu_config. GICv2 banked targets
+are one-hot bytes, not logical CPU IDs; SGI EOI retains the source token.
+The host regressions exercise these actual C/C++ routines with banked MMIO,
+not a duplicate driver. Hardware performance/firmware behavior remain unverified.
+
+--- a/pexpert/arm/pe_fiq.c
++++ b/pexpert/arm/pe_fiq.c
+@@ -210,19 +210,39 @@
+ 
+ #if defined(SANTONI)
+ /*
+- * GICv2 CPU-interface id per logical CPU on Qualcomm MSM8937 (santoni):
+- * Cluster 1 (MPIDR 0x100..0x103) is mapped as cpu0..cpu3 -> GIC interfaces 4..7.
+- * Cluster 0 (MPIDR 0x000..0x003) is mapped as cpu4..cpu7 -> GIC interfaces 0..3.
++ * GICv2 TargetList bits are CPU-interface IDs, not MPIDR or logical CPU IDs.
++ * Like Linux irq-gic.c:gic_get_cpumask(), fold all four target bytes and scan
++ * the eight banked ITARGETSR words. In particular, bits 5..7 are valid targets.
+  */
++static uint32_t sweet_cpu_targets[SWEET_SMP_MAX_CPUS]; /* zero: not initialized */
++
++static uint32_t
++sweet_gic_local_target(vm_offset_t gicd)
++{
++	uint32_t mask = 0;
++	for (unsigned int offset = 0; offset < 32; offset += 4) {
++		uint32_t word = *(volatile uint32_t *)(gicd + 0x800 + offset);
++		word |= word >> 16;
++		word |= word >> 8;
++		mask = word & 0xffU;
++		if (mask != 0) {
++			break;
++		}
++	}
++	if (mask == 0 || (mask & (mask - 1)) != 0) {
++		panic("SWEET GIC: invalid banked CPU target mask 0x%x", mask);
++	}
++	return mask;
++}
++
+ uint32_t
+ sweet_gic_cpu_iface(unsigned int cpu)
+ {
+-	if (cpu < 4) {
+-		return 4 + cpu;
+-	} else if (cpu < SWEET_SMP_MAX_CPUS) {
+-		return cpu - 4;
+-	}
+-	return 0xffffffffU;
++	if (cpu >= SWEET_SMP_MAX_CPUS) {
++		return 0xffffffffU;
++	}
++	uint32_t mask = __atomic_load_n(&sweet_cpu_targets[cpu], __ATOMIC_ACQUIRE);
++	return mask != 0 ? (uint32_t)__builtin_ctz(mask) : 0xffffffffU;
+ }
+ #endif /* SANTONI */
+ 
+@@ -262,18 +282,21 @@
+ 				if (gicd && gicc_base) {
+ 					uint32_t typer = *(volatile uint32_t *)(gicd + 0x004);
+ 					uint32_t it_lines = (typer & 0x1f) + 1;
+-					for (uint32_t i = 0; i < it_lines; i++) {
++					uint32_t boot_target = sweet_gic_local_target(gicd) * 0x01010101U;
++					*(volatile uint32_t *)(gicd + 0x000) = 0;
++					/* Only SPIs are global; private registers are initialized below. */
++					for (uint32_t i = 1; i < it_lines; i++) {
+ 						*(volatile uint32_t *)(gicd + 0x080 + (i * 4)) = 0xffffffff;
+ 					}
+ 					for (uint32_t i = 1; i < it_lines; i++) {
+ 						*(volatile uint32_t *)(gicd + 0x180 + (i * 4)) = 0xffffffff;
+ 						*(volatile uint32_t *)(gicd + 0x280 + (i * 4)) = 0xffffffff;
+ 					}
+-					for (uint32_t i = 0; i < it_lines * 8; i++) {
++					for (uint32_t i = 8; i < it_lines * 8; i++) {
+ 						*(volatile uint32_t *)(gicd + 0x400 + (i * 4)) = 0xa0a0a0a0;
+ 					}
+ 					for (uint32_t i = 8; i < it_lines * 8; i++) {
+-						*(volatile uint32_t *)(gicd + 0x800 + (i * 4)) = 0x01010101;
++						*(volatile uint32_t *)(gicd + 0x800 + (i * 4)) = boot_target;
+ 					}
+ 					*(volatile uint32_t *)(gicd + 0x000) = 0x01;
+ 					__builtin_arm_dsb(DSB_SY);
+@@ -283,24 +306,49 @@
+ 	}
+ 
+ 	/*
+-	 * Per-CPU CPU-interface setup. Every core needs its own PMR/BPR/CTLR or it
+-	 * never takes an IRQ; only CPU 0 used to do this, which is why the secondaries
+-	 * came up but stayed deaf (hence single-core boot).
++	 * GICv2 SGI/PPI group, priority, enable and active state is banked too.
++	 * Linux gic_cpu_init()/gic_cpu_config() resets it on EVERY CPU, not just
++	 * the CPU performing distributor initialization. Do not inherit firmware
++	 * PPIs/priorities on secondaries or disturb another CPU's private bank.
+ 	 */
+ 	if (gicd_base && gicc_base) {
++		vm_offset_t gicd = gicd_base;
+ 		uint64_t mpidr = __builtin_arm_rsr64("MPIDR_EL1");
+ 		int cpu = ml_get_cpu_number((uint32_t)mpidr);
+-		if (cpu >= 0 && (unsigned int)cpu < SWEET_SMP_MAX_CPUS) {
+-			kprintf("SWEET GIC: cpu=%d mpidr=0x%llx gic_iface=%u\n", cpu,
+-			    mpidr & 0xffffffULL, sweet_gic_cpu_iface((unsigned int)cpu));
++		if (cpu < 0 || (unsigned int)cpu >= SWEET_SMP_MAX_CPUS) {
++			panic("SWEET GIC: unknown logical CPU for MPIDR 0x%llx", mpidr);
++		}
++		if (sweet_vtimer_intid < 16 || sweet_vtimer_intid >= 32) {
++			panic("SWEET GIC: virtual timer INTID %u is not a PPI", sweet_vtimer_intid);
++		}
++		uint32_t target = sweet_gic_local_target(gicd);
++		/* startAll starts CPUs serially; reject duplicate banked target reports. */
++		for (unsigned int other = 0; other < SWEET_SMP_MAX_CPUS; other++) {
++			if (other != (unsigned int)cpu &&
++			    __atomic_load_n(&sweet_cpu_targets[other], __ATOMIC_ACQUIRE) == target) {
++				panic("SWEET GIC: CPUs %u and %d share target 0x%x", other, cpu, target);
++			}
++		}
++		*(volatile uint32_t *)(gicc_base + 0x000) = 0;
++		*(volatile uint32_t *)(gicd + 0x180) = 0xffffffffU; /* ICENABLER0 */
++		*(volatile uint32_t *)(gicd + 0x380) = 0xffffffffU; /* ICACTIVER0 */
++		/* Secure-owned group bits may be RAZ/WI from NS; do not infer ownership
++		 * from readback. Request Group 1 wherever firmware permits writes. */
++		*(volatile uint32_t *)(gicd + 0x080) = 0xffffffffU;
++		for (unsigned int offset = 0; offset < 32; offset += 4) {
++			*(volatile uint32_t *)(gicd + 0x400 + offset) = 0xa0a0a0a0U;
+ 		}
+ 		*(volatile uint32_t *)(gicc_base + 0x004) = 0xff; /* PMR: accept 0xa0 */
+ 		*(volatile uint32_t *)(gicc_base + 0x008) = 0x00; /* BPR */
+-		/* set-enable only: PPI virt timer + SGI1 (no other CPU's bits are cleared) */
+-		*(volatile uint32_t *)(gicd_base + 0x100 + (sweet_vtimer_intid / 32) * 4) =
+-		    (1U << (sweet_vtimer_intid % 32)) | (1U << (SWEET_IPI_SGI % 32));
++		*(volatile uint32_t *)(gicd + 0x100) =
++		    (1U << sweet_vtimer_intid) | (1U << SWEET_IPI_SGI);
++		__builtin_arm_dsb(DSB_SY);
+ 		*(volatile uint32_t *)(gicc_base + 0x000) = 0x01; /* CTLR: enable */
++		__builtin_arm_dsb(DSB_SY);
+ 		__builtin_arm_isb(ISB_SY);
++		__atomic_store_n(&sweet_cpu_targets[cpu], target, __ATOMIC_RELEASE);
++		kprintf("SWEET GIC: cpu=%d mpidr=0x%llx target=0x%02x gic_iface=%u\n", cpu,
++		    mpidr & 0xffffffULL, target, sweet_gic_cpu_iface((unsigned int)cpu));
+ 	}
+ #endif /* SANTONI */
+ }
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -240,9 +240,8 @@
+ 		} else {
+ 			/*
+ 			 * GICv2 GICD_SGIR.TargetList is indexed by the GIC CPU
+-			 * interface id, not by XNU's logical cpu number:
+-			 * Cluster 1 (cpu0..3) -> GIC interfaces 4..7 (TargetList bits 4..7)
+-			 * Cluster 0 (cpu4..7) -> GIC interfaces 0..3 (TargetList bits 0..3)
++			 * interface id discovered from that CPU's banked ITARGETSR,
++			 * not an assumed relation to XNU's logical number or MPIDR.
+ 			 */
+ 			uint32_t iface = sweet_gic_cpu_iface(logical);
+ 			if (iface >= 8) {
+--- a/osfmk/arm64/sleh.c
++++ b/osfmk/arm64/sleh.c
+@@ -1953,8 +1953,12 @@
+ 		INTERRUPT_MASKED_DEBUG_END();
+ 		*(volatile uint32_t *)(gicc_base + 0x010) = iar;
+ 	} else if (intid < 16) {
++		/* Pair with the sender's DSB ISHST, as Linux gic_handle_irq's
++		 * smp_rmb() does: order the IAR read before shared signal loads.
++		 * An acquire on cpu_signal only orders loads AFTER that atomic. */
++		__builtin_arm_dmb(DMB_ISHLD);
+ 		sleh_interrupt_handler_prologue(state, DBG_INTR_TYPE_IPI);
+-		/* Ack before handling so an IPI raised meanwhile is not lost */
++		/* EOImode=0: deactivate before handling; keep IAR source bits 12:10. */
+ 		*(volatile uint32_t *)(gicc_base + 0x010) = iar;
+ 		__builtin_arm_isb(ISB_SY);
+ 		cpu_signal_handler();
+@@ -1968,6 +1972,8 @@
+ 		}
+ 		*(volatile uint32_t *)(gicc_base + 0x010) = iar;
+ 	}
++	/* EOIR is MMIO on GICv2: ISB alone does not complete the write. */
++	__builtin_arm_dsb(DSB_SY);
+ 	__builtin_arm_isb(ISB_SY);
+ #elif defined(SWEET)
+ 	/*

@@ -1,0 +1,246 @@
+Subject: [PATCH 0172] santoni: isolate key polling and serialize PMIC reads
+
+Keep power/volume input running independently of touch probe and rail
+retries. Poll only GPIO91 plus PM8937 PON; no touch pin/config changes.
+Serialize lazy SPMI mappings and observer operations with a mutex.
+Do not consume a press before HID clients attach; held keys are then
+delivered once ready. Publish/read HID singleton pointers with release/
+acquire ordering. Existing key codes and touch reporting are kept.
+
+diff --git a/bsd/dev/santoni_sdhci.c b/bsd/dev/santoni_sdhci.c
+--- a/bsd/dev/santoni_sdhci.c
++++ b/bsd/dev/santoni_sdhci.c
+@@ -65,6 +65,7 @@
+ 
+ extern void sweet_hid_key(int key, int down);
+ extern void sweet_hid_touch(int finger, int down, int x, int y);
++extern bool sweet_hid_buttons_ready(void);
+ 
+ extern ppnum_t pmap_find_phys(pmap_t pmap, addr64_t va);
+ /* osfmk/arm/machine_routines.h, not exported to the BSD layer */
+@@ -3176,8 +3177,11 @@
+  * Read-only: the RPM owns the PM8937 regulators, and a direct write has
+  * been observed to reset Qualcomm phones of this generation.
+  */
++static LCK_GRP_DECLARE(santoni_spmi_grp, "santoni_spmi");
++static LCK_MTX_DECLARE(santoni_spmi_lock, &santoni_spmi_grp);
++
+ static bool
+-santoni_spmi_read(uint16_t addr, uint8_t *out)
++santoni_spmi_read_locked(uint16_t addr, uint8_t *out)
+ {
+ 	static vm_offset_t core, observers[SPMI_APID_MAX];
+ 	/* This reader addresses SID 0: cache APID + 1 by peripheral ID. */
+@@ -3230,6 +3234,17 @@
+ 		santoni_udelay(1);
+ 	}
+ 	return false;
++}
++
++/* Serializes lazy mappings and complete observer transactions between the
++ * independent button thread and touch-rail diagnostics. Never called in IRQ. */
++static bool
++santoni_spmi_read(uint16_t addr, uint8_t *out)
++{
++	lck_mtx_lock(&santoni_spmi_lock);
++	bool ok = santoni_spmi_read_locked(addr, out);
++	lck_mtx_unlock(&santoni_spmi_lock);
++	return ok;
+ }
+ 
+ /* One-line bring-up status for the boot console: rpm votes, PMIC read-back. */
+@@ -4412,7 +4427,7 @@
+ 	} else if (key->stable < 3) {
+ 		key->stable++;
+ 	}
+-	if (key->stable == 3 && down != key->down) {
++	if (key->stable == 3 && down != key->down && sweet_hid_buttons_ready()) {
+ 		key->down = down;
+ 		printf("SANTONI KEYS: %s %s\n", code == 0 ? "Power" : code == 1 ? "VolUp" : "VolDown",
+ 		    down ? "PRESSED" : "RELEASED");
+@@ -4421,10 +4436,10 @@
+ }
+ 
+ static void
+-santoni_buttons_poll(vm_offset_t tlmm, struct santoni_key_state *power,
++santoni_buttons_poll(vm_offset_t up_gpio, struct santoni_key_state *power,
+     struct santoni_key_state *up, struct santoni_key_state *down)
+ {
+-	santoni_key_sample(up, 1, tlmm_gpio_get(tlmm, PIN_VOL_UP) == 0);
++	santoni_key_sample(up, 1, tlmm_gpio_get(up_gpio, 0) == 0);
+ 	uint8_t status;
+ 	if (santoni_spmi_read(SANTONI_PON_RT_STS, &status)) {
+ 		santoni_key_sample(power, 0, (status & SANTONI_PON_POWER) != 0);
+@@ -4436,6 +4451,25 @@
+ }
+ 
+ static void
++santoni_buttons_thread(__unused void *param, __unused wait_result_t wr)
++{
++	/* Only the Volume-Up tile is needed here; touch GPIOs are never changed. */
++	vm_offset_t up_gpio = ml_io_map(TLMM_BASE_PHYS + PIN_VOL_UP * 0x1000UL, 0x1000);
++	if (!up_gpio) {
++		printf("SANTONI KEYS: cannot map Volume Up GPIO\n");
++		return;
++	}
++	tlmm_gpio_in_cfg(up_gpio, 0, TLMM_PULL_UP);
++	printf("SANTONI KEYS: independent power/volume polling, gpio91 in=%u\n",
++	    (unsigned)tlmm_gpio_get(up_gpio, 0));
++	struct santoni_key_state power = {0}, volup = {0}, voldown = {0};
++	for (;;) {
++		santoni_buttons_poll(up_gpio, &power, &volup, &voldown);
++		delay_for_interval(10, NSEC_PER_MSEC);
++	}
++}
++
++static void
+ santoni_keys_thread(__unused void *param, __unused wait_result_t wr)
+ {
+ 	vm_offset_t tlmm = ml_io_map(TLMM_BASE_PHYS, TLMM_MAP_SIZE);
+@@ -4444,7 +4478,6 @@
+ 		return;
+ 	}
+ 
+-	santoni_pin_log(tlmm, "VolUp", PIN_VOL_UP);
+ 	santoni_pin_log(tlmm, "touch-reset", PIN_TOUCH_RST);
+ 	santoni_pin_log(tlmm, "touch-int", PIN_TOUCH_INT);
+ 	santoni_pin_log(tlmm, "touch-sda", PIN_SDA);
+@@ -4452,7 +4485,6 @@
+ 
+ 	/* Device-tree pin states: GPIO, pull-up, 2 mA for keys/I2C, 8 mA
+ 	 * for the touch reset and interrupt lines. */
+-	tlmm_gpio_in_cfg(tlmm, PIN_VOL_UP, TLMM_PULL_UP);
+ 	tlmm_gpio_in_cfg(tlmm, PIN_TOUCH_INT, TLMM_PULL_UP | TLMM_DRV_8MA);
+ 	tlmm_gpio_in(tlmm, PIN_SDA);
+ 	if (!santoni_i2c_scl_high(tlmm))
+@@ -4507,13 +4539,9 @@
+ 	bool active[10] = {false};
+ 	int last_x[10] = {0};
+ 	int last_y[10] = {0};
+-	struct santoni_key_state power = {0}, volup = {0}, voldown = {0};
+ 	unsigned int tick = 0, nack = 0, bad = 0, reports = 0;
+ 
+ 	for (;;) {
+-		/* Independent power/volume keys, with no Home alias. */
+-		santoni_buttons_poll(tlmm, &power, &volup, &voldown);
+-
+ 		/* One-line status every 2 s: a single photo of the boot
+ 		 * console shows exactly where the touch bring-up stands. */
+ 		if ((tick % 200) == 0) {
+@@ -4634,6 +4662,11 @@
+ santoni_keys_start(void)
+ {
+ 	thread_t thread;
++	if (kernel_thread_start(santoni_buttons_thread, NULL, &thread) == KERN_SUCCESS) {
++		thread_deallocate(thread);
++	} else {
++		printf("SANTONI KEYS: cannot start button polling thread\n");
++	}
+ 	if (kernel_thread_start(santoni_keys_thread, NULL, &thread) == KERN_SUCCESS) {
+ 		thread_deallocate(thread);
+ 	}
+diff --git a/iokit/Kernel/arm/hid/SweetHID.cpp b/iokit/Kernel/arm/hid/SweetHID.cpp
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -330,6 +330,7 @@
+ public:
+ 	virtual bool start(IOService *provider) APPLE_KEXT_OVERRIDE;
+ 	void key(UInt32 usage, bool down);
++	bool hasClients() const { return _clients && _clients->getCount() > 0; }
+ protected:
+ 	virtual UInt32 getPrimaryUsagePage() APPLE_KEXT_OVERRIDE { return kHIDPage_Consumer; }
+ 	virtual UInt32 getPrimaryUsage() APPLE_KEXT_OVERRIDE { return kHIDUsage_Csmr_ConsumerControl; }
+@@ -392,7 +393,7 @@
+ 			fTest->setTimeoutMS(fTestSecs * 1000);
+ 		}
+ 	}
+-	gSweetButtons = this;
++	__atomic_store_n(&gSweetButtons, this, __ATOMIC_RELEASE);
+ 	registerService();
+ 	IOLog("SWEET HID: buttons registered (test every %u s)\n", fTestSecs);
+ 	return true;
+@@ -415,6 +416,7 @@
+ SweetHIDButtons::testFired(OSObject *owner, IOTimerEventSource *sender)
+ {
+ 	SweetHIDButtons *self = (SweetHIDButtons *)owner;
++	SweetHIDTouch *touch = __atomic_load_n(&gSweetTouch, __ATOMIC_ACQUIRE);
+ 	/*
+ 	 * Explicit bring-up aid only (sweethidtest=N). The old timer stopped
+ 	 * swiping after four attempts but kept pressing Home forever, closing
+@@ -426,7 +428,7 @@
+ 		return;
+ 	}
+ 	if (self->fTestCount >= 4) return;
+-	if (!gSweetTouch || !gSweetTouch->hasClients()) {
++	if (!touch || !touch->hasClients()) {
+ 		sender->setTimeoutMS(self->fTestSecs * 1000);
+ 		return;
+ 	}
+@@ -434,14 +436,14 @@
+ 	/* Santoni FT reports use IDs 0..4; keep the synthetic contact separate. */
+ 	const int finger = SWEET_TOUCH_FINGERS - 1;
+ 	int cy = 1270;
+-	gSweetTouch->touch(finger, true, 360, cy);
++	touch->touch(finger, true, 360, cy);
+ 	for (int next = 1050; next >= 450; next -= 200) {
+ 		delay_for_interval(10, NSEC_PER_MSEC);
+ 		if (__atomic_load_n(&gSweetPhysicalInput, __ATOMIC_ACQUIRE)) break;
+ 		cy = next;
+-		gSweetTouch->touch(finger, true, 360, cy);
+-	}
+-	gSweetTouch->touch(finger, false, 360, cy);
++		touch->touch(finger, true, 360, cy);
++	}
++	touch->touch(finger, false, 360, cy);
+ 	self->fTestCount++;
+ 	IOLog("SWEET HID: unlock swipe %u delivered to backboardd\n", self->fTestCount);
+ 	if (self->fTestCount < 4 && !__atomic_load_n(&gSweetPhysicalInput, __ATOMIC_ACQUIRE)) {
+@@ -473,7 +475,7 @@
+ 	setProperty("DisplayIntegrated", kOSBooleanTrue);
+ 	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
+ 	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
+-	gSweetTouch = this;
++	__atomic_store_n(&gSweetTouch, this, __ATOMIC_RELEASE);
+ 	registerService();
+ 	IOLog("SWEET HID: touch registered\n");
+ 	return true;
+@@ -580,6 +582,13 @@
+ }
+ 
+ /* key: 0 power (side button), 1 volume up, 2 volume down, 3 home */
++extern "C" bool
++sweet_hid_buttons_ready(void)
++{
++	SweetHIDButtons *buttons = __atomic_load_n(&gSweetButtons, __ATOMIC_ACQUIRE);
++	return buttons && buttons->hasClients();
++}
++
+ extern "C" void
+ sweet_hid_key(int key, int down)
+ {
+@@ -588,17 +597,19 @@
+ 		kHIDUsage_Csmr_VolumeDecrement, kHIDUsage_Csmr_Menu,
+ 	};
+ 
+-	if (gSweetButtons && key >= 0 && key < (int)(sizeof(usages) / sizeof(usages[0]))) {
++	SweetHIDButtons *buttons = __atomic_load_n(&gSweetButtons, __ATOMIC_ACQUIRE);
++	if (buttons && key >= 0 && key < (int)(sizeof(usages) / sizeof(usages[0]))) {
+ 		if (down) __atomic_store_n(&gSweetPhysicalInput, true, __ATOMIC_RELEASE);
+-		gSweetButtons->key(usages[key], down != 0);
++		buttons->key(usages[key], down != 0);
+ 	}
+ }
+ 
+ extern "C" void
+ sweet_hid_touch(int finger, int down, int x, int y)
+ {
+-	if (gSweetTouch && finger >= 0 && finger < SWEET_TOUCH_FINGERS) {
++	SweetHIDTouch *touch = __atomic_load_n(&gSweetTouch, __ATOMIC_ACQUIRE);
++	if (touch && finger >= 0 && finger < SWEET_TOUCH_FINGERS) {
+ 		if (down) __atomic_store_n(&gSweetPhysicalInput, true, __ATOMIC_RELEASE);
+-		gSweetTouch->touch(finger, down != 0, x, y);
+-	}
+-}
++		touch->touch(finger, down != 0, x, y);
++	}
++}

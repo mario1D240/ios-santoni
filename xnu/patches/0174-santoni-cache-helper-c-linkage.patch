@@ -1,0 +1,27 @@
+Subject: [PATCH 0174] santoni: declare cache handoff helpers with C linkage
+
+caches_internal.h does not wrap its assembly helper declarations for
+C++. Use explicit C linkage from SweetCPU; this fixes the undefined
+mangled CleanPoC_DcacheRegion_Force symbol seen in CI40175653165.
+No reset, cache maintenance or input behavior change.
+
+diff --git a/iokit/Kernel/arm/SweetCPU.cpp b/iokit/Kernel/arm/SweetCPU.cpp
+--- a/iokit/Kernel/arm/SweetCPU.cpp
++++ b/iokit/Kernel/arm/SweetCPU.cpp
+@@ -16,13 +16,15 @@
+ #include <kern/processor.h>
+ #include <kern/thread.h>
+ #include <mach/mach_time.h>
+-#include <arm/caches_internal.h>
+ #include <pexpert/pexpert.h>
+ 
+ extern "C" void sweet_secondary_entry(void);
+ extern "C" boolean_t sweet_cpu_signal_is_enabled(unsigned int cpu);
+ extern "C" uint32_t sweet_gic_cpu_iface(unsigned int cpu);
+ extern "C" vm_offset_t gicd_base;
++/* The assembly/C cache helpers must not acquire C++ name mangling. */
++extern "C" void CleanPoC_DcacheRegion_Force(vm_offset_t va, size_t length);
++extern "C" void flush_dcache64(addr64_t addr, unsigned count, int phys);
+ 
+ #if defined(SANTONI)
+ /* Matches the assembly's private cache-line slot; no neighboring CPU writes. */

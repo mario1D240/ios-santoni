@@ -1,0 +1,451 @@
+diff --git a/bsd/dev/santoni_gpu_core.h b/bsd/dev/santoni_gpu_core.h
+--- a/bsd/dev/santoni_gpu_core.h
++++ b/bsd/dev/santoni_gpu_core.h
+@@ -63,5 +63,6 @@
+     uint32_t status, interrupt_status, smmu_fsr, smmu_global_fsr;
+     uint32_t pm4_version, pfp_version;
+-    bool memory_retained, restored, trust_read;
++    uint32_t power_pending;
++    bool memory_retained, restored, trust_read, gpu_quiescent, smmu_restored;
+     struct sgpu_failure failure, rollback_failure;
+ };
+@@ -95,4 +96,7 @@
+ #define SG_ME_HALT (1u << 28)
+ #define SG_BUSY_MASK 0xfffffffeu
++/* A5xx error IRQs: RBBM 1..7, CP_HW_ERROR 9, ATB/hang/UCHE 22..25.
++ * Idle, CP software/completion/timestamp and debug interrupts are not errors. */
++#define SG_ERROR_IRQ_MASK 0x03c002feu
+ 
+ /* SMMU v2 user CB0, from MSM8937 DT gpu-offset=0x48000 and arm-smmu.c. */
+diff --git a/bsd/dev/santoni_gpu_core.c b/bsd/dev/santoni_gpu_core.c
+--- a/bsd/dev/santoni_gpu_core.c
++++ b/bsd/dev/santoni_gpu_core.c
+@@ -44,5 +44,5 @@
+     struct saved_reg saved[32];
+     uint32_t saved_count;
+-    bool gpu_live, smmu_live, dma_exposed, restoring;
++    bool gpu_live, smmu_live, dma_exposed, restoring, gpu_owned, gx_touched;
+ };
+ 
+@@ -176,16 +176,23 @@
+ {
+     struct sgpu_failure *f = p->restoring ? &p->report->rollback_failure : &p->report->failure;
+-    if (f->kind != SG_FAIL_NONE) return;
+-    *f = (struct sgpu_failure){.kind=kind, .stage=p->report->stage,
++    bool additional = f->kind != SG_FAIL_NONE;
++    if (additional && !p->restoring) return;
++    struct sgpu_failure current = {.kind=kind, .stage=p->report->stage,
+         .block=block, .offset=off, .mask=mask, .want=want, .old=old,
+         .written=written, .got=got, .elapsed_us=elapsed_us,
+         .budget_us=budget_us, .saved_count=p->saved_count};
+-    trace(p, p->restoring ? "ROLLBACK_FAIL stage/kind/block" : "FAIL stage/kind/block",
++    if (!additional) *f = current;
++    else f = &current; /* preserve the first record but do not hide a later failed restore */
++    trace(p, additional ? "ROLLBACK_MORE stage/kind/block" :
++        p->restoring ? "ROLLBACK_FAIL stage/kind/block" : "FAIL stage/kind/block",
+         f->stage, f->kind, f->block);
+-    trace(p, p->restoring ? "ROLLBACK_FAIL offset/mask/want" : "FAIL offset/mask/want",
++    trace(p, additional ? "ROLLBACK_MORE offset/mask/want" :
++        p->restoring ? "ROLLBACK_FAIL offset/mask/want" : "FAIL offset/mask/want",
+         f->offset, f->mask, f->want);
+-    trace(p, p->restoring ? "ROLLBACK_FAIL old/written/got" : "FAIL old/written/got",
++    trace(p, additional ? "ROLLBACK_MORE old/written/got" :
++        p->restoring ? "ROLLBACK_FAIL old/written/got" : "FAIL old/written/got",
+         f->old, f->written, f->got);
+-    trace(p, p->restoring ? "ROLLBACK_FAIL elapsed/budget/saved" : "FAIL elapsed/budget/saved",
++    trace(p, additional ? "ROLLBACK_MORE elapsed/budget/saved" :
++        p->restoring ? "ROLLBACK_FAIL elapsed/budget/saved" : "FAIL elapsed/budget/saved",
+         f->elapsed_us, f->budget_us, f->saved_count);
+ }
+@@ -233,4 +240,49 @@
+ }
+ 
++static bool __attribute__((noinline)) checked_write32(struct probe *p, enum sgpu_block b, uint32_t off,
++    uint32_t mask, uint32_t value)
++{
++    uint32_t old = read32(p, b, off);
++    write32(p, b, off, value);
++    uint32_t got = read32(p, b, off);
++    if ((got & mask) == (value & mask)) return true;
++    sgpu_failure(p, SG_FAIL_READBACK, b, off, mask, value & mask, old, value, got, 0, 0);
++    return false;
++}
++
++static bool __attribute__((noinline)) checked_write64(struct probe *p, enum sgpu_block b, uint32_t off, uint64_t value)
++{
++    uint64_t old = p->ops->read64(p->ops->ctx, b, off);
++    write64(p, b, off, value);
++    uint64_t got = p->ops->read64(p->ops->ctx, b, off);
++    if (got == value) return true;
++    unsigned shift = (uint32_t)got == (uint32_t)value ? 32u : 0u;
++    sgpu_failure(p, SG_FAIL_READBACK, b, off + shift / 8, ~0u,
++        (uint32_t)(value >> shift), (uint32_t)(old >> shift),
++        (uint32_t)(value >> shift), (uint32_t)(got >> shift), 0, 0);
++    return false;
++}
++
++/* clock-local2.c accepts clock ON or NOC-FSM-ON, but only exact OFF on disable.
++ * All six target branches use HALT checking; do not confuse enable-bit echo
++ * with completion of a clock-domain transition. */
++static bool __attribute__((noinline)) branch_state(struct probe *p, uint32_t off, bool on)
++{
++    const uint32_t mask = 0xf0000000u;
++    uint64_t start = p->ops->now_us(p->ops->ctx);
++    uint32_t got = 0;
++    for (unsigned i = 0; i <= 100; i++) {
++        got = read32(p, SG_CC, off);
++        uint32_t status = got & mask;
++        if (on ? (status == 0 || status == BIT(29)) : status == BIT(31)) return true;
++        if (p->ops->now_us(p->ops->ctx) - start >= 10000) break;
++        if (i != 100) wait_us(p, 100);
++    }
++    uint64_t elapsed = p->ops->now_us(p->ops->ctx) - start;
++    sgpu_failure(p, SG_FAIL_POLL, SG_CC, off, mask, on ? 0 : BIT(31), 0, 0,
++        got, elapsed > (uint64_t)~0u ? ~0u : (uint32_t)elapsed, 10000);
++    return false;
++}
++
+ static bool update_rcg(struct probe *p)
+ {
+@@ -251,8 +303,20 @@
+         return false; /* do not seize a hardware-controlled/overridden domain */
+     }
++    if ((cx & (BIT(31) | 1u)) != 1u || (gx & (BIT(31) | 1u)) != 1u) {
++        bool cx_live = (cx & (BIT(31) | 1u)) != 1u;
++        uint32_t got = cx_live ? cx : gx;
++        sgpu_failure(p, SG_FAIL_OWNER, SG_CC, cx_live ? CC_CX : CC_GX,
++            BIT(31) | 1u, 1, got, 0, got, 0, 0);
++        return false; /* kernel-only diagnostic requires a cold, unowned GPU */
++    }
+     uint32_t command = read32(p, SG_CC, CC_CMD);
+     trace(p, "GCC inherited CMD/ROOT_EN/ROOT_OFF", command, command & 2u, command & BIT(31));
+     if (command & 1u) {
+         sgpu_failure(p, SG_FAIL_OWNER, SG_CC, CC_CMD, 1, 0, command, 0, command, 0, 0);
++        return false;
++    }
++    if ((command & (BIT(31) | 2u)) != BIT(31)) {
++        sgpu_failure(p, SG_FAIL_OWNER, SG_CC, CC_CMD, BIT(31) | 2u,
++            BIT(31), command, 0, command, 0, 0);
+         return false;
+     }
+@@ -267,4 +331,5 @@
+     if (!poll(p, SG_CC, CC_CX, BIT(31), BIT(31), 10000)) return false;
+     if (!change(p, SG_CC, 0x20, BIT(13) | BIT(14), BIT(13) | BIT(14))) return false;
++    p->gx_touched = true; /* even a failed/partial GX enable may leave an unknown engine */
+     if (!change(p, SG_CC, CC_GX, waits | 1u, 0x00285000u)) return false;
+     wait_us(p, 2);
+@@ -277,5 +342,5 @@
+     for (unsigned i = 0; i < COUNT(branches); i++) {
+         if (!change(p, SG_CC, branches[i], 1, 1) ||
+-            !poll(p, SG_CC, branches[i], BIT(31), 0, 10000)) return false;
++            !branch_state(p, branches[i], true)) return false;
+     }
+     /* MSM8937's six GPU clocks exclude the shared 8952 OXILI_GMEM_CBCR.
+@@ -290,7 +355,6 @@
+ static bool restore_power(struct probe *p)
+ {
+-    bool ok = true;
+     while (p->saved_count) {
+-        struct saved_reg r = p->saved[--p->saved_count];
++        struct saved_reg r = p->saved[p->saved_count - 1];
+         uint32_t now = read32(p, r.block, r.off);
+         uint32_t written = (now & ~r.mask) | (r.value & r.mask);
+@@ -300,14 +364,19 @@
+             sgpu_failure(p, SG_FAIL_READBACK, r.block, r.off, r.mask,
+                 r.value & r.mask, now, written, got, 0, 0);
+-            ok = false;
+-        }
+-        if (r.block == SG_CC && r.off == CC_CFG && !update_rcg(p)) ok = false;
++            return false; /* keep the failed operation and all its prerequisites */
++        }
++        if (r.block == SG_CC && (r.mask & 1u) &&
++            (r.off == 0x20 || r.off == 0x28 || r.off == 0x30 ||
++             r.off == 0x34 || r.off == 0x40 || r.off == 0x4c) &&
++            !branch_state(p, r.off, (r.value & 1u) != 0)) return false;
++        if (r.block == SG_CC && r.off == CC_CFG && !update_rcg(p)) return false;
+         if (r.block == SG_CC && (r.off == CC_CX || r.off == CC_GX)) {
+             wait_us(p, 2);
+             /* A firmware vote may keep it powered, but never spin forever. */
+-            if (!poll(p, SG_CC, r.off, BIT(31), r.value & BIT(31), 10000)) ok = false;
+-        }
+-    }
+-    return ok;
++            if (!poll(p, SG_CC, r.off, BIT(31), r.value & BIT(31), 10000)) return false;
++        }
++        p->saved_count--;
++    }
++    return true;
+ }
+ 
+@@ -316,4 +385,9 @@
+     p->report->status = read32(p, SG_GPU, SG_STATUS);
+     p->report->interrupt_status = read32(p, SG_GPU, SG_INT_STATUS);
++    if (!p->smmu_live) {
++        trace(p, "GPU status/IRQ; SMMU layout not verified", p->report->status,
++            p->report->interrupt_status, 0);
++        return;
++    }
+     p->report->smmu_fsr = read32(p, SG_SMMU, SG_CB_FSR);
+     p->report->smmu_global_fsr = read32(p, SG_SMMU, 0x48);
+@@ -322,4 +396,9 @@
+     trace(p, "SMMU global/FAR low/high", p->report->smmu_global_fsr,
+         read32(p, SG_SMMU, SG_CB_FAR), read32(p, SG_SMMU, SG_CB_FAR + 4));
++}
++
++static bool has_fault(const struct sgpu_report *r)
++{
++    return (r->interrupt_status & SG_ERROR_IRQ_MASK) || r->smmu_fsr || r->smmu_global_fsr;
+ }
+ 
+@@ -365,22 +444,32 @@
+                 return false; /* no duplicate SID0 match or other owner of CB0 */
+         }
+-    }
+-    if ((s->matching && (s->smr & BIT(31))) &&
++    } else {
++        unsigned sid_bits = (id0 >> 9) & 15u;
++        if (sid_bits > 8) return false; /* S2CRs must fit the reviewed GR0 page */
++        for (unsigned sid = 1; sid < (1u << sid_bits); sid++) {
++            uint32_t route = read32(p, SG_SMMU, SG_S2CR0 + sid * 4);
++            if (!(route & (3u << 16)) && !(route & 0xffu))
++                return false; /* even a dormant alias would activate with our CB0 */
++        }
++    }
++    if ((!s->matching || (s->smr & BIT(31))) &&
+         !(s->s2cr & (3u << 16)) && (s->s2cr & 0xffu)) return false;
+     s->changed = true;
+-    write32(p, SG_SMMU, SG_S2CR0, SG_S2CR_FAULT); /* FAULT while CB is replaced; never bypass */
+-    write32(p, SG_SMMU, SG_CB, 0);
+-    if (read32(p, SG_SMMU, SG_S2CR0) != SG_S2CR_FAULT || (read32(p, SG_SMMU, SG_CB) & 1u))
+-        return false;
+-    write32(p, SG_SMMU, SG_GR1_CBA2R0, 1); /* AArch64 context */
+-    write32(p, SG_SMMU, SG_GR1_CBAR0, BIT(16) | 0xf300u);
++    /* Every format/address write is checked while the bank is disabled and
++     * SID0 is FAULT-routed. A missing echo cannot become an enabled context. */
++    if (!checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, SG_S2CR_FAULT) ||
++        !checked_write32(p, SG_SMMU, SG_CB, 1, 0))
++        return false;
+     /* 32-bit VA / 32-bit PA suffice for this owned window; 4K, outer WBWA. */
+-    write32(p, SG_SMMU, SG_CB_TTBCR2, (7u << 15) | BIT(4));
+-    write32(p, SG_SMMU, SG_CB_TTBCR, BIT(23) | (2u << 12) | BIT(10) | BIT(8) | 32u);
++    if (!checked_write32(p, SG_SMMU, SG_GR1_CBA2R0, ~0u, 1) ||
++        !checked_write32(p, SG_SMMU, SG_GR1_CBAR0, ~0u, BIT(16) | 0xf300u) ||
++        !checked_write32(p, SG_SMMU, SG_CB_TTBCR2, ~0u, (7u << 15) | BIT(4)) ||
++        !checked_write32(p, SG_SMMU, SG_CB_TTBCR, ~0u,
++            BIT(23) | (2u << 12) | BIT(10) | BIT(8) | 32u)) return false;
+     p->dma_exposed = true; /* page-table walk references are DMA too */
+-    write64(p, SG_SMMU, SG_CB_TTBR0, p->memory.pa[0] | (1ull << 48));
+-    write64(p, SG_SMMU, SG_CB_TTBR1, 1ull << 48);
+-    write32(p, SG_SMMU, SG_CB_MAIR0, 0xff44u); /* attr1 WBWA */
+-    write32(p, SG_SMMU, SG_CB_MAIR0 + 4, 0);
++    if (!checked_write64(p, SG_SMMU, SG_CB_TTBR0, p->memory.pa[0] | (1ull << 48)) ||
++        !checked_write64(p, SG_SMMU, SG_CB_TTBR1, 1ull << 48) ||
++        !checked_write32(p, SG_SMMU, SG_CB_MAIR0, ~0u, 0xff44u) ||
++        !checked_write32(p, SG_SMMU, SG_CB_MAIR0 + 4, ~0u, 0)) return false;
+     write32(p, SG_SMMU, SG_CB_FSR, ~0u);
+     write32(p, SG_SMMU, 0x48, read32(p, SG_SMMU, 0x48));
+@@ -392,9 +481,9 @@
+     /* Faults terminate, not stall, and are polled: CFIE/CFCFG remain OFF. */
+     uint32_t sctlr = BIT(12) | BIT(8) | BIT(5) | BIT(2) | BIT(1) | BIT(0);
+-    write32(p, SG_SMMU, SG_CB, sctlr);
+-    if (s->matching) write32(p, SG_SMMU, SG_SMR0, BIT(31)); /* ONLY SID 0, mask=0 */
+-    write32(p, SG_SMMU, SG_S2CR0, 0); /* translate through CB0 */
+     uint32_t cr0 = (s->cr0 & ~(BIT(0) | BIT(2) | BIT(5))) | BIT(1) | BIT(4) | BIT(10);
+-    write32(p, SG_SMMU, 0, cr0); /* reject unmatched streams, no global IRQ */
++    if (!checked_write32(p, SG_SMMU, 0, ~0u, cr0) || /* reject unmatched streams FIRST */
++        !checked_write32(p, SG_SMMU, SG_CB, ~0u, sctlr) ||
++        (s->matching && !checked_write32(p, SG_SMMU, SG_SMR0, ~0u, BIT(31))) ||
++        !checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, 0)) return false;
+     uint64_t ttbr = p->ops->read64(p->ops->ctx, SG_SMMU, SG_CB_TTBR0);
+     bool ok = ttbr == (p->memory.pa[0] | (1ull << 48)) &&
+@@ -411,23 +500,33 @@
+ {
+     if (!s->changed) return true;
+-    write32(p, SG_SMMU, SG_S2CR0, SG_S2CR_FAULT);
+-    write32(p, SG_SMMU, SG_CB, 0);
++    if (!checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, SG_S2CR_FAULT) ||
++        !checked_write32(p, SG_SMMU, SG_CB, 1, 0)) return false;
+     write32(p, SG_SMMU, SG_CB_TLBIASID, 1);
+     write32(p, SG_SMMU, SG_CB_TLBSYNC, 0);
+     if (!poll(p, SG_SMMU, SG_CB_TLBSTATUS, 1, 0, 10000)) return false;
+-    write32(p, SG_SMMU, SG_GR1_CBA2R0, s->cba2r);
+-    write32(p, SG_SMMU, SG_GR1_CBAR0, s->cbar);
+-    write32(p, SG_SMMU, SG_CB_TTBCR2, s->tcr2);
+-    write32(p, SG_SMMU, SG_CB_TTBCR, s->tcr);
+-    write64(p, SG_SMMU, SG_CB_TTBR0, s->ttbr0);
+-    write64(p, SG_SMMU, SG_CB_TTBR1, s->ttbr1);
+-    write32(p, SG_SMMU, SG_CB_MAIR0, s->mair0);
+-    write32(p, SG_SMMU, SG_CB_MAIR0 + 4, s->mair1);
+-    write32(p, SG_SMMU, SG_CB, s->sctlr);
+-    if (s->matching) write32(p, SG_SMMU, SG_SMR0, s->smr);
+-    write32(p, SG_SMMU, SG_S2CR0, s->s2cr);
+-    write32(p, SG_SMMU, 0, s->cr0);
+-    return read32(p, SG_SMMU, SG_CB) == s->sctlr &&
+-        read32(p, SG_SMMU, SG_S2CR0) == s->s2cr && read32(p, SG_SMMU, 0) == s->cr0;
++    /* A partial startup may reach restoration before the owned TTBR was
++     * installed. Rewriting saved table pointers is still conservatively DMA:
++     * never hand this allocation back while restored hardware refs are uncertain. */
++    p->dma_exposed = true;
++    if (!checked_write32(p, SG_SMMU, SG_GR1_CBA2R0, ~0u, s->cba2r) ||
++        !checked_write32(p, SG_SMMU, SG_GR1_CBAR0, ~0u, s->cbar) ||
++        !checked_write32(p, SG_SMMU, SG_CB_TTBCR2, ~0u, s->tcr2) ||
++        !checked_write32(p, SG_SMMU, SG_CB_TTBCR, ~0u, s->tcr) ||
++        !checked_write64(p, SG_SMMU, SG_CB_TTBR0, s->ttbr0) ||
++        !checked_write64(p, SG_SMMU, SG_CB_TTBR1, s->ttbr1) ||
++        !checked_write32(p, SG_SMMU, SG_CB_MAIR0, ~0u, s->mair0) ||
++        !checked_write32(p, SG_SMMU, SG_CB_MAIR0 + 4, ~0u, s->mair1) ||
++        (s->matching && !checked_write32(p, SG_SMMU, SG_SMR0, ~0u, s->smr))) return false;
++    /* Re-enable inherited control only after every address/format echo passed.
++     * Keep SID0 FAULT-routed until the entire saved context is verified. */
++    if (!checked_write32(p, SG_SMMU, SG_CB, ~0u, s->sctlr) ||
++        !checked_write32(p, SG_SMMU, 0, ~0u, s->cr0)) return false;
++    if (!checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, s->s2cr)) {
++        /* A bad final route must not remain exposed, even after a failed restore. */
++        (void)checked_write32(p, SG_SMMU, SG_S2CR0, ~0u, SG_S2CR_FAULT);
++        (void)checked_write32(p, SG_SMMU, SG_CB, 1, 0);
++        return false;
++    }
++    return true;
+ }
+ 
+@@ -479,9 +578,18 @@
+ static bool consume(struct probe *p, uint32_t words)
+ {
+-    if (!words || words >= SGPU_PAGE / 4) return false;
++    if (!words || words >= SGPU_PAGE / 4) {
++        sgpu_failure(p, SG_FAIL_GUARD, SG_GPU, SG_RB_WPTR, ~0u, SGPU_PAGE / 4 - 1,
++            0, 0, words, 0, 0);
++        if (!p->report->error) p->report->error = SG_BAD_MODE;
++        return false;
++    }
+     p->ops->clean(p->ops->ctx, p->memory.va + 3 * SGPU_PAGE, SGPU_PAGE);
+     write32(p, SG_GPU, SG_RB_WPTR, words);
+-    if (!poll(p, SG_GPU, SG_RB_RPTR, ~0u, words, POLL_US)) return false;
+-    return poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, POLL_US);
++    if (!poll(p, SG_GPU, SG_RB_RPTR, ~0u, words, POLL_US) ||
++        !poll(p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, POLL_US)) {
++        if (!p->report->error) p->report->error = SG_COMMAND_TIMEOUT;
++        return false;
++    }
++    return true;
+ }
+ 
+@@ -503,5 +611,5 @@
+     write32(p, SG_GPU, SG_PFP_BASE + 4, 0);
+     p->dma_exposed = true; /* ME may fetch immediately; never free after this */
+-    write32(p, SG_GPU, SG_ME_CNTL, 0);
++    if (!checked_write32(p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, 0)) return false;
+     if (!consume(p, 9)) return false;
+     *wptr = 9;
+@@ -641,17 +749,24 @@
+     trace(&p, "GPU VBIF/AON delta/status", report->vbif, report->aon_delta, report->status);
+     if (!report->vbif || report->vbif == ~0u || !report->aon_delta) { report->error = SG_BAD_ID; goto done; }
++    if (report->status & SG_BUSY_MASK) { report->error = SG_BUSY; goto done; }
+     if (mode == 1) { passed = true; goto done; }
+-    if (report->status & SG_BUSY_MASK) { report->error = SG_BUSY; goto done; }
+     report->stage = SG_TRANSLATION;
+     trace(&p, "before powered SMMU read/setup", 0x01c40000, 0x10000, 0);
+     if (!ops->map(ops->ctx, SG_SMMU, 0x01c40000, 0x10000)) { report->error = SG_NO_MAP; goto done; }
+-    write32(&p, SG_GPU, SG_INT_MASK, 0); /* no unregistered GPU interrupt */
+-    write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT);
++    if (!checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
++        report->error = SG_FAULT; goto done;
++    }
++    p.gpu_owned = true; /* only an idle engine with verified IRQ masking is reset */
++    if (!checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT)) {
++        report->error = SG_FAULT; goto done;
++    }
+     write32(&p, SG_GPU, SG_RESET, 1);
+     (void)read32(&p, SG_GPU, SG_RESET);
+     wait_us(&p, 2);
+     write32(&p, SG_GPU, SG_RESET, 0);
+-    write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT);
+-    write32(&p, SG_GPU, SG_INT_MASK, 0);
++    if (!checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) ||
++        !checked_write32(&p, SG_GPU, SG_INT_MASK, ~0u, 0)) {
++        report->error = SG_FAULT; goto done;
++    }
+     ops->clean(ops->ctx, p.memory.va, SGPU_POOL_BYTES);
+     if (!smmu_start(&p, &smmu)) {
+@@ -668,5 +783,5 @@
+     }
+     faults(&p);
+-    if (report->smmu_fsr || report->smmu_global_fsr) { report->error = SG_FAULT; goto done; }
++    if (has_fault(report)) { report->error = SG_FAULT; goto done; }
+     if (mode == 3) {
+         report->stage = SG_RENDER;
+@@ -679,7 +794,10 @@
+             goto done;
+         }
+-        if (!render_test(&p, &wptr)) { report->error = SG_MARKER_MISMATCH; goto done; }
++        if (!render_test(&p, &wptr)) {
++            if (!report->error) report->error = SG_MARKER_MISMATCH;
++            goto done;
++        }
+         faults(&p);
+-        if (report->smmu_fsr || report->smmu_global_fsr) { report->error = SG_FAULT; goto done; }
++        if (has_fault(report)) { report->error = SG_FAULT; goto done; }
+     }
+     report->stage = SG_COMPLETE;
+@@ -687,8 +805,9 @@
+ done:
+     p.restoring = true;
+-    if (p.gpu_live && p.smmu_live) {
++    report->smmu_restored = !smmu.changed;
++    if (p.gpu_live && p.gpu_owned) {
+         faults(&p);
+-        write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT);
+-        stopped = poll(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT, 10000) &&
++        stopped = checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) &&
++            poll(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT, 10000) &&
+             poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
+         if (!stopped) {
+@@ -698,14 +817,27 @@
+             wait_us(&p, 2);
+             write32(&p, SG_GPU, SG_RESET, 0);
+-            write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT);
+-            stopped = poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000) &&
++            stopped = checked_write32(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT) &&
++                poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000) &&
+                 poll(&p, SG_GPU, SG_ME_CNTL, SG_ME_HALT, SG_ME_HALT, 10000);
+         }
+-        /* An uncertain engine stays contained in its owned translations. */
+-        if (stopped && !smmu_restore(&p, &smmu)) stopped = false;
+-    }
++    } else if (p.gpu_live) {
++        /* A register-only probe or inherited busy engine is not ours to reset.
++         * If it stays busy, leave every clock/domain prerequisite intact. */
++        stopped = poll(&p, SG_GPU, SG_STATUS, SG_BUSY_MASK, 0, 10000);
++    } else if (p.gx_touched) {
++        /* A late power/map failure cannot safely read the GPU yet. Only a
++         * confirmed collapsed GX permits teardown without an engine idle read. */
++        uint32_t gx = read32(&p, SG_CC, CC_GX);
++        stopped = (gx & (BIT(31) | 1u)) == 1u;
++        if (!stopped) sgpu_failure(&p, SG_FAIL_GUARD, SG_CC, CC_GX,
++            BIT(31) | 1u, 1, gx, 0, gx, 0, 0);
++    }
++    report->gpu_quiescent = p.gpu_live && stopped;
++    /* An uncertain engine keeps its contained translations and power. */
++    if (stopped && smmu.changed) report->smmu_restored = smmu_restore(&p, &smmu);
+     report->memory_retained = p.dma_exposed;
+     if (p.memory.va && !p.dma_exposed) ops->release(ops->ctx, &p.memory);
+-    report->restored = stopped && restore_power(&p);
++    report->restored = stopped && report->smmu_restored && restore_power(&p);
++    report->power_pending = p.saved_count;
+     if (!report->restored) {
+         trace(&p, "rollback incomplete; bounded DMA retained", report->error, report->stage,
+diff --git a/bsd/dev/santoni_gpu.c b/bsd/dev/santoni_gpu.c
+--- a/bsd/dev/santoni_gpu.c
++++ b/bsd/dev/santoni_gpu.c
+@@ -205,8 +205,9 @@
+     sgpu_failure_summary("FIRST_FAIL", &report.failure);
+     sgpu_failure_summary("ROLLBACK_FAIL", &report.rollback_failure);
+-    printf("SANTONI GPU: RESULT pass=%u stage=%u error=%u markers=%u pixels=%u trust=%08x restored=%u retained=%u trust_read=%u\n",
++    printf("SANTONI GPU: RESULT pass=%u stage=%u error=%u markers=%u pixels=%u trust=%08x restored=%u retained=%u trust_read=%u quiescent=%u smmu_restored=%u power_pending=%u\n",
+         passed ? 1u : 0u, report.stage, report.error, report.markers, report.pixels,
+         report.trust, report.restored ? 1u : 0u, report.memory_retained ? SGPU_POOL_BYTES : 0u,
+-        report.trust_read ? 1u : 0u);
++        report.trust_read ? 1u : 0u, report.gpu_quiescent ? 1u : 0u,
++        report.smmu_restored ? 1u : 0u, report.power_pending);
+     thread_terminate_self();
+ }

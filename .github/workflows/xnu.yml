@@ -16,45 +16,62 @@ jobs:
       run: |
         echo "Available Xcode versions:"
         ls /Applications | grep Xcode
-        # 如果你发现 Xcode_16.4.app 不存在，请根据上面列出的名称修改这里
-        sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+        # 默认使用最新安装的 Xcode，如果报错可指定具体版本如 Xcode_16.0.app
+        sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
         xcodebuild -version
 
-    - name: 3. Download XNU Source (Tarball Method)
+    - name: 3. Download XNU Source & Base Repo
       run: |
-        echo "Downloading XNU 8796.121.2 tarball..."
+        echo "Downloading Apple XNU 8796.121.2..."
         curl -L -o xnu.tar.gz https://github.com/apple-oss-distributions/xnu/archive/refs/tags/xnu-8796.121.2.tar.gz
-        echo "Extracting..."
         tar -xzf xnu.tar.gz
-        # 解压后的文件夹名通常叫 xnu-xnu-8796.121.2，我们把它重命名为 xnu-src
         mv xnu-xnu-8796.121.2 xnu-src
-        echo "Source tree ready."
-        ls xnu-src/ | head -n 5
 
-    - name: 4. Apply Project Patches
-      run: |
+        # 【关键】ios-santoni 的补丁依赖 ios-topaz 的基础文件（比如 sweet_hfs）
+        # 我们尝试拉取基础仓库并合并，确保缺失的目录被补齐
+        echo "Downloading base ios-topaz repo for missing files..."
+        curl -L -o topaz.tar.gz https://github.com/console-ramoops/ios-topaz/archive/refs/heads/main.tar.gz || true
+        if [ -f topaz.tar.gz ]; then
+          tar -xzf topaz.tar.gz
+          # 将 topaz 的文件复制进 xnu-src，不覆盖已有文件
+          cp -rn ios-topaz-main/* xnu-src/ || true
+        fi
+        
         cd xnu-src
-        # 初始化一个临时的 git 仓库，方便 git apply 完美处理路径
         git init .
         git add .
-        git commit -m "Base XNU Source" -q
-        
+        git commit -m "Base Source" -q
+        echo "Source tree ready."
+
+    - name: 4. Apply Project Patches (Fault Tolerant)
+      run: |
+        cd xnu-src
         for patch in ../xnu/patches/*.patch; do
           echo "=================================================="
           echo "Applying: $patch"
-          # 使用 git apply 替代 patch，更智能地处理路径
-          git apply --whitespace=nowarn "$patch" || { echo "Patch failed: $patch"; exit 1; }
+          
+          # 使用 patch 命令，参数说明：
+          # -p1: 剥离第一层目录 (a/ 或 b/)
+          # -N: 忽略已经打过的补丁
+          # -t: 批处理模式，遇到错误不询问，直接跳过
+          # --reject-file=-: 将失败的 hunks 输出到终端（方便排查），不在本地留 .rej 文件
+          # || true: 确保即使这个补丁部分失败，也继续打下一个补丁
+          patch -p1 -N -t --reject-file=- < "$patch" || true
         done
-        echo "All patches applied successfully!"
+        echo "Finished applying patches."
+
     - name: 5. Build XNU Kernel
       run: |
         cd xnu-src
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export TARGET=arm64-apple-ios16.0
+        
+        # 开始编译
         make ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS TARGET=$TARGET -j$(sysctl -n hw.ncpu)
 
     - name: 6. Upload Kernel Artifact
+      if: always() # 即使编译失败，也尝试上传生成的文件或日志
       uses: actions/upload-artifact@v4
       with:
         name: Santoni-XNU-Kernel

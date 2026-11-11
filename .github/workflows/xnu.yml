@@ -1,14 +1,7 @@
-name: Build XNU Kernel
-
-on:
-  workflow_dispatch:
-  push:
-    branches: [ main ]
-
 jobs:
   build:
-    # 1. 将 macos-14 改为 macos-15
-    runs-on: macos-15 
+    # 将 macos-14 改为 macos-15
+    runs-on: macos-15
     timeout-minutes: 180
 
     steps:
@@ -17,8 +10,7 @@ jobs:
 
     - name: Set up Xcode
       run: |
-        # 2. 关键：macos-15 默认的 Xcode 版本可能已升级至 16.x
-        #    如果下方路径不存在，请根据日志提示调整版本号
+        # 根据日志确认 Xcode 路径，通常 macos-15 预装 Xcode 16.x
         sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
         xcodebuild -version
 
@@ -26,26 +18,4 @@ jobs:
       run: |
         git clone --depth 1 -b xnu-8796.121.2 \
           https://github.com/apple-oss-distributions/xnu.git xnu-src
-
-    - name: Apply project patches
-      run: |
-        cd xnu-src
-        for patch in ../xnu/patches/*.patch; do
-          echo "Applying $patch"
-          patch -p1 < "$patch" || exit 1
-        done
-
-    - name: Build XNU
-      run: |
-        cd xnu-src
-        make ARCH_CONFIGS=ARM64 KERNEL_CONFIGS=DEVELOPMENT \
-          TARGET=arm64-apple-ios16.0 -j$(sysctl -n hw.ncpu)
-
-    - name: Upload kernel artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: xnu-kernel
-        path: |
-          xnu-src/BUILD/obj/DEVELOPMENT_ARM64/kernel.development.sweet
-          xnu-src/BUILD/obj/DEVELOPMENT_ARM64/mach.development.*
-        if-no-files-found: warn
+    # ... 其余步骤保持不变

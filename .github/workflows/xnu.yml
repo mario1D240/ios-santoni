@@ -46,3 +46,19 @@ jobs:
           git apply --whitespace=nowarn "$patch" || { echo "Patch failed: $patch"; exit 1; }
         done
         echo "All patches applied successfully!"
+    - name: 5. Build XNU Kernel
+      run: |
+        cd xnu-src
+        export ARCH_CONFIGS=ARM64
+        export KERNEL_CONFIGS=DEVELOPMENT
+        export TARGET=arm64-apple-ios16.0
+        make ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS TARGET=$TARGET -j$(sysctl -n hw.ncpu)
+
+    - name: 6. Upload Kernel Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Santoni-XNU-Kernel
+        path: |
+          xnu-src/BUILD/obj/DEVELOPMENT_ARM64/kernel.development*
+          xnu-src/BUILD/obj/DEVELOPMENT_ARM64/mach.development*
+        if-no-files-found: warn

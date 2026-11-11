@@ -59,8 +59,13 @@ jobs:
         export KERNEL_CONFIGS=DEVELOPMENT
         export TARGET=arm64-apple-ios16.0
         
-        make ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS TARGET=$TARGET -j$(sysctl -n hw.ncpu)
-
+        # 关键修正：加入 MACHINE_CONFIG=ARM64，避免默认使用 VMAPPLE
+        make ARCH_CONFIGS=$ARCH_CONFIGS \
+             KERNEL_CONFIGS=$KERNEL_CONFIGS \
+             MACHINE_CONFIG=ARM64 \
+             TARGET=$TARGET \
+             -j$(sysctl -n hw.ncpu)
+             
     - name: 6. Upload Kernel Artifact
       if: always() # 就算编译报错，只要生成了文件就尝试上传
       uses: actions/upload-artifact@v4

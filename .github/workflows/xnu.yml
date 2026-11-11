@@ -1,13 +1,14 @@
 name: Build XNU Kernel
 
 on:
-  workflow_dispatch:   # 允许手动触发
+  workflow_dispatch:
   push:
-    branches: [ main ] # 推送时自动触发（可选）
+    branches: [ main ]
 
 jobs:
   build:
-    runs-on: macos-14   # 使用 macOS 14 runner（自带 Xcode 15）
+    # 1. 将 macos-14 改为 macos-15
+    runs-on: macos-15 
     timeout-minutes: 180
 
     steps:
@@ -16,7 +17,9 @@ jobs:
 
     - name: Set up Xcode
       run: |
-        sudo xcode-select -s /Applications/Xcode_15.0.app/Contents/Developer
+        # 2. 关键：macos-15 默认的 Xcode 版本可能已升级至 16.x
+        #    如果下方路径不存在，请根据日志提示调整版本号
+        sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer
         xcodebuild -version
 
     - name: Download XNU source

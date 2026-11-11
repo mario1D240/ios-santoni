@@ -5,6 +5,7 @@ on:
 
 jobs:
   build:
+    # 使用最新的 macOS 15 ARM64 环境
     runs-on: macos-15
     timeout-minutes: 240
 
@@ -14,17 +15,21 @@ jobs:
 
     - name: 2. Select Xcode Version
       run: |
+        echo "Available Xcode versions:"
+        ls /Applications | grep Xcode
+        # 默认使用当前 runner 上的默认 Xcode (通常是 16.x)
         sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
         xcodebuild -version
 
     - name: 3. Download XNU Source
       run: |
         echo "Downloading Apple XNU 8796.121.2..."
+        # 直接下载 tarball，避免 git clone 标签错误
         curl -L -o xnu.tar.gz https://github.com/apple-oss-distributions/xnu/archive/refs/tags/xnu-8796.121.2.tar.gz
         tar -xzf xnu.tar.gz
         mv xnu-xnu-8796.121.2 xnu-src
 
-        # 尝试下载基础 repo，如果 404 失败则自动跳过
+        # 尝试下载基础 repo (ios-topaz)，如果 404 失败则自动跳过
         echo "Attempting to download ios-topaz base repo..."
         if curl -f -s -L -o topaz.tar.gz https://github.com/console-ramoops/ios-topaz/archive/refs/heads/main.tar.gz; then
           echo "Topaz downloaded, extracting..."
@@ -46,8 +51,10 @@ jobs:
         for patch in ../xnu/patches/*.patch; do
           echo "=================================================="
           echo "Applying: $patch"
-          # -t: 批处理，不询问。 --reject-file=-: 将失败内容打印到控制台。
-          # || true: 如果某个补丁失败，忽略错误继续打下一个。
+          
+          # -t: 批处理模式，不询问
+          # --reject-file=-: 失败内容打印到控制台，不在本地留 .rej
+          # || true: 即使部分失败，也继续执行下一个补丁
           patch -p1 -N -t --reject-file=- < "$patch" || true
         done
         echo "Finished applying patches."
@@ -55,19 +62,22 @@ jobs:
     - name: 5. Build XNU Kernel
       run: |
         cd xnu-src
+        
+        # 关键修复：显式指定 MACHINE_CONFIG=ARM64，防止默认使用 VMAPPLE 虚拟机配置
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
+        export MACHINE_CONFIG=ARM64
         export TARGET=arm64-apple-ios16.0
         
-        # 关键修正：加入 MACHINE_CONFIG=ARM64，避免默认使用 VMAPPLE
+        echo "Starting compilation..."
         make ARCH_CONFIGS=$ARCH_CONFIGS \
              KERNEL_CONFIGS=$KERNEL_CONFIGS \
-             MACHINE_CONFIG=ARM64 \
+             MACHINE_CONFIG=$MACHINE_CONFIG \
              TARGET=$TARGET \
              -j$(sysctl -n hw.ncpu)
-             
+
     - name: 6. Upload Kernel Artifact
-      if: always() # 就算编译报错，只要生成了文件就尝试上传
+      if: always() # 即使编译失败，也尝试上传生成的日志或部分产物
       uses: actions/upload-artifact@v4
       with:
         name: Santoni-XNU-Kernel

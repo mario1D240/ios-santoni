@@ -1,17 +1,12 @@
 name: Build XNU Kernel for Santoni
 
 on:
-  # 允许你在 GitHub 网页上手动点击按钮触发编译
   workflow_dispatch:
-  # 如果你想让代码提交时自动编译，可以取消下面两行的注释
-  # push:
-  #   branches: [ main ]
 
 jobs:
   build:
-    # 必须使用 macOS runner，且由于 macos-14 已退役，这里使用 macos-15
     runs-on: macos-15
-    timeout-minutes: 240 # XNU 编译较慢，预留 4 小时超时时间
+    timeout-minutes: 240
 
     steps:
     - name: 1. Checkout Repository
@@ -21,26 +16,27 @@ jobs:
       run: |
         echo "Available Xcode versions:"
         ls /Applications | grep Xcode
-        # macos-15 默认通常是 Xcode 16.x，如果报错找不到，请从上面的输出里选一个可用的
+        # 如果你发现 Xcode_16.4.app 不存在，请根据上面列出的名称修改这里
         sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
         xcodebuild -version
 
-    - name: 3. Download XNU Source
+    - name: 3. Download XNU Source (Tarball Method)
       run: |
-        # 下载与 iOS 16.7.x 匹配的苹果官方 XNU 源码 (8796 系列)
-        # 这里使用浅克隆 (--depth 1) 加快下载速度
-        git clone --depth 1 -b xnu-8796.121.2 https://github.com/apple-oss-distributions/xnu.git xnu-src
-        echo "XNU Source downloaded."
+        echo "Downloading XNU 8796.121.2 tarball..."
+        curl -L -o xnu.tar.gz https://github.com/apple-oss-distributions/xnu/archive/refs/tags/xnu-8796.121.2.tar.gz
+        echo "Extracting..."
+        tar -xzf xnu.tar.gz
+        # 解压后的文件夹名通常叫 xnu-xnu-8796.121.2，我们把它重命名为 xnu-src
+        mv xnu-xnu-8796.121.2 xnu-src
+        echo "Source tree ready."
+        ls xnu-src/ | head -n 5
 
     - name: 4. Apply Project Patches
       run: |
         cd xnu-src
-        # 遍历仓库中的 patches 目录，按编号顺序应用补丁
         for patch in ../xnu/patches/*.patch; do
           echo "=================================================="
           echo "Applying: $patch"
-          # -p1 去掉路径的第一级目录 (a/ 或 b/)
-          # 如果某个补丁失败，将退出并报错
           patch -p1 < "$patch" || { echo "Patch failed: $patch"; exit 1; }
         done
         echo "All patches applied successfully!"
@@ -48,32 +44,16 @@ jobs:
     - name: 5. Build XNU Kernel
       run: |
         cd xnu-src
-        # 设置编译环境
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export TARGET=arm64-apple-ios16.0
-        
-        # 开始编译，使用所有可用的 CPU 核心数 (sysctl -n hw.ncpu)
-        # 注意：如果项目有特定的编译脚本 (比如 ./build.sh) 建议在此处替换
         make ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS TARGET=$TARGET -j$(sysctl -n hw.ncpu)
 
-    - name: 6. Locate and Upload Artifacts
-      run: |
-        cd xnu-src
-        echo "Searching for compiled kernel binaries..."
-        # 搜索编译生成的内核文件 (通常是 kernel.development 或 kernel.development.sweet)
-        find BUILD/ -name "kernel.development*" -o -name "mach.development*"
-        
-        # 创建输出文件夹
-        mkdir -p ../output_kernel
-        
-        # 复制生成的 Kernel 到输出目录
-        cp BUILD/obj/DEVELOPMENT_ARM64/kernel.development* ../output_kernel/ || true
-        cp BUILD/obj/DEVELOPMENT_ARM64/mach.development* ../output_kernel/ || true
-        
-    - name: 7. Upload Kernel Artifact
+    - name: 6. Upload Kernel Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Santoni-XNU-Kernel
-        path: output_kernel/
-        if-no-files-found: error # 如果没找到编译出来的内核，报错提醒
+        path: |
+          xnu-src/BUILD/obj/DEVELOPMENT_ARM64/kernel.development*
+          xnu-src/BUILD/obj/DEVELOPMENT_ARM64/mach.development*
+        if-no-files-found: warn

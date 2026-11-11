@@ -14,27 +14,24 @@ jobs:
 
     - name: 2. Select Xcode Version
       run: |
-        echo "Available Xcode versions:"
-        ls /Applications | grep Xcode
-        # 默认使用最新安装的 Xcode，如果报错可指定具体版本如 Xcode_16.0.app
         sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
         xcodebuild -version
 
-    - name: 3. Download XNU Source & Base Repo
+    - name: 3. Download XNU Source
       run: |
         echo "Downloading Apple XNU 8796.121.2..."
         curl -L -o xnu.tar.gz https://github.com/apple-oss-distributions/xnu/archive/refs/tags/xnu-8796.121.2.tar.gz
         tar -xzf xnu.tar.gz
         mv xnu-xnu-8796.121.2 xnu-src
 
-        # 【关键】ios-santoni 的补丁依赖 ios-topaz 的基础文件（比如 sweet_hfs）
-        # 我们尝试拉取基础仓库并合并，确保缺失的目录被补齐
-        echo "Downloading base ios-topaz repo for missing files..."
-        curl -L -o topaz.tar.gz https://github.com/console-ramoops/ios-topaz/archive/refs/heads/main.tar.gz || true
-        if [ -f topaz.tar.gz ]; then
+        # 尝试下载基础 repo，如果 404 失败则自动跳过
+        echo "Attempting to download ios-topaz base repo..."
+        if curl -f -s -L -o topaz.tar.gz https://github.com/console-ramoops/ios-topaz/archive/refs/heads/main.tar.gz; then
+          echo "Topaz downloaded, extracting..."
           tar -xzf topaz.tar.gz
-          # 将 topaz 的文件复制进 xnu-src，不覆盖已有文件
           cp -rn ios-topaz-main/* xnu-src/ || true
+        else
+          echo "Warning: Could not download ios-topaz. Proceeding without it."
         fi
         
         cd xnu-src
@@ -49,13 +46,8 @@ jobs:
         for patch in ../xnu/patches/*.patch; do
           echo "=================================================="
           echo "Applying: $patch"
-          
-          # 使用 patch 命令，参数说明：
-          # -p1: 剥离第一层目录 (a/ 或 b/)
-          # -N: 忽略已经打过的补丁
-          # -t: 批处理模式，遇到错误不询问，直接跳过
-          # --reject-file=-: 将失败的 hunks 输出到终端（方便排查），不在本地留 .rej 文件
-          # || true: 确保即使这个补丁部分失败，也继续打下一个补丁
+          # -t: 批处理，不询问。 --reject-file=-: 将失败内容打印到控制台。
+          # || true: 如果某个补丁失败，忽略错误继续打下一个。
           patch -p1 -N -t --reject-file=- < "$patch" || true
         done
         echo "Finished applying patches."
@@ -67,11 +59,10 @@ jobs:
         export KERNEL_CONFIGS=DEVELOPMENT
         export TARGET=arm64-apple-ios16.0
         
-        # 开始编译
         make ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS TARGET=$TARGET -j$(sysctl -n hw.ncpu)
 
     - name: 6. Upload Kernel Artifact
-      if: always() # 即使编译失败，也尝试上传生成的文件或日志
+      if: always() # 就算编译报错，只要生成了文件就尝试上传
       uses: actions/upload-artifact@v4
       with:
         name: Santoni-XNU-Kernel

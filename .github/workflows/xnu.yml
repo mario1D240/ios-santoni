@@ -71,27 +71,19 @@ jobs:
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
 
-        echo "=== 1. 修复 SweetFramebuffer.cpp 缺头文件 ==="
+        echo "=== 1. Fix SweetFramebuffer.cpp ==="
         FB_FILE="iokit/Kernel/arm/SweetFramebuffer.cpp"
         SURFACE_H=$(find . -name "SweetSurface.h" | head -n 1)
         if [ -f "$FB_FILE" ]; then
             if [ -n "$SURFACE_H" ]; then
                 REL_PATH=$(echo "$SURFACE_H" | sed 's|^\./||')
-                echo "Found SweetSurface.h at $REL_PATH, injecting include..."
-                sed -i '' "1i\\
-#include \\\"$REL_PATH\\\"
-" "$FB_FILE"
+                sed -i '' "1s|^|#include \"$REL_PATH\"\n|" "$FB_FILE"
             else
-                echo "SweetSurface.h not found, using forward declaration hack..."
-                sed -i '' '1i\
-#include <stddef.h>\
-#include <libkern/OSAtomic.h>\
-class SweetSurface { public: void* state; void release(); }; 
-' "$FB_FILE"
+                sed -i '' "1s|^|#include <stddef.h>\n#include <libkern/OSAtomic.h>\nclass SweetSurface { public: void* state; void release(); };\n|" "$FB_FILE"
             fi
         fi
 
-        echo "=== 2. 用宏定义完美替换 subr_log.c 里的 firehose 依赖 ==="
+        echo "=== 2. Fix firehose_buffer_private.h ==="
         sudo mkdir -p "$SDK_INCLUDE/os"
         FH_FILE="$SDK_INCLUDE/os/firehose_buffer_private.h"
         

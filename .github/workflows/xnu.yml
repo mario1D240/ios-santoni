@@ -71,16 +71,11 @@ jobs:
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
 
-        echo "=== 1. Fix SweetFramebuffer.cpp ==="
+        echo "=== 1. Fix SweetFramebuffer.cpp missing headers & definitions ==="
         FB_FILE="iokit/Kernel/arm/SweetFramebuffer.cpp"
-        SURFACE_H=$(find . -name "SweetSurface.h" | head -n 1)
         if [ -f "$FB_FILE" ]; then
-            if [ -n "$SURFACE_H" ]; then
-                REL_PATH=$(echo "$SURFACE_H" | sed 's|^\./||')
-                sed -i '' "1s|^|#include \"$REL_PATH\"\n|" "$FB_FILE"
-            else
-                sed -i '' "1s|^|#include <stddef.h>\n#include <libkern/OSAtomic.h>\nclass SweetSurface { public: void* state; void release(); };\n|" "$FB_FILE"
-            fi
+            echo "Injecting robust SweetSurface mock into $FB_FILE..."
+            python3 -c "f=open('$FB_FILE','r'); c=f.read(); f.close(); f=open('$FB_FILE','w'); f.write('#include <stddef.h>\n#include <libkern/OSAtomic.h>\n#include <IOKit/IOMemoryDescriptor.h>\nclass OSObject; class IOMemoryDescriptor;\nclass SweetSurface : public OSObject { public: IOMemoryDescriptor* state; void release(); };\n' + c); f.close()"
         fi
 
         echo "=== 2. Fix firehose_buffer_private.h ==="

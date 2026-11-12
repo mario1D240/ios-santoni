@@ -75,25 +75,25 @@ jobs:
         sudo mkdir -p "$SDK_INCLUDE/os"
         # 直接生成带完整宏定义的伪造头文件，解决 subr_log.c 缺参数问题
         sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null << 'EOF'
-#ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
-#define _OS_FIREHOSE_BUFFER_PRIVATE_H_
-#define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 1024
-#define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 16
-static inline bool __firehose_merge_updates(void *ptr) { return false; }
-static inline bool __firehose_kernel_configuration_valid(size_t c, size_t p) { return true; }
-static inline void* __firehose_buffer_create(size_t *size) { if (size) *size = 0; return 0; }
-#endif
-EOF
+        #ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
+        #define _OS_FIREHOSE_BUFFER_PRIVATE_H_
+        #define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 1024
+        #define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 16
+        static inline bool __firehose_merge_updates(void *ptr) { return false; }
+        static inline bool __firehose_kernel_configuration_valid(size_t c, size_t p) { return true; }
+        static inline void* __firehose_buffer_create(size_t *size) { if (size) *size = 0; return 0; }
+        #endif
+        EOF
 
         echo "Fixing SweetFramebuffer.cpp missing includes..."
         # 强行在 SweetFramebuffer.cpp 头部加入缺失的头文件
         FB_FILE="iokit/Kernel/arm/SweetFramebuffer.cpp"
         if [ -f "$FB_FILE" ]; then
             sed -i '' '2i\
-#include <stddef.h>\
-#include <libkern/OSAtomic.h>\
-#include "SweetSurface.h"
-' "$FB_FILE"
+        #include <stddef.h>\
+        #include <libkern/OSAtomic.h>\
+        #include "SweetSurface.h"
+        ' "$FB_FILE"
         fi
         
         export ARCH_CONFIGS=ARM64

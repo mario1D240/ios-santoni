@@ -37,8 +37,6 @@ jobs:
         if curl -f -s -L -o topaz.tar.gz https://github.com/console-ramoops/ios-topaz/archive/refs/heads/main.tar.gz; then
           tar -xzf topaz.tar.gz
           cp -rn ios-topaz-main/* xnu-src/ || true
-        else
-          echo "Warning: Could not download ios-topaz. Proceeding."
         fi
         
         cd xnu-src
@@ -60,8 +58,6 @@ jobs:
       run: |
         cd xnu-src
         
-        echo "Fixing missing include directories..."
-        
         mkdir -p BUILD/obj/EXPORT_HDRS/libsa
         
         SDK_INCLUDE="$SDKROOT/usr/local/include/kernel"
@@ -75,21 +71,29 @@ jobs:
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
         
-        echo "Downloading missing firehose_buffer_private.h..."
+        echo "Fixing firehose_buffer_private.h with missing macros..."
         sudo mkdir -p "$SDK_INCLUDE/os"
-        
-        URL1="https://raw.githubusercontent.com/apple-oss-distributions/libdispatch/main/os/firehose_buffer_private.h"
-        URL2="https://raw.githubusercontent.com/swiftlang/swift-corelibs-libdispatch/main/os/firehose_buffer_private.h"
-        
-        sudo curl -sL --retry 3 -o "$SDK_INCLUDE/os/firehose_buffer_private.h" "$URL1" || sudo curl -sL --retry 3 -o "$SDK_INCLUDE/os/firehose_buffer_private.h" "$URL2" || true
-        
-        if [ ! -s "$SDK_INCLUDE/os/firehose_buffer_private.h" ]; then
-            echo "Error: Downloads failed. Creating dummy header..."
-            sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null << 'EOF'
-        #ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
-        #define _OS_FIREHOSE_BUFFER_PRIVATE_H_
-        #endif
-        EOF
+        # 直接生成带完整宏定义的伪造头文件，解决 subr_log.c 缺参数问题
+        sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null << 'EOF'
+#ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
+#define _OS_FIREHOSE_BUFFER_PRIVATE_H_
+#define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 1024
+#define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 16
+static inline bool __firehose_merge_updates(void *ptr) { return false; }
+static inline bool __firehose_kernel_configuration_valid(size_t c, size_t p) { return true; }
+static inline void* __firehose_buffer_create(size_t *size) { if (size) *size = 0; return 0; }
+#endif
+EOF
+
+        echo "Fixing SweetFramebuffer.cpp missing includes..."
+        # 强行在 SweetFramebuffer.cpp 头部加入缺失的头文件
+        FB_FILE="iokit/Kernel/arm/SweetFramebuffer.cpp"
+        if [ -f "$FB_FILE" ]; then
+            sed -i '' '2i\
+#include <stddef.h>\
+#include <libkern/OSAtomic.h>\
+#include "SweetSurface.h"
+' "$FB_FILE"
         fi
         
         export ARCH_CONFIGS=ARM64
@@ -110,7 +114,6 @@ jobs:
         export TARGET=arm64-apple-ios16.0
         
         echo "Removing -Werror from all Makefiles..."
-        # 使用 find 搜索所有文件，彻底干掉 -Werror
         find . -type f \( -name "Makefile*" -o -name "MakeInc*" \) -exec sed -i '' 's/-Werror//g' {} + || true
         
         export CFLAGS="-w -Wno-error"

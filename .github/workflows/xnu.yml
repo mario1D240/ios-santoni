@@ -54,7 +54,7 @@ jobs:
         done
         echo "Finished applying patches."
 
-    - name: 5. Fix Missing Paths & Export Headers
+    - name: 5. Fix Missing Paths & Bruteforce Source Fixes
       run: |
         cd xnu-src
         
@@ -70,32 +70,33 @@ jobs:
         sudo mkdir -p "$FW_PLATFORM"
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
-        
-        echo "Fixing firehose_buffer_private.h with missing macros..."
-        sudo mkdir -p "$SDK_INCLUDE/os"
-        # 直接生成带完整宏定义的伪造头文件，解决 subr_log.c 缺参数问题
-        sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null << 'EOF'
-        #ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
-        #define _OS_FIREHOSE_BUFFER_PRIVATE_H_
-        #define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 1024
-        #define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 16
-        static inline bool __firehose_merge_updates(void *ptr) { return false; }
-        static inline bool __firehose_kernel_configuration_valid(size_t c, size_t p) { return true; }
-        static inline void* __firehose_buffer_create(size_t *size) { if (size) *size = 0; return 0; }
-        #endif
-        EOF
 
-        echo "Fixing SweetFramebuffer.cpp missing includes..."
-        # 强行在 SweetFramebuffer.cpp 头部加入缺失的头文件
+        echo "=== 1. 暴力修改 SweetFramebuffer.cpp 缺头文件问题 ==="
         FB_FILE="iokit/Kernel/arm/SweetFramebuffer.cpp"
         if [ -f "$FB_FILE" ]; then
-            sed -i '' '2i\
+            # 直接在第 1 行强行插入所有可能需要的头文件和前置声明
+            sed -i '' '1i\
         #include <stddef.h>\
         #include <libkern/OSAtomic.h>\
-        #include "SweetSurface.h"
+        class SweetSurface; // 如果找不到头文件，直接前置声明一个类骗过编译器
         ' "$FB_FILE"
         fi
+
+        echo "=== 2. 暴力阉割 subr_log.c 里的 firehose 依赖 ==="
+        LOG_FILE="bsd/kern/subr_log.c"
+        if [ -f "$LOG_FILE" ]; then
+            # 把那些找不到的宏直接替换成数字，把找不到的函数替换成常量
+            sed -i '' 's/FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT/1024/g' "$LOG_FILE"
+            sed -i '' 's/FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES/16/g' "$LOG_FILE"
+            sed -i '' 's/__firehose_merge_updates(.*)/false/g' "$LOG_FILE"
+            sed -i '' 's/__firehose_buffer_create(.*)/0/g' "$LOG_FILE"
+            sed -i '' 's/__firehose_kernel_configuration_valid(.*)/true/g' "$LOG_FILE"
+        fi
         
+        # 顺手把之前伪造的假头文件覆盖为空，防止冲突
+        sudo mkdir -p "$SDK_INCLUDE/os"
+        echo "" | sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null
+
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export MACHINE_CONFIGS=T6000

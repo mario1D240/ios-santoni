@@ -71,31 +71,40 @@ jobs:
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
 
-        echo "=== 1. 暴力修改 SweetFramebuffer.cpp 缺头文件问题 ==="
+        echo "=== 1. 修复 SweetFramebuffer.cpp 缺头文件 ==="
         FB_FILE="iokit/Kernel/arm/SweetFramebuffer.cpp"
+        SURFACE_H=$(find . -name "SweetSurface.h" | head -n 1)
         if [ -f "$FB_FILE" ]; then
-            # 直接在第 1 行强行插入所有可能需要的头文件和前置声明
-            sed -i '' '1i\
-        #include <stddef.h>\
-        #include <libkern/OSAtomic.h>\
-        class SweetSurface; // 如果找不到头文件，直接前置声明一个类骗过编译器
-        ' "$FB_FILE"
+            if [ -n "$SURFACE_H" ]; then
+                REL_PATH=$(echo "$SURFACE_H" | sed 's|^\./||')
+                echo "Found SweetSurface.h at $REL_PATH, injecting include..."
+                sed -i '' "1i\\
+#include \\\"$REL_PATH\\\"
+" "$FB_FILE"
+            else
+                echo "SweetSurface.h not found, using forward declaration hack..."
+                sed -i '' '1i\
+#include <stddef.h>\
+#include <libkern/OSAtomic.h>\
+class SweetSurface { public: void* state; void release(); }; 
+' "$FB_FILE"
+            fi
         fi
 
-        echo "=== 2. 暴力阉割 subr_log.c 里的 firehose 依赖 ==="
-        LOG_FILE="bsd/kern/subr_log.c"
-        if [ -f "$LOG_FILE" ]; then
-            # 把那些找不到的宏直接替换成数字，把找不到的函数替换成常量
-            sed -i '' 's/FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT/1024/g' "$LOG_FILE"
-            sed -i '' 's/FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES/16/g' "$LOG_FILE"
-            sed -i '' 's/__firehose_merge_updates(.*)/false/g' "$LOG_FILE"
-            sed -i '' 's/__firehose_buffer_create(.*)/0/g' "$LOG_FILE"
-            sed -i '' 's/__firehose_kernel_configuration_valid(.*)/true/g' "$LOG_FILE"
-        fi
-        
-        # 顺手把之前伪造的假头文件覆盖为空，防止冲突
+        echo "=== 2. 用宏定义完美替换 subr_log.c 里的 firehose 依赖 ==="
         sudo mkdir -p "$SDK_INCLUDE/os"
-        echo "" | sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null
+        FH_FILE="$SDK_INCLUDE/os/firehose_buffer_private.h"
+        
+        echo '#ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_' | sudo tee "$FH_FILE" > /dev/null
+        echo '#define _OS_FIREHOSE_BUFFER_PRIVATE_H_' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#include <stdbool.h>' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#include <stddef.h>' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#define FIREHOSE_BUFFER_KERNEL_DEFAULT_CHUNK_COUNT 1024' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#define FIREHOSE_BUFFER_KERNEL_DEFAULT_IO_PAGES 16' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#define __firehose_merge_updates(a) false' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#define __firehose_kernel_configuration_valid(a, b) true' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#define __firehose_buffer_create(a) 0' | sudo tee -a "$FH_FILE" > /dev/null
+        echo '#endif' | sudo tee -a "$FH_FILE" > /dev/null
 
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT

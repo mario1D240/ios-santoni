@@ -105,10 +105,14 @@ jobs:
         export TARGET=arm64-apple-ios16.0
         
         echo "Starting main compilation with MACHINE_CONFIGS=$MACHINE_CONFIGS..."
+        
+        # 核心修正：追加编译参数，将 missing field initializer 警告降级
         make ARCH_CONFIGS=$ARCH_CONFIGS \
              KERNEL_CONFIGS=$KERNEL_CONFIGS \
              MACHINE_CONFIGS=$MACHINE_CONFIGS \
              TARGET=$TARGET \
+             CFLAGS_DEVELOPMENTARM64="-Wno-error=missing-field-initializers" \
+             CXXFLAGS_DEVELOPMENTARM64="-Wno-error=missing-field-initializers" \
              -j$(sysctl -n hw.ncpu)
 
     - name: 7. Upload Kernel Artifact

@@ -75,30 +75,22 @@ jobs:
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
         
-        # --- 修复：多源下载 firehose_buffer_private.h ---
-        echo "Downloading missing firehose_buffer_private.h from libdispatch..."
+        echo "Downloading missing firehose_buffer_private.h..."
         sudo mkdir -p "$SDK_INCLUDE/os"
         
         URL1="https://raw.githubusercontent.com/apple-oss-distributions/libdispatch/main/os/firehose_buffer_private.h"
         URL2="https://raw.githubusercontent.com/swiftlang/swift-corelibs-libdispatch/main/os/firehose_buffer_private.h"
         
-        # 尝试源1，失败则尝试源2
-        sudo curl -sL --retry 3 -o "$SDK_INCLUDE/os/firehose_buffer_private.h" "$URL1" || \
-        sudo curl -sL --retry 3 -o "$SDK_INCLUDE/os/firehose_buffer_private.h" "$URL2" || true
+        sudo curl -sL --retry 3 -o "$SDK_INCLUDE/os/firehose_buffer_private.h" "$URL1" || sudo curl -sL --retry 3 -o "$SDK_INCLUDE/os/firehose_buffer_private.h" "$URL2" || true
         
-        # 如果依然失败，写入一个占位符防止流程中断（可能后续会报结构体缺失，但总比网络报错好排查）
         if [ ! -s "$SDK_INCLUDE/os/firehose_buffer_private.h" ]; then
-            echo "Error: Downloads failed. Creating a minimal dummy header to bypass missing file error..."
+            echo "Error: Downloads failed. Creating dummy header..."
             sudo tee "$SDK_INCLUDE/os/firehose_buffer_private.h" > /dev/null << 'EOF'
-#ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
-#define _OS_FIREHOSE_BUFFER_PRIVATE_H_
-// Dummy header to bypass missing file error
-#endif
-EOF
-        else
-            echo "Successfully downloaded firehose_buffer_private.h"
+        #ifndef _OS_FIREHOSE_BUFFER_PRIVATE_H_
+        #define _OS_FIREHOSE_BUFFER_PRIVATE_H_
+        #endif
+        EOF
         fi
-        # ----------------------------------------------
         
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
@@ -106,10 +98,7 @@ EOF
         export TARGET=arm64-apple-ios16.0
         
         echo "Generating XNU export headers..."
-        make exporthdrs ARCH_CONFIGS=$ARCH_CONFIGS \
-                        KERNEL_CONFIGS=$KERNEL_CONFIGS \
-                        MACHINE_CONFIGS=$MACHINE_CONFIGS \
-                        TARGET=$TARGET || true
+        make exporthdrs ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS MACHINE_CONFIGS=$MACHINE_CONFIGS TARGET=$TARGET || true
 
     - name: 6. Build XNU Kernel
       run: |
@@ -120,28 +109,18 @@ EOF
         export MACHINE_CONFIGS=T6000
         export TARGET=arm64-apple-ios16.0
         
-        echo "【终极杀招】强行移除 Makefile 中所有的 -Werror 选项..."
+        echo "Removing -Werror from Makefiles..."
         grep -rl -- "-Werror" makedefs/ osfmk/ bsd/ iokit/ libkern/ pexpert/ security/ 2>/dev/null | xargs sed -i 's/-Werror//g' || true
         
         export CFLAGS="-w -Wno-error"
         export CXXFLAGS="-w -Wno-error"
-        
         export LINKER=ld
         export LD=/usr/bin/ld
         export LDFLAGS="-Wl,-no_deduplicate"
         
-        echo "Starting main compilation with relaxed flags and native ld64..."
-        
-        make ARCH_CONFIGS=$ARCH_CONFIGS \
-             KERNEL_CONFIGS=$KERNEL_CONFIGS \
-             MACHINE_CONFIGS=$MACHINE_CONFIGS \
-             TARGET=$TARGET \
-             WERROR= \
-             CFLAGS_DEVELOPMENTARM64="-w -Wno-error" \
-             CXXFLAGS_DEVELOPMENTARM64="-w -Wno-error" \
-             LINKER=$LINKER \
-             LDFLAGS=$LDFLAGS \
-             -j$(sysctl -n hw.ncpu)
+        echo "Starting main compilation..."
+        MAKE_ARGS="ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS MACHINE_CONFIGS=$MACHINE_CONFIGS TARGET=$TARGET WERROR= CFLAGS_DEVELOPMENTARM64='-w -Wno-error' CXXFLAGS_DEVELOPMENTARM64='-w -Wno-error' LINKER=$LINKER LDFLAGS='$LDFLAGS'"
+        make $MAKE_ARGS -j$(sysctl -n hw.ncpu)
 
     - name: 7. Upload Kernel Artifact
       if: always()

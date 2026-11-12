@@ -109,8 +109,9 @@ jobs:
         export MACHINE_CONFIGS=T6000
         export TARGET=arm64-apple-ios16.0
         
-        echo "Removing -Werror from Makefiles..."
-        grep -rl -- "-Werror" makedefs/ osfmk/ bsd/ iokit/ libkern/ pexpert/ security/ 2>/dev/null | xargs sed -i 's/-Werror//g' || true
+        echo "Removing -Werror from all Makefiles..."
+        # 使用 find 搜索所有文件，彻底干掉 -Werror
+        find . -type f \( -name "Makefile*" -o -name "MakeInc*" \) -exec sed -i '' 's/-Werror//g' {} + || true
         
         export CFLAGS="-w -Wno-error"
         export CXXFLAGS="-w -Wno-error"
@@ -119,8 +120,16 @@ jobs:
         export LDFLAGS="-Wl,-no_deduplicate"
         
         echo "Starting main compilation..."
-        MAKE_ARGS="ARCH_CONFIGS=$ARCH_CONFIGS KERNEL_CONFIGS=$KERNEL_CONFIGS MACHINE_CONFIGS=$MACHINE_CONFIGS TARGET=$TARGET WERROR= CFLAGS_DEVELOPMENTARM64='-w -Wno-error' CXXFLAGS_DEVELOPMENTARM64='-w -Wno-error' LINKER=$LINKER LDFLAGS='$LDFLAGS'"
-        make $MAKE_ARGS -j$(sysctl -n hw.ncpu)
+        make ARCH_CONFIGS=$ARCH_CONFIGS \
+             KERNEL_CONFIGS=$KERNEL_CONFIGS \
+             MACHINE_CONFIGS=$MACHINE_CONFIGS \
+             TARGET=$TARGET \
+             WERROR= \
+             CFLAGS_DEVELOPMENTARM64="-w -Wno-error" \
+             CXXFLAGS_DEVELOPMENTARM64="-w -Wno-error" \
+             LINKER=$LINKER \
+             LDFLAGS="$LDFLAGS" \
+             -j$(sysctl -n hw.ncpu)
 
     - name: 7. Upload Kernel Artifact
       if: always()

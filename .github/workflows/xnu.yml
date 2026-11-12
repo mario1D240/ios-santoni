@@ -77,6 +77,26 @@ jobs:
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
         
+        # --- 新增：获取 firehose_buffer_private.h ---
+        echo "Downloading missing firehose_buffer_private.h from libdispatch..."
+        
+        # 在 SDK 的 include 目录下创建 os 子目录
+        sudo mkdir -p "$SDK_INCLUDE/os"
+        
+        # 从 GitHub 获取头文件
+        curl -L -o "$SDK_INCLUDE/os/firehose_buffer_private.h" \
+          https://raw.githubusercontent.com/swiftlang/swift-corelibs-libdispatch/main/os/firehose_buffer_private.h
+        
+        # 验证文件是否有效
+        if [ -f "$SDK_INCLUDE/os/firehose_buffer_private.h" ]; then
+            echo "Successfully downloaded firehose_buffer_private.h"
+            head -n 5 "$SDK_INCLUDE/os/firehose_buffer_private.h"
+        else
+            echo "Error: Failed to download firehose_buffer_private.h"
+            exit 1
+        fi
+        # ------------------------------------------
+        
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export MACHINE_CONFIGS=T6000
@@ -87,7 +107,6 @@ jobs:
                         KERNEL_CONFIGS=$KERNEL_CONFIGS \
                         MACHINE_CONFIGS=$MACHINE_CONFIGS \
                         TARGET=$TARGET || true
-
     - name: 6. Build XNU Kernel
       run: |
         cd xnu-src

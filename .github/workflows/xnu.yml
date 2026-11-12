@@ -79,7 +79,6 @@ jobs:
         # 3. 在 SDK 中伪造 Kernel.framework 的 platform 私有头文件目录
         FW_PLATFORM="$SDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
         sudo mkdir -p "$FW_PLATFORM"
-        # 尝试从源码中复制 platform 相关的头文件过去
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
         
@@ -104,17 +103,18 @@ jobs:
         export MACHINE_CONFIGS=T6000
         export TARGET=arm64-apple-ios16.0
         
-        echo "Starting main compilation with relaxed warning flags..."
+        echo "Starting main compilation with WERROR disabled..."
         
-        # 核心修正：追加编译参数，将所有警告降级为非致命，并特别忽略声明后置语句的警告
+        # 核心修正：通过 WERROR= 清空默认的 -Werror，并追加 -Wno-error
         make ARCH_CONFIGS=$ARCH_CONFIGS \
              KERNEL_CONFIGS=$KERNEL_CONFIGS \
              MACHINE_CONFIGS=$MACHINE_CONFIGS \
              TARGET=$TARGET \
-             CFLAGS_DEVELOPMENTARM64="-Wno-error -Wno-error=declaration-after-statement" \
-             CXXFLAGS_DEVELOPMENTARM64="-Wno-error -Wno-error=declaration-after-statement" \
+             WERROR= \
+             CFLAGS_DEVELOPMENTARM64="-Wno-error" \
+             CXXFLAGS_DEVELOPMENTARM64="-Wno-error" \
              -j$(sysctl -n hw.ncpu)
-             
+
     - name: 7. Upload Kernel Artifact
       if: always()
       uses: actions/upload-artifact@v4

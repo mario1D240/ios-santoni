@@ -99,7 +99,7 @@ jobs:
         
         echo "Starting main compilation with native Apple ld64..."
         
-        # 关键修正：强制使用系统原生 ld64 链接器，避免 ld64.lld 不兼容导致失败
+        # 关键修正：强制使用系统原生 ld64 链接器，并追加忽略 cast-function-type-strict 警告
         export LINKER=ld
         export LD=/usr/bin/ld
         export LDFLAGS="-Wl,-no_deduplicate"
@@ -109,8 +109,8 @@ jobs:
              MACHINE_CONFIGS=$MACHINE_CONFIGS \
              TARGET=$TARGET \
              WERROR= \
-             CFLAGS_DEVELOPMENTARM64="-Wno-error" \
-             CXXFLAGS_DEVELOPMENTARM64="-Wno-error" \
+             CFLAGS_DEVELOPMENTARM64="-Wno-error -Wno-cast-function-type-strict" \
+             CXXFLAGS_DEVELOPMENTARM64="-Wno-error -Wno-cast-function-type-strict" \
              LINKER=$LINKER \
              LDFLAGS=$LDFLAGS \
              -j$(sysctl -n hw.ncpu)

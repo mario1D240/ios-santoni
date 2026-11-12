@@ -17,12 +17,11 @@ jobs:
         sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
         xcodebuild -version
         
-        # 获取当前 Xcode 对应的 macOS SDK 路径并写入环境变量
         SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
         echo "SDKROOT=$SDK_PATH" >> $GITHUB_ENV
         echo "Current SDKROOT is: $SDK_PATH"
         
-        # 修复 Xcode 16 移除了 availability.pl 导致的编译错误
+        # 修复 Xcode 16 移除 availability.pl 的问题
         sudo mkdir -p "$SDK_PATH/usr/local/libexec"
         echo '#!/usr/bin/env perl' | sudo tee "$SDK_PATH/usr/local/libexec/availability.pl" > /dev/null
         echo 'exit 0;' | sudo tee -a "$SDK_PATH/usr/local/libexec/availability.pl" > /dev/null
@@ -35,7 +34,6 @@ jobs:
         tar -xzf xnu.tar.gz
         mv xnu-xnu-8796.121.2 xnu-src
 
-        # 尝试下载基础 repo (ios-topaz)，不存在则跳过
         echo "Attempting to download ios-topaz base repo..."
         if curl -f -s -L -o topaz.tar.gz https://github.com/console-ramoops/ios-topaz/archive/refs/heads/main.tar.gz; then
           tar -xzf topaz.tar.gz
@@ -55,7 +53,7 @@ jobs:
         for patch in ../xnu/patches/*.patch; do
           echo "=================================================="
           echo "Applying: $patch"
-          # 容错打补丁，遇错继续
+          # 使用 --reject-file 避免交互，错误信息输出到控制台，但继续执行
           patch -p1 -N -t --reject-file=- < "$patch" || true
         done
         echo "Finished applying patches."
@@ -66,29 +64,25 @@ jobs:
         
         echo "Fixing missing include directories..."
         
-        # 1. 预创建 libsa 导出目录
         mkdir -p BUILD/obj/EXPORT_HDRS/libsa
         
-        # 2. 在 SDK 中伪造 usr/local/include/kernel 并链接源码
         SDK_INCLUDE="$SDKROOT/usr/local/include/kernel"
         sudo mkdir -p "$SDK_INCLUDE"
         sudo ln -sf "$PWD/bsd" "$SDK_INCLUDE/bsd" 2>/dev/null || true
         sudo ln -sf "$PWD/osfmk" "$SDK_INCLUDE/osfmk" 2>/dev/null || true
         sudo ln -sf "$PWD/iokit" "$SDK_INCLUDE/iokit" 2>/dev/null || true
         
-        # 3. 在 SDK 中伪造 Kernel.framework 的 platform 私有头文件目录
         FW_PLATFORM="$SDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
         sudo mkdir -p "$FW_PLATFORM"
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
         
-        # 4. 显式导出 XNU 内部头文件
-        echo "Generating XNU export headers..."
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export MACHINE_CONFIGS=T6000
         export TARGET=arm64-apple-ios16.0
         
+        echo "Generating XNU export headers..."
         make exporthdrs ARCH_CONFIGS=$ARCH_CONFIGS \
                         KERNEL_CONFIGS=$KERNEL_CONFIGS \
                         MACHINE_CONFIGS=$MACHINE_CONFIGS \
@@ -103,12 +97,12 @@ jobs:
         export MACHINE_CONFIGS=T6000
         export TARGET=arm64-apple-ios16.0
         
-        # 优先使用苹果原生 ld64 链接器，兼容性最好
+        echo "Starting main compilation with native Apple ld64..."
+        
+        # 关键修正：强制使用系统原生 ld64 链接器，避免 ld64.lld 不兼容导致失败
         export LINKER=ld
         export LD=/usr/bin/ld
         export LDFLAGS="-Wl,-no_deduplicate"
-        
-        echo "Starting main compilation with native Apple ld64..."
         
         make ARCH_CONFIGS=$ARCH_CONFIGS \
              KERNEL_CONFIGS=$KERNEL_CONFIGS \
@@ -120,7 +114,7 @@ jobs:
              LINKER=$LINKER \
              LDFLAGS=$LDFLAGS \
              -j$(sysctl -n hw.ncpu)
-             
+
     - name: 7. Upload Kernel Artifact
       if: always()
       uses: actions/upload-artifact@v4

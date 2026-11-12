@@ -17,11 +17,12 @@ jobs:
         sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
         xcodebuild -version
         
+        # 获取当前 Xcode 对应的 macOS SDK 路径并写入环境变量
         SDK_PATH=$(xcrun --show-sdk-path --sdk macosx)
         echo "SDKROOT=$SDK_PATH" >> $GITHUB_ENV
         echo "Current SDKROOT is: $SDK_PATH"
         
-        # 修复 Xcode 16 移除 availability.pl 的问题
+        # 修复 Xcode 16 移除了 availability.pl 导致的编译错误
         sudo mkdir -p "$SDK_PATH/usr/local/libexec"
         echo '#!/usr/bin/env perl' | sudo tee "$SDK_PATH/usr/local/libexec/availability.pl" > /dev/null
         echo 'exit 0;' | sudo tee -a "$SDK_PATH/usr/local/libexec/availability.pl" > /dev/null
@@ -53,7 +54,7 @@ jobs:
         for patch in ../xnu/patches/*.patch; do
           echo "=================================================="
           echo "Applying: $patch"
-          # 使用 --reject-file 避免交互，错误信息输出到控制台，但继续执行
+          # 容错打补丁，遇错继续
           patch -p1 -N -t --reject-file=- < "$patch" || true
         done
         echo "Finished applying patches."
@@ -64,39 +65,36 @@ jobs:
         
         echo "Fixing missing include directories..."
         
+        # 1. 预创建 libsa 导出目录
         mkdir -p BUILD/obj/EXPORT_HDRS/libsa
         
+        # 2. 在 SDK 中伪造 usr/local/include/kernel 并链接源码
         SDK_INCLUDE="$SDKROOT/usr/local/include/kernel"
         sudo mkdir -p "$SDK_INCLUDE"
         sudo ln -sf "$PWD/bsd" "$SDK_INCLUDE/bsd" 2>/dev/null || true
         sudo ln -sf "$PWD/osfmk" "$SDK_INCLUDE/osfmk" 2>/dev/null || true
         sudo ln -sf "$PWD/iokit" "$SDK_INCLUDE/iokit" 2>/dev/null || true
         
+        # 3. 在 SDK 中伪造 Kernel.framework 的 platform 私有头文件目录
         FW_PLATFORM="$SDKROOT/System/Library/Frameworks/Kernel.framework/Versions/A/PrivateHeaders/platform"
         sudo mkdir -p "$FW_PLATFORM"
         sudo cp -a "$PWD/pexpert/platform"* "$FW_PLATFORM/" 2>/dev/null || true
         sudo cp -a "$PWD/osfmk/arm64"* "$FW_PLATFORM/" 2>/dev/null || true
         
-        # --- 新增：获取 firehose_buffer_private.h ---
+        # 4. 下载 libdispatch 缺失的 firehose_buffer_private.h
         echo "Downloading missing firehose_buffer_private.h from libdispatch..."
-        
-        # 在 SDK 的 include 目录下创建 os 子目录
         sudo mkdir -p "$SDK_INCLUDE/os"
-        
-        # 从 GitHub 获取头文件
-        curl -L -o "$SDK_INCLUDE/os/firehose_buffer_private.h" \
+        curl -sL -o "$SDK_INCLUDE/os/firehose_buffer_private.h" \
           https://raw.githubusercontent.com/swiftlang/swift-corelibs-libdispatch/main/os/firehose_buffer_private.h
         
-        # 验证文件是否有效
         if [ -f "$SDK_INCLUDE/os/firehose_buffer_private.h" ]; then
             echo "Successfully downloaded firehose_buffer_private.h"
-            head -n 5 "$SDK_INCLUDE/os/firehose_buffer_private.h"
         else
             echo "Error: Failed to download firehose_buffer_private.h"
             exit 1
         fi
-        # ------------------------------------------
         
+        # 5. 显式导出 XNU 内部头文件
         export ARCH_CONFIGS=ARM64
         export KERNEL_CONFIGS=DEVELOPMENT
         export MACHINE_CONFIGS=T6000
@@ -107,6 +105,7 @@ jobs:
                         KERNEL_CONFIGS=$KERNEL_CONFIGS \
                         MACHINE_CONFIGS=$MACHINE_CONFIGS \
                         TARGET=$TARGET || true
+
     - name: 6. Build XNU Kernel
       run: |
         cd xnu-src
@@ -117,17 +116,18 @@ jobs:
         export TARGET=arm64-apple-ios16.0
         
         echo "【终极杀招】强行移除 Makefile 中所有的 -Werror 选项..."
-        # 递归搜索所有的构建配置文件，把 -Werror 替换为空格
+        # 递归搜索所有的构建配置文件，把 -Werror 替换为空格，彻底关闭警告即错误
         grep -rl -- "-Werror" makedefs/ osfmk/ bsd/ iokit/ libkern/ pexpert/ security/ 2>/dev/null | xargs sed -i 's/-Werror//g' || true
         
-        # 同时为了安全起见，加入 -w 完全关闭所有警告输出，并加入缺失的忽略项
         export CFLAGS="-w -Wno-error"
         export CXXFLAGS="-w -Wno-error"
         
-        echo "Starting main compilation with native Apple ld64..."
+        # 强制使用系统原生 ld64 链接器，避免 llvm lld 导致崩溃
         export LINKER=ld
         export LD=/usr/bin/ld
         export LDFLAGS="-Wl,-no_deduplicate"
+        
+        echo "Starting main compilation with relaxed flags and native ld64..."
         
         make ARCH_CONFIGS=$ARCH_CONFIGS \
              KERNEL_CONFIGS=$KERNEL_CONFIGS \
@@ -139,6 +139,7 @@ jobs:
              LINKER=$LINKER \
              LDFLAGS=$LDFLAGS \
              -j$(sysctl -n hw.ncpu)
+
     - name: 7. Upload Kernel Artifact
       if: always()
       uses: actions/upload-artifact@v4
